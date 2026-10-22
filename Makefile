@@ -145,7 +145,7 @@ endif
 
 app-build: ## Build the Tauri desktop bundle (macOS)
 ifneq (,$(HAS_TAURI))
-	@cargo tauri build
+	@cargo tauri build $(if $(BUNDLES),--bundles $(BUNDLES))
 else
 	@echo "app-build: no Tauri app yet, skipped"
 endif
