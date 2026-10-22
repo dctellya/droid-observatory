@@ -1,0 +1,78 @@
+# Release: a tag v* pushed to a commit that is on main (docs/decisions/D-009).
+# Builds the bundle with the same reusable workflow the gate used, then creates
+# the GitHub release with notes generated from the merged PR's labels
+# (.github/release.yml). Nothing here deploys anywhere else.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      has_tauri: ${{ steps.probe.outputs.has_tauri }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: tag points at a commit on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "tag ${GITHUB_REF_NAME} is not on main; releases come only from main"; exit 1
+          fi
+      - name: tag is semver
+        run: |
+          echo "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "tag ${GITHUB_REF_NAME} is not vMAJOR.MINOR.PATCH"; exit 1; }
+      - id: probe
+        run: |
+          if [ -f apps/observatory-app/src-tauri/tauri.conf.json ]; then echo "has_tauri=true" >> "$GITHUB_OUTPUT"; else echo "has_tauri=false" >> "$GITHUB_OUTPUT"; fi
+
+  bundle:
+    name: bundle
+    needs: verify
+    if: needs.verify.outputs.has_tauri == 'true'
+    uses: ./.github/workflows/bundle.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  release:
+    name: release
+    needs: [verify, bundle]
+    if: ${{ !cancelled() && needs.verify.result == 'success' && needs.bundle.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.bundle.result == 'success'
+        with:
+          name: bundle-macos
+          path: dist/release
+      - name: create release with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          files=""
+          if [ -d dist/release ]; then files=$(find dist/release -type f | tr '\n' ' '); fi
+          # shellcheck disable=SC2086
+          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG" $files
