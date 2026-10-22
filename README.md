@@ -126,7 +126,7 @@ Rule 10: real time and usage per milestone, stated here as the work lands.
 | Phase | Wall time | Sessions | Notes |
 |---|---|---|---|
 | Ideation → PRD v0.2 | ~1 h 40 m | 1 Droid session | two review rounds; log in `ai/session/2026-10-22-session.md` |
-| Repo readiness | ~1 h 30 m | same session | baseline readiness Level 1 (5/65); see `reports/readiness/` |
+| Repo readiness | ~2 h | same session | readiness Level 1 (5/65) → Level 3 (31/65); see `reports/readiness/` |
 
 Token usage for these sessions is recorded by Factory, not by this repository yet; the
 observatory's first job is to make that number visible.
