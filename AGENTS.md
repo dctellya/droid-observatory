@@ -54,6 +54,7 @@ crates/observatory-cli    headless replay/inspect over core
 apps/observatory-app      Tauri 2 shell + Leptos UI
 fixtures/streams          captured mission streams, named <YYYY-MM-DD>-<slug>.jsonl
 docs/decisions            D-NNN-slug.md, one per decision; README.md is generated
+docs/runbooks             recovery procedures: red gate, fix cycle, stall, hooks, release
 reports/                  usage, waste, readiness; pasted from tools
 build-log/                tool-call log written by .factory hooks
 ai/                       PRD, rules, template, session logs

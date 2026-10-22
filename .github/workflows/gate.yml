@@ -1,6 +1,8 @@
 # The gate: the mission's single pull request into main (ai/RULES.md rules 6 and 12).
 # Everything from mission-branch.yml plus SAST, filesystem scan, workflow policy,
-# SBOM, the macOS Tauri bundle, build provenance and cosign signatures.
+# SBOM, the macOS Tauri bundle (bundle.yml), build provenance and cosign signatures.
+# Semgrep and Trivy results are uploaded as SARIF to GitHub code scanning so
+# findings appear on the PR and in the Security tab (BACKLOG B-013).
 # It never deploys.
 #
 # `gate` is the aggregate job and the only required status check in the main
@@ -57,12 +59,40 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: semgrep
-        run: semgrep scan --config p/default --config p/rust --config p/secrets --config p/github-actions --error --metrics=off
+        run: semgrep scan --config p/default --config p/rust --config p/secrets --config p/github-actions --error --metrics=off --sarif --output semgrep.sarif
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+
+  # Separate job: the codeql-action needs the runner's Node, which the semgrep
+  # container does not provide.
+  sast-upload:
+    name: sast-upload
+    needs: sast
+    if: always() && needs.sast.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: semgrep-results
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
 
   fs-scan:
     name: fs-scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: trivy filesystem scan
@@ -81,6 +111,11 @@ jobs:
         with:
           name: trivy-results
           path: trivy-results.sarif
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
 
   workflow-policy:
     name: workflow-policy
@@ -112,43 +147,15 @@ jobs:
     name: bundle
     needs: detect
     if: needs.detect.outputs.has_tauri == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 45
+    uses: ./.github/workflows/bundle.yml
     permissions:
       contents: read
       id-token: write
       attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable; version from rust-toolchain.toml
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: trunk,tauri-cli
-      - name: build bundle
-        run: make app-build
-      - name: attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: |
-            target/release/bundle/dmg/*.dmg
-            target/release/bundle/macos/*.app.tar.gz
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: cosign sign (keyless)
-        run: |
-          for f in target/release/bundle/dmg/*.dmg; do
-            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
-          done
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: bundle-macos
-          path: |
-            target/release/bundle/dmg/*.dmg
-            target/release/bundle/dmg/*.sigstore.json
 
   gate:
     name: gate
-    needs: [detect, light, sast, fs-scan, workflow-policy, sbom, bundle]
+    needs: [detect, light, sast, sast-upload, fs-scan, workflow-policy, sbom, bundle]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

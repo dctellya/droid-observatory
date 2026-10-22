@@ -91,8 +91,13 @@ Two workflows, one required check:
   exists) fmt, clippy, tests, replay fixtures, cargo-deny. Aggregate job `mission-checks`.
   Budget: three minutes warm.
 - `gate.yml` on pull requests to `main`: everything above plus Semgrep, Trivy, Checkov on the
-  workflows, an SBOM, the macOS Tauri bundle with build provenance and cosign signatures.
-  Aggregate job `gate`, the only check the `main` ruleset requires. It never deploys.
+  workflows, an SBOM, the macOS Tauri bundle (`bundle.yml`) with build provenance and cosign
+  signatures. Semgrep and Trivy findings are uploaded to GitHub code scanning, which is also
+  enabled in default setup. Aggregate job `gate`, the only check the `main` ruleset
+  requires. It never deploys.
+- `release.yml` on tags `v*` pushed by the human to a commit on `main`: builds the same
+  bundle and creates the GitHub release with notes generated from PR labels
+  (`.github/release.yml`, D-009). Runbook: `docs/runbooks/release.md`.
 
 Branch rules on `main`: pull request required, `gate` required, no force pushes, no admin
 bypass, zero required approvals (the human in lane 7 merges by hand, the gate is the review).
@@ -109,10 +114,12 @@ repository.
 ```text
 ai/            PRD, rules, spec template, session logs (the human-agent record)
 .factory/      mission model settings, hooks: git guard and tool-call logger
-.github/       workflows (mission-branch, gate), CODEOWNERS, templates
+.github/       workflows (mission-branch, gate, bundle, release), CODEOWNERS, templates
 .githooks/     pre-commit, commit-msg, pre-push (enable with `make hooks`)
+.devcontainer/ Linux container with every `make check` tool (core work; the window needs macOS)
 config/        example config and dated price tables
 docs/decisions/ one file per decision; README.md is generated
+docs/runbooks/  red gate, fix cycle, stalled mission, hooks disabled, release
 build-log/     one JSON line per agent tool call, by day and session
 reports/       readiness reports, usage and waste per milestone (pasted from the tool)
 scripts/       the checks the Makefile calls
