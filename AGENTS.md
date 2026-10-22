@@ -38,10 +38,12 @@ Once the skeleton lands, the path the validators follow is:
 1. `make doctor` reports no missing required tools.
 2. `cargo run -p observatory-cli -- replay fixtures/streams/<capture>.jsonl` prints lane
    events and ends with `unknown events: 0`.
-3. `make app-dev` opens the window; load the same fixture from the launch screen; the nine
-   lanes render and a card opens its Details view.
+3. `make app-dev` opens the window; open the same fixture (Replay); the nine lanes render
+   and a card opens its Details view.
+4. With the window open, start `droid exec --mission ...` in a terminal; the new session
+   appears on the board (Attach) and each event shows within 1 s.
 
-No login gate: the app reads local files and uses the GitHub token from the keychain or
+No login gate: the app watches and reads local session files and uses the GitHub token from the keychain or
 `GITHUB_TOKEN` only for the gate lane.
 
 ## Layout and ownership

@@ -16,7 +16,7 @@ the reason struck through, not deleted.
 | B-008 | Human-computed reference spreadsheet from the M0 capture for M5 | Mission input; cannot be produced by validators. | before M5 |
 | B-009 | Optional manual ~20-minute mission capture before the mission starts | Insurance for M0 planning, not structural. | before mission |
 | B-010 | Settle walking-skeleton vs M0 boundary in SPEC.md | Rule 2 and PRD §13 overlap; the spec session decides order. | spec session |
-| B-011 | Fill `config/prices/2026-10-22.toml` from the vendor price page, set `verified = true` | Prices must be read on the day, not recalled. | before M5 |
+| B-011 | Fill `config/prices/2026-10-22.toml` from the vendor price page, set `verified = true` | Prices must be read on the day, not recalled. | done 2026-10-22 |
 | B-012 | Runbook: stalled mission, red gate, fix cycle, hooks disabled | Needs the app to exist to describe recovery honestly. | M3 |
 | B-013 | GitHub code scanning default setup (CodeQL) | Enabled if the API accepts Rust for this repo; otherwise Semgrep in the gate covers SAST. | now / M1 |
 | B-014 | Dead code and unused dependency checks (`cargo-udeps`, `cargo-machete`) in the mission-branch CI | Needs code; nightly toolchain for udeps is a cost to weigh. Spec §7 decides. | with skeleton |
