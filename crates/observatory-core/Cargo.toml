@@ -20,6 +20,7 @@ secrets = ["dep:keyring-core", "dep:apple-native-keyring-store"]
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true
 time.workspace = true
