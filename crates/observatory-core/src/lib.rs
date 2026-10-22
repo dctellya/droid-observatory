@@ -4,3 +4,4 @@ pub mod config;
 pub mod ingest;
 pub mod mapping;
 pub mod model;
+pub mod view;
