@@ -2661,6 +2661,7 @@ name = "observatory-cli"
 version = "0.1.0"
 dependencies = [
  "observatory-core",
+ "tempfile",
 ]
 
 [[package]]
