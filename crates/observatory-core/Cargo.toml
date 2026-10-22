@@ -1,0 +1,34 @@
+[package]
+name = "observatory-core"
+description = "Ingest, model, metrics, store and control for droid-observatory (synchronous, no UI)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Platform modules sit behind features so the UI crate can depend on core with
+# default-features = false and still build for wasm32 (architecture I9).
+default = ["store", "watch", "rpc", "github", "secrets"]
+store = ["dep:rusqlite"]
+watch = []
+rpc = []
+github = []
+secrets = ["dep:keyring-core", "dep:apple-native-keyring-store"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+rusqlite = { workspace = true, optional = true }
+keyring-core = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { workspace = true, optional = true }
+
+# Declared ahead of the modules that use them; each worker removes its entry when the
+# first use lands (cargo machete reads this list).
+[package.metadata.cargo-machete]
+ignored = ["serde_json", "rusqlite", "keyring-core", "apple-native-keyring-store"]
