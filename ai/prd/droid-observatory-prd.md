@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v0.3 for review |
+| Status | Draft v0.4 for review |
 | Date | 2026-10-22 |
 | Owner | dct |
 | Author | Droid (ideation session, see `ai/session/2026-10-22-session.md`) |
-| Changes from v0.1 and v0.2 | See Appendix C |
+| Changes from v0.1, v0.2 and v0.3 | See Appendix C |
 
 ---
 
@@ -14,7 +14,7 @@
 
 droid-observatory is a Rust desktop application that shows how a Factory Mission moves through the engineering build cycle. It renders the mission as a board whose lanes are the orchestrated states of a mission, from the human's intent through orchestration, building, validation, integration, the human gate, and the outside ecosystem (PR, CI, deploy). Alongside the flow it measures what the flow costs: cycle time, waste by cause, tokens and money per sub-droid and per model.
 
-The observatory hosts missions (it spawns `droid exec --mission` and consumes the JSON-RPC event stream) and can also replay or attach to missions from local `~/.factory` session files. It never copies the event data into a second source of truth: every lane entry is a view over the raw JSONL line it came from.
+The observatory attaches to missions started from any terminal on this machine (it watches `~/.factory/sessions/` and tails each new session file as it grows), replays finished ones from the same files, and can also host a mission itself (it spawns `droid exec --mission` and consumes the JSON-RPC event stream, which adds the control channel). Attach is the primary live mode; hosting is the secondary path. It never copies the event data into a second source of truth: every lane entry is a view over the raw JSONL line it came from.
 
 A mission is not complete when the workers stop. It is complete when the gate is green and the merge has happened.
 
@@ -106,7 +106,7 @@ A card moves left to right. Its position is the lane where its most recent open 
 
 ```text
 ┌──────────────────────────────────────────────────────┐
-│ M2  Live host and agents                    [Details]│
+│ M2  Host                                    [Details]│
 │ features 4/6 done · worktree wt/m2 · mission/obs-v1  │
 │ ● validation: RED (1 blocking)  ◆ branch: fast checks ✓│
 │ now: worker-3 (claude-sonnet-5-5) on F-014 · 00:14:22 │
@@ -193,9 +193,9 @@ Definitions in section 10. All metrics are available per feature, per milestone,
 
 ### 9.7 Mission lifecycle (FR-L)
 
-- FR-L1: Launch a mission from the app: choose repo, mission file, mission branch name, models and reasoning effort for orchestrator / worker / validator, autonomy flags, optional budget. The app spawns `droid exec --mission --output-format stream-jsonrpc`.
-- FR-L2: Attach to a mission already running on this machine by reading its session JSONL files.
-- FR-L3: Replay a finished mission from JSONL files.
+- FR-L1: Attach (primary live mode): watch `~/.factory/sessions/` with a filesystem notifier, detect any new session JSONL (a mission started from any terminal on this machine), tail it as it grows and render it within 1 s, named by its `--tag` or session id. No control channel.
+- FR-L2: Replay a finished mission from JSONL files. Same adapter as attach: replay is attach at end-of-file, with the scrubber.
+- FR-L3: Host (secondary path): launch a mission from the app: choose repo, mission file, mission branch name, models and reasoning effort for orchestrator / worker / validator, autonomy flags, optional budget. The app spawns `droid exec --mission --input-format stream-jsonrpc --output-format stream-jsonrpc`; this is the only mode with a control channel (pause, message, answer).
 - FR-L4: Mission library: list past missions with headline metrics.
 
 ## 10. Metric definitions
@@ -285,13 +285,16 @@ The shipped default table carries the vendor prices on its date; the user edits 
 
 | Source | Mode | Provides |
 |---|---|---|
-| `droid exec --mission --input-format stream-jsonrpc --output-format stream-jsonrpc` | Host (live) | Every orchestrator event; worker and validator events via child sessions; token usage; permission and question requests; control (pause, message, answer). |
-| `~/.factory/sessions/<cwd-slug>/<session-id>.jsonl` (+ `.settings.json`) | Attach / replay | Same events after the fact; the canonical raw lines that lane entries link to. |
+| `~/.factory/sessions/<cwd-slug>/<session-id>.jsonl` (+ `.settings.json`), watched | **Attach (primary live mode)** | The observatory watches `~/.factory/sessions/` with a filesystem notifier, detects any new session JSONL (a mission started from any terminal on this machine), tails it as it grows and renders it in real time, named by its `--tag` or session id. Worker and validator events via the child session files. These are the canonical raw lines that lane entries link to. Read-only: no control channel. |
+| Same files, finished | Replay | Same adapter: replay is attach at end-of-file, plus the time scrubber. |
+| `droid exec --mission --input-format stream-jsonrpc --output-format stream-jsonrpc` | Host (secondary live mode) | Every orchestrator event; token usage; permission and question requests; the control channel (pause, message, answer). Started from the app's launch screen. |
 | Git (local) | Live, polled | Mission branch, milestone worktrees, integration commits, fast-check results. |
 | GitHub REST/GraphQL (user token) | Live, polled | The mission PR, reviews, check runs, required checks, rulesets, attestations, merges, deploy statuses. |
 | App actions | Live | Lane 7 human events. |
 
-Open item: the exact JSON-RPC event schema for missions (how worker child sessions, feature ids, milestone ids, and validator roles are identified) is not fully documented. M0 captures a real mission stream and freezes the mapping from raw events to lane events as a versioned module with fixtures.
+Attach is primary because missions are started from the terminal in practice; the launch screen is the secondary path. Hosting is the only mode with a control channel; attach and replay are read-only views over the same files.
+
+Open items: the exact JSON-RPC event schema for missions (how worker child sessions, feature ids, milestone ids, and validator roles are identified) is not fully documented, and where `--tag` is recorded (session settings file or first stream line) is unconfirmed. M0 captures a real mission stream, confirms both, and freezes the mapping from raw events to lane events as a versioned module with fixtures.
 
 ### 11.2 Components
 
@@ -303,8 +306,8 @@ Open item: the exact JSON-RPC event schema for missions (how worker child sessio
                │ Tauri commands + events (serde types shared with core)
 ┌──────────────┴───────────────────────────────────────────────────────┐
 │ observatory-core (Rust lib)                                          │
-│  ingest/   droid_rpc (host) · jsonl_tail (attach/replay) · git ·     │
-│            github                                                    │
+│  ingest/   jsonl_watch · jsonl_tail (attach; replay = attach at EOF) │
+│            droid_rpc (host) · git · github                           │
 │  model/    Event · Feature · Milestone · Agent · Lane mapping        │
 │            (versioned by Droid version)                              │
 │  metrics/  time states · rework windows · overhead · cycle · waste · │
@@ -359,15 +362,15 @@ Reasoning: the hard part of this product is `observatory-core` (ingest, mapping,
 | # | Name | Outcome | Validation |
 |---|---|---|---|
 | M0 | Stream capture and mapping | Capture one real mission run (`droid exec --mission` on a sample repo); write the raw→lane event mapper with fixtures; `observatory replay` CLI prints lane events. Freeze the mapping, versioned by Droid version. | Fixture tests pass; `unknown.event` count on the capture is zero; every event kind in section 7 that appears in the capture is mapped. **Gate for planning M1–M5 in detail.** |
-| M1 | Board in replay | Tauri 2 + Leptos app renders the nine lanes and milestone cards from JSONL replay; Details timeline tab; scrubber; unmapped tray. | Replay of the M0 capture shows all milestones and features with correct lane positions versus the capture's known outcome. **Leptos go/no-go evaluated here (section 12).** |
-| M2 | Live host and agents | Launch screen; spawn `droid exec --mission`; live board; agent panel with current agent per feature; live output per agent; `model.changed` and `context.compacted` markers. | A live mission shows events within 1 s; agent attribution matches orchestrator logs. |
-| M3 | Intervention | Pause/resume, message, answer/approve/deny, mark complete/skipped; stall flag with suggested prompts. | Each action produces a lane 7 event and the orchestrator reacts. |
+| M1 | Board in replay and attach | Tauri 2 + Leptos app renders the nine lanes and milestone cards from a session JSONL; Details timeline tab; scrubber; unmapped tray. Attach: a filesystem watcher on `~/.factory/sessions/` detects any new session file, tails it as it grows and renders it live, named by its `--tag` or session id; replay is attach at end-of-file, same adapter. Agent panel with current agent per feature; `model.changed` and `context.compacted` markers. | Replay of the M0 capture shows all milestones and features with correct lane positions versus the capture's known outcome. A mission started in a terminal appears on the board, and each of its events shows, within 1 s. Agent attribution matches orchestrator logs. **Leptos go/no-go evaluated here (section 12).** |
+| M2 | Host | Launch screen (secondary path); spawn `droid exec --mission --input-format stream-jsonrpc --output-format stream-jsonrpc` from the app; pause, message and answer controls over the RPC input channel; live output per agent from the host stream. | A hosted mission shows events within 1 s; pause, message and answer reach the orchestrator and its reaction appears on the board; the same mission attached from its JSONL shows the same lane events. |
+| M3 | Intervention | Lane 7 semantics for every control (M2 pause/resume, message, answer; plus approve/deny, mark complete/skipped); stall flag with suggested prompts. | Each action produces a lane 7 event and the orchestrator reacts. |
 | M4 | Mission branch, gate, and fix loop | Git adapter (mission branch, worktrees, fast checks → lane 6); GitHub adapter; gate group in lane 8; gate badge; merge policy with rule attribution; Merge button; CI red → `fix` cycle on the affected card, same PR. | Tested against a **private demo repository with a PR flow, CI, and rulesets** (the observatory itself has no PR flow until the end of the mission). A red check on the demo PR opens a fix cycle; a green check with human policy shows Merge; merging via the app updates the badge. |
 | M5 | Time, waste, cost | Time-state engine; rework windows; mission overhead; cycle, waste, bottleneck; tokens per sub-droid; dated price table; budget meter; model comparison; CSV/JSON export. | Metrics recomputed from the M0 capture match a **human-produced reference spreadsheet** computed by hand once from the same capture, within rounding. The spreadsheet is a mission input, not something validators invent. |
 
 Optional insurance before the mission starts: a manual ~20-minute capture of a small mission, so the orchestrator has something to look at while planning M0. It is not a structural step.
 
-Dogfooding: from M1 onward the mission that builds the observatory is observed in the observatory. Its own lane 8 stays empty until the final PR `mission/observatory-v1` → `main`.
+Dogfooding starts the moment M1 lands: the mission that builds the observatory is started from a terminal, and the observatory attaches to its session files, so M2–M5 are watched live without hosting. Its own lane 8 stays empty until the final PR `mission/observatory-v1` → `main`.
 
 ## 14. Risks and open questions
 
@@ -380,6 +383,8 @@ Dogfooding: from M1 onward the mission that builds the observatory is observed i
 | Merge policy lives in several places (branch protection, rulesets, CODEOWNERS, org policy). | v1 reads branch protection and rulesets, plus an explicit app-level override per repo; the Details gate tab shows which rule decided. |
 | A `fix` cycle after the orchestrator has ended needs a follow-up mission with the right context on the same branch. | The fix launch pre-fills the mission file with the feature spec, the failing check output, the mission branch, and the original session ids. |
 | Local JSONL files may change format between Droid versions. | The mapper is versioned by the Droid version observed in the session settings file; replay of old captures stays in the test suite. |
+| Filesystem notifiers coalesce or miss events (macOS FSEvents latency, a session file created before the watcher starts). | The watcher is paired with a poll at `[ingest].jsonl_poll_ms`; on start the sessions directory is scanned and files already growing are attached; attach latency is measured in M1 acceptance, not assumed. |
+| `--tag` may not be recoverable from the session files. | M0 confirms where it is recorded; if absent, sessions are named by id and the first `mission.started` payload. |
 | M4 cannot be tested on the observatory repo itself. | Private demo repository with PR flow, CI, and rulesets, prepared before M4. |
 | M5 has no oracle unless a human produces one. | Reference spreadsheet from the M0 capture is a listed mission input. |
 | Webview charting in Rust is thinner than JS. | Scoped chart set (stacked bars, timeline, sparkline) built as SVG components; JS chart lib as a documented escape hatch. |
@@ -392,7 +397,7 @@ The PRD is accepted when the reviewer agrees that:
 2. The nine lanes, their sources, and their event kinds are correct and complete, with `unknown.event` as a first-class kind.
 3. Card = milestone, features inside the card, one gate group per mission PR, and the fix loop reopening the mission on its branch match the intended workflow.
 4. The time states, bounded rework windows, first-pass definition, mission overhead, waiting on merge, and the queued/unscheduled idle split are the ones to measure against.
-5. Hosting plus local-file ingest plus git and GitHub adapters is the right v1 data source set.
+5. Attach as the primary live mode, replay from the same files, hosting as the secondary path with the control channel, plus git and GitHub adapters is the right v1 data source set.
 6. The stack recommendation (Tauri 2 + Leptos) with the M1 go/no-go criterion is approved, or a different option is chosen.
 7. The milestone plan (M0 as planning gate, demo repo for M4, human reference for M5) is acceptable as the seed of the mission plan.
 
@@ -465,3 +470,17 @@ pub struct ReworkWindow {
 | Telemetry | Not addressed | New §11.4: Grafana Cloud over OTLP for app telemetry and lane-9 mission metrics; metric names as contract; off by default (D-004) |
 | Models per role | Not stated | §2: orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5` (D-006) |
 | Repository | None | Readiness scaffold: CI gate (D-003), ruleset (D-007), Renovate (D-005), hooks, config contract, decisions, backlog |
+
+### v0.3 → v0.4 (attach is the primary live mode, 2026-10-22)
+
+Source: `ai/prd/review-2026-10-22.md` item 5; decision D-008.
+
+| Area | v0.3 | v0.4 |
+|---|---|---|
+| Live mode | Host (spawn `droid exec --mission`) primary; attach listed second | §11.1: **Attach** is the primary live mode: watch `~/.factory/sessions/`, detect any new session JSONL, tail it, render within 1 s, named by `--tag` or session id. Replay is attach at end-of-file, same adapter. Host is the secondary path and the only mode with a control channel |
+| FR-L | L1 launch, L2 attach, L3 replay | L1 attach, L2 replay, L3 host (launch screen) |
+| M1 | Board in replay | Board in replay **and attach**; agent panel and `model.changed` / `context.compacted` markers move here; acceptance adds "a mission started in a terminal shows on the board within 1 s" |
+| M2 | Live host and agents | Host only: launch screen, spawn, pause/message/answer over the RPC channel, live output per agent |
+| M3 | Intervention | Unchanged scope; stated as lane 7 semantics over the M2 controls plus approve/deny, mark complete/skipped, stall flag |
+| Dogfooding | From M1 onward (unspecified how) | Via attach the moment M1 lands; M2–M5 watched without hosting |
+| Risks | — | Added: notifier coalescing/missed events (poll fallback, startup scan); `--tag` recoverability (confirmed in M0) |
