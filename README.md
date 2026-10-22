@@ -25,6 +25,7 @@ integration (ai/RULES.md rule 2). Rust targets in the `Makefile` activate the mo
 | 9 Time, waste, cost, models | tokens per role, waste by cause, budget |
 
 Full definition: [ai/prd/droid-observatory-prd.md](ai/prd/droid-observatory-prd.md).
+Spec: [SPEC.md](SPEC.md) (approved 2026-10-22; the mission plans from it).
 
 ## From a clean clone
 
@@ -70,17 +71,18 @@ command the gate runs.
 ## Running it as a mission
 
 Models per role (ai/RULES.md rule 19, `.factory/settings.json`, D-006):
-orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`.
+orchestrator `claude-fable-5.1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`.
 
 ```sh
 droid exec --mission --auto high \
-  --model claude-fable-5-1 \
-  --worker-model claude-sonnet-5-5 \
-  --validator-model claude-opus-5-5 \
+  --model claude-fable-5.1          --reasoning-effort high \
+  --worker-model claude-sonnet-5-5  --worker-reasoning-effort high \
+  --validator-model claude-opus-5-5 --validator-reasoning-effort high \
+  --output-format text \
   -f SPEC.md
 ```
 
-Reasoning effort per role is declared in `SPEC.md` §2. The mission works on
+Reasoning effort per role is `high` for all three (SPEC §2). The mission works on
 `mission/<name>`, one worktree per milestone, and ends in one pull request into `main`.
 
 ## The gate

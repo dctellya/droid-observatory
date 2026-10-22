@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v0.5 for review |
+| Status | Draft v0.6 for review |
 | Date | 2026-10-22 |
 | Owner | dct |
 | Author | Droid (ideation session, see `ai/session/2026-10-22-session.md`) |
-| Changes from v0.1 to v0.4 | See Appendix C |
+| Changes from v0.1 to v0.6 | See Appendix C |
 
 ---
 
@@ -30,7 +30,9 @@ This section defines the units the board shows. Everything else follows from it.
 
 On the board: **cards are milestones**; the gate group in lane 8 is the mission's one PR; lane 6 is integration into `mission/<name>`; lane 8 is the PR.
 
-**Models per role** (decision D-006; `ai/RULES.md` rule 19): orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`. Reasoning effort per role is declared in the spec. A change of model is a decision file.
+**Models per role** (decision D-006; `ai/RULES.md` rule 19): orchestrator `claude-fable-5.1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`. Reasoning effort per role is declared in the spec. A change of model is a decision file.
+
+The orchestrator catalog ID spelling was corrected on 2026-10-22 (D-006); Appendix C retains the historical spelling.
 
 ## 3. Problem
 
@@ -258,7 +260,7 @@ Price table example (values illustrative, table dated):
 effective = "2026-10-22"
 currency = "USD"
 
-[models."claude-fable-5-1"]
+[models."claude-fable-5.1"]
 input_per_m = 0.0
 output_per_m = 0.0
 cache_read_per_m = 0.0
@@ -365,7 +367,7 @@ Reasoning: the hard part of this product is `observatory-core` (ingest, mapping,
 | M1 | Board in replay and attach | Tauri 2 + Leptos app renders the nine lanes and milestone cards from a session JSONL; Details timeline tab; scrubber; unmapped tray. Attach: a filesystem watcher on `~/.factory/sessions/` detects any new session file, tails it as it grows and renders it live, named by its `--tag` or session id; replay is attach at end-of-file, same adapter. Agent panel with current agent per feature; `model.changed` and `context.compacted` markers. | Replay of the M0 capture shows all milestones and features with correct lane positions versus the capture's known outcome. A mission started in a terminal appears on the board, and each of its events shows, within 1 s. Agent attribution matches orchestrator logs. **Leptos go/no-go evaluated here (section 12).** |
 | M2 | Host | Launch screen (secondary path); spawn `droid exec --mission --input-format stream-jsonrpc --output-format stream-jsonrpc` from the app; pause, message and answer controls over the RPC input channel; live output per agent from the host stream. | A hosted mission shows events within 1 s; pause, message and answer reach the orchestrator and its reaction appears on the board; the same mission attached from its JSONL shows the same lane events. |
 | M3 | Intervention | Lane 7 semantics for every control (M2 pause/resume, message, answer; plus approve/deny, mark complete/skipped); stall flag with suggested prompts. | Each action produces a lane 7 event and the orchestrator reacts. |
-| M4 | Mission branch, gate, and fix loop | Git adapter (mission branch, worktrees, fast checks → lane 6); GitHub adapter; gate group in lane 8; gate badge; merge policy with rule attribution; Merge button; CI red → `fix` cycle on the affected card, same PR. | Tested against a **private demo repository with a PR flow, CI, and rulesets** (the observatory itself has no PR flow until the end of the mission). A red check on the demo PR opens a fix cycle; a green check with human policy shows Merge; merging via the app updates the badge. |
+| M4 | Mission branch, gate, and fix loop | Git adapter (mission branch, worktrees, fast checks → lane 6); GitHub adapter; gate group in lane 8; gate badge; merge policy with rule attribution; Merge button; CI red → `fix` cycle on the affected card, same PR. | Tested against a **demo branch pair in this repository**: `demo/base` with its own ruleset, PRs from `demo/*`, `demo-gate.yml` controlled by the `demo:red` label; no separate repository, nothing touches `main`. A red check on the demo PR opens a fix cycle; a green check with human policy shows Merge; merging via the app updates the badge. |
 | M5 | Time, waste, cost | Time-state engine; rework windows; mission overhead; cycle, waste, bottleneck; tokens per sub-droid; dated price table; budget meter; model comparison; CSV/JSON export. | Metrics recomputed from the M0 capture match a **human-produced reference spreadsheet** computed by hand once from the same capture, within rounding. The spreadsheet is a mission input, not something validators invent. |
 
 Optional insurance before the mission starts: a manual ~20-minute capture of a small mission, so the orchestrator has something to look at while planning M0. It is not a structural step.
@@ -385,7 +387,7 @@ Dogfooding starts the moment M1 lands: the mission that builds the observatory i
 | Local JSONL files may change format between Droid versions. | The mapper is versioned by the Droid version observed in the session settings file; replay of old captures stays in the test suite. |
 | Filesystem notifiers coalesce or miss events (macOS FSEvents latency, a session file created before the watcher starts). | The watcher is paired with a poll at `[ingest].jsonl_poll_ms`; on start the sessions directory is scanned and files already growing are attached; attach latency is measured in M1 acceptance, not assumed. |
 | `--tag` may not be recoverable from the session files. | M0 confirms where it is recorded; if absent, sessions are named by id and the first `mission.started` payload. |
-| M4 cannot be tested on the observatory repo itself. | Private demo repository with PR flow, CI, and rulesets, prepared before M4. |
+| M4 cannot be tested on the observatory repo itself. | The same demo branch pair in this repository (`demo/base` with its own ruleset, PRs from `demo/*`, `demo-gate.yml` controlled by the `demo:red` label), set up by the mission before M4; nothing touches `main`. |
 | M5 has no oracle unless a human produces one. | Reference spreadsheet from the M0 capture is a listed mission input. |
 | Webview charting in Rust is thinner than JS. | Scoped chart set (stacked bars, timeline, sparkline) built as SVG components; JS chart lib as a documented escape hatch. |
 
@@ -399,7 +401,7 @@ The PRD is accepted when the reviewer agrees that:
 4. The time states, bounded rework windows, first-pass definition, mission overhead, waiting on merge, and the queued/unscheduled idle split are the ones to measure against.
 5. Attach as the primary live mode, replay from the same files, hosting as the secondary path with the control channel, plus git and GitHub adapters is the right v1 data source set.
 6. The stack recommendation (Tauri 2 + Leptos) with the M1 go/no-go criterion is approved, or a different option is chosen.
-7. The milestone plan (M0 as planning gate, demo repo for M4, human reference for M5) is acceptable as the seed of the mission plan.
+7. The milestone plan (M0 as planning gate, demo branch pair for M4, human reference for M5) is acceptable as the seed of the mission plan.
 
 ## Appendix A: Canonical event
 
@@ -496,3 +498,15 @@ Source: owner message in `ai/session/2026-10-22-session.md` entry 17; decision D
 | §11.4 instruments | Gauge `active_agents` | Counters and histograms only; `active_agents` not exported; `unknown_events` added |
 | §11.4 budget | Not stated | Spec states the series count, under 200 (B-017) |
 | Resource attributes | `deployment.environment`, `service.namespace` too | `service.name`, `service.version` only |
+
+### v0.5 → v0.6 (spec session, 2026-10-22)
+
+Source: `ai/session/2026-10-22-session.md` entries 19–24; `SPEC.md` v0.1.
+
+| Area | v0.5 | v0.6 |
+|---|---|---|
+| M4 test target | Private demo repository | Demo branch pair in this repository (`demo/base`, `demo/*`, `demo-gate.yml`, label `demo:red`); entry 19, SPEC §3 M4 |
+| Orchestrator id | `claude-fable-5-1` | `claude-fable-5.1` (D-006 correction) |
+| Milestone count | Six (M0–M5) | Seven: walking skeleton S first, then M0–M5 (SPEC §3) |
+| FR-L4 (mission library) | Unplaced | Placed in M1 (headline metrics arrive with M5) |
+| Spec | Not yet written | `SPEC.md` v0.1 approved by the owner; the mission plans from it |

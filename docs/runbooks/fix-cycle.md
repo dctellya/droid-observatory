@@ -18,7 +18,10 @@ reopened on `main`.
    ```sh
    git switch mission/<name>
    droid exec --mission --auto high \
-     --model claude-fable-5-1 --worker-model claude-sonnet-5-5 --validator-model claude-opus-5-5 \
+     --model claude-fable-5.1          --reasoning-effort high \
+     --worker-model claude-sonnet-5-5  --worker-reasoning-effort high \
+     --validator-model claude-opus-5-5 --validator-reasoning-effort high \
+     --output-format text \
      -f fix-<name>.md
    ```
 
