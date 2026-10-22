@@ -10,7 +10,26 @@ pub enum MappingVersion {
 
 impl MappingVersion {
     pub const LATEST: MappingVersion = MappingVersion::V1;
+
+    /// Picks the rules for the session format of a `droid --version` string. An absent,
+    /// empty or unrecognised version gets `LATEST`: showing events with the newest rules
+    /// beats showing none.
+    pub fn for_droid_version(droid_version: &str) -> MappingVersion {
+        let seen = droid_version.trim();
+        if seen == V1_DROID_SERIES
+            || seen
+                .strip_prefix(V1_DROID_SERIES)
+                .is_some_and(|rest| rest.starts_with('.'))
+        {
+            MappingVersion::V1
+        } else {
+            MappingVersion::LATEST
+        }
+    }
 }
+
+/// The Droid release series whose session files the v1 rules were written against.
+const V1_DROID_SERIES: &str = "0.247";
 
 #[cfg(test)]
 mod tests {
