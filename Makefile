@@ -44,6 +44,7 @@ check-links: ## Check links in markdown (needs network)
 
 check-workflows: ## Lint GitHub workflows
 	@actionlint
+	@sh scripts/check-ci-jobs.sh
 
 check-file-size: ## Fail on tracked files larger than MAX_FILE_KB
 	@MAX_FILE_KB=$(MAX_FILE_KB) sh scripts/check-file-size.sh
