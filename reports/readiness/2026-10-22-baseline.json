@@ -1,0 +1,438 @@
+{
+  "repoUrl": "https://github.com/dctellya/droid-observatory",
+  "report": {
+    "large_file_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No git hooks, CI, .gitattributes/LFS, or linter config exists. Repo has no tooling yet."
+    },
+    "tech_debt_tracking": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No TODO scanner, linter, or quality platform. ai/RULES.md plans a BACKLOG.md but it does not exist yet."
+    },
+    "build_cmd_doc": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "README.md is one line of description; no build/package command documented. No AGENTS.md."
+    },
+    "deps_pinned": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No manifest or lockfile (no Cargo.toml/Cargo.lock, package.json, etc.). Nothing to pin yet."
+    },
+    "vcs_cli_tools": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "gh auth status: logged in to github.com as dctellya with repo and admin:org scopes; admin on this repo."
+    },
+    "automated_pr_review": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh pr list --state all returns []. No PRs and no review automation (no .github/workflows, no danger, no droid review)."
+    },
+    "agentic_development": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "git log shows 2 of 3 commits with Co-authored-by: factory-droid[bot]; ai/session/ logs a Droid-run ideation session; ai/RULES.md defines a Factory Mission workflow."
+    },
+    "fast_ci_feedback": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh available but no CI workflows exist and no PRs have run checks. Nothing to measure."
+    },
+    "build_performance_tracking": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No build system, no CI, no caching configuration."
+    },
+    "deployment_frequency": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh release list and gh run list both empty. No deploy automation."
+    },
+    "single_command_setup": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No README/AGENTS.md command from clone to running target. ai/RULES.md rule 5 requires it but nothing exists yet."
+    },
+    "feature_flag_infrastructure": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No feature flag system configured."
+    },
+    "release_notes_automation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No semantic-release, changesets, release-please, or changelog tooling."
+    },
+    "progressive_rollout": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: not an infrastructure repository (desktop app, docs-only today)."
+    },
+    "rollback_automation": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: not an infrastructure repository."
+    },
+    "monorepo_tooling": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: single-application repository with no build modules."
+    },
+    "version_drift_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: zero build packages/modules exist."
+    },
+    "release_automation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .github/workflows, no CD pipeline, no release automation."
+    },
+    "dead_feature_flag_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: prerequisite feature_flag_infrastructure fails."
+    },
+    "agents_md": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No AGENTS.md at repository root."
+    },
+    "readme": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "README.md exists but is a 130-char description with no setup or usage instructions."
+    },
+    "automated_doc_generation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No doc generation tooling (rustdoc publish, OpenAPI, changelog generator, droid exec docs) configured."
+    },
+    "skills": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .factory/skills/, .skills/, or .claude/skills/ directory."
+    },
+    "documentation_freshness": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "git log --since=\"180 days ago\" -- README.md shows README.md modified 2026-10-22 (initial commit)."
+    },
+    "service_flow_documented": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "ai/prd/droid-observatory-prd.md §11 documents external data sources (droid exec JSON-RPC, ~/.factory JSONL, git, GitHub API) and includes a component architecture diagram."
+    },
+    "agents_md_validation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Prerequisite agents_md fails; no AGENTS.md validation exists."
+    },
+    "devcontainer": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .devcontainer/devcontainer.json."
+    },
+    "env_template": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .env.example and no environment variables documented in README or AGENTS.md."
+    },
+    "local_services_setup": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no external service dependencies (desktop app reading local files; no code yet)."
+    },
+    "devcontainer_runnable": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no devcontainer configured to run."
+    },
+    "runbooks_documented": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No runbooks/ directory and no pointers to runbooks or incident procedures in README or docs."
+    },
+    "branch_protection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Admin access confirmed. gh api rulesets returns []; branches/main/protection returns 404 \"Branch not protected\"."
+    },
+    "secret_scanning": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "gh api /repos/dctellya/droid-observatory/secret-scanning/alerts returns 200 with [] (feature enabled, no alerts)."
+    },
+    "codeowners": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No CODEOWNERS in root or .github/."
+    },
+    "automated_security_review": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Admin access confirmed. gh api code-scanning/alerts returns 404 \"no analysis found\"; no SAST workflows, no Dependabot/Snyk reports."
+    },
+    "dependency_update_automation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .github/dependabot.yml or renovate config."
+    },
+    "gitignore_comprehensive": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .gitignore file exists."
+    },
+    "privacy_compliance": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: developer tool with no end-user data collection."
+    },
+    "secrets_management": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .gitignore, no .env.example, no GitHub Actions secrets usage, no secrets manager integration. ai/RULES.md rule 4 states a keychain-only policy, but nothing is implemented or configured."
+    },
+    "min_release_age": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No Renovate minimumReleaseAge, no documented dependency delay policy, no CI release-age check."
+    },
+    "issue_templates": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .github/ISSUE_TEMPLATE/ directory."
+    },
+    "issue_labeling_system": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh label list shows only GitHub default labels (bug, enhancement, documentation...). No priority or area labels."
+    },
+    "backlog_health": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh issue list --state open returns []. No issues exist; no backlog to evaluate, treated as not established."
+    },
+    "pr_templates": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .github/pull_request_template.md."
+    },
+    "lint_config": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No linter configured (no Cargo.toml/clippy config, no eslint, etc.). No source code exists."
+    },
+    "type_check": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No code or build configuration; no compiler is invoked by any documented build."
+    },
+    "formatter": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No formatter configuration (no rustfmt.toml, prettier, etc.)."
+    },
+    "pre_commit_hooks": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No husky, lefthook, .pre-commit-config.yaml, or checked-in hook scripts."
+    },
+    "strict_typing": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: planned language is Rust, which has no distinct strict mode; no code exists."
+    },
+    "naming_consistency": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No linter naming rules and no naming conventions documented in AGENTS.md or CONTRIBUTING.md."
+    },
+    "cyclomatic_complexity": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No complexity analysis tooling configured."
+    },
+    "dead_code_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No dead code detection tooling (cargo-udeps, etc.) configured."
+    },
+    "duplicate_code_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No duplicate code detection tooling (jscpd, PMD CPD, Sonar) configured."
+    },
+    "code_modularization": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: planned Rust codebase (compiler-enforced visibility); no code exists."
+    },
+    "n_plus_one_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no database/ORM usage."
+    },
+    "heavy_dependency_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application, not a web bundle; no code exists."
+    },
+    "unused_dependencies_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No unused dependency tooling configured (cargo-udeps, depcheck, etc.)."
+    },
+    "unit_tests_exist": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No test files exist in the repository."
+    },
+    "integration_tests_exist": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No integration test suites exist."
+    },
+    "unit_tests_runnable": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No tests and no test runner exist to invoke; Rust toolchain availability is irrelevant with zero tests."
+    },
+    "test_performance_tracking": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No test timing output, reports, or analytics configured."
+    },
+    "flaky_test_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "gh available: no PRs with status checks; no retry config or flaky tracking tooling."
+    },
+    "test_coverage_thresholds": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No coverage tooling or thresholds configured."
+    },
+    "test_naming_conventions": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No test framework configuration and no test naming conventions documented."
+    },
+    "test_isolation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No test framework configured for parallel or isolated execution."
+    },
+    "interactive_qa_exists": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No documented path to install, launch, and exercise the application. README has no instructions; no AGENTS.md, scripts, or QA harness."
+    },
+    "interactive_qa_runnable": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No runnable application exists and no documented QA path to fall back on."
+    },
+    "api_schema_docs": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application without an HTTP API."
+    },
+    "database_schema": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no database exists yet (PRD plans a SQLite index, not implemented)."
+    },
+    "structured_logging": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No logging library in dependencies and no logger module; no code exists."
+    },
+    "distributed_tracing": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No trace/request ID propagation; no code exists."
+    },
+    "metrics_collection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No metrics/telemetry instrumentation configured."
+    },
+    "code_quality_metrics": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Admin access confirmed. gh api code-scanning returns 404 no analysis; no coverage config, no Sonar, no PR coverage comments."
+    },
+    "error_tracking_contextualized": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No Sentry, Bugsnag, or Rollbar configuration."
+    },
+    "alerting_configured": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No alerting rules or PagerDuty/OpsGenie configuration."
+    },
+    "deployment_observability": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No dashboard pointers or deploy notification integrations documented."
+    },
+    "health_checks": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application, not a deployed service."
+    },
+    "circuit_breakers": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no application code with external service calls exists yet."
+    },
+    "profiling_instrumentation": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no application code; profiling not meaningful yet."
+    },
+    "dast_scanning": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application, not deployed as a web service."
+    },
+    "pii_handling": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: developer utility that does not process personal user data."
+    },
+    "log_scrubbing": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No redaction/sanitization mechanism configured or documented. PRD notes raw JSONL may contain secrets but defines no scrubbing."
+    },
+    "product_analytics_instrumentation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No product analytics SDK (Mixpanel, PostHog, GA4...) instrumented."
+    },
+    "error_to_insight_pipeline": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No error tracking tool and no error-to-issue integration configured."
+    }
+  },
+  "apps": {
+    ".": {
+      "description": "droid-observatory: planned Tauri 2 (Rust) desktop app to observe Factory Mission features across orchestrated lanes; currently documentation only (PRD, rules, spec template, session log)"
+    }
+  },
+  "commitHash": "56ba6c696a10aac5e53166f35cf429cce91f2d42",
+  "branch": "main",
+  "hasLocalChanges": false,
+  "hasNonRemoteCommits": true,
+  "droidVersion": "0.247.0",
+  "reportId": "a8ae86a5-c7fc-4da6-98d2-42008b1b5845",
+  "createdAt": 1792669447098,
+  "sourceSessionId": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c"
+}

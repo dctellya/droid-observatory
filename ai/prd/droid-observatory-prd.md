@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v0.2 for review |
+| Status | Draft v0.3 for review |
 | Date | 2026-10-22 |
 | Owner | dct |
 | Author | Droid (ideation session, see `ai/session/2026-10-22-session.md`) |
-| Changes from v0.1 | See Appendix C |
+| Changes from v0.1 and v0.2 | See Appendix C |
 
 ---
 
@@ -29,6 +29,8 @@ This section defines the units the board shows. Everything else follows from it.
 - **The fix loop after CI red reopens the mission on its branch.** It does not open a new PR. The same PR goes green or stays red.
 
 On the board: **cards are milestones**; the gate group in lane 8 is the mission's one PR; lane 6 is integration into `mission/<name>`; lane 8 is the PR.
+
+**Models per role** (decision D-006; `ai/RULES.md` rule 19): orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`. Reasoning effort per role is declared in the spec. A change of model is a decision file.
 
 ## 3. Problem
 
@@ -102,7 +104,7 @@ A card moves left to right. Its position is the lane where its most recent open 
 
 ### 8.1 Card anatomy
 
-```
+```text
 ┌──────────────────────────────────────────────────────┐
 │ M2  Live host and agents                    [Details]│
 │ features 4/6 done · worktree wt/m2 · mission/obs-v1  │
@@ -293,7 +295,7 @@ Open item: the exact JSON-RPC event schema for missions (how worker child sessio
 
 ### 11.2 Components
 
-```
+```text
 ┌─────────────────────────── Tauri 2 shell ───────────────────────────┐
 │  UI (webview)                                                        │
 │   board · details · agents · metrics · launch · settings            │
@@ -322,6 +324,15 @@ Open item: the exact JSON-RPC event schema for missions (how worker child sessio
 - GitHub token and Factory credentials stay in the OS keychain (Tauri keyring plugin). Never written to the store or logs.
 - Raw JSONL may contain secrets from tool output; the app renders it read-only and never uploads it.
 - Merge is the only outward-facing write. It requires an explicit confirmation naming the PR and target branch.
+
+### 11.4 Telemetry export (Grafana Cloud)
+
+Two kinds of telemetry leave the app, both over OpenTelemetry OTLP (`http/protobuf`) to a Grafana Cloud stack, both off by default so the app works fully offline (decision D-004):
+
+- **App telemetry**: `tracing` spans for ingest, mapping, metrics, and control; errors as span events.
+- **Mission metrics**: the lane-9 series, so the budget meter and waste can be charted and alerted on outside the desktop window. Metric names are a contract: `observatory.mission.cycle_seconds`, `observatory.feature.cycle_seconds`, `observatory.waste_seconds` (by role and cause), `observatory.rework_windows`, `observatory.fix_loops`, `observatory.tokens` (by role, model, class), `observatory.cost` (by unit and price table), `observatory.active_agents`.
+
+Endpoint and credentials come from `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` or the OS keychain, never from the repository. Config keys and defaults: `config/observatory.example.toml` `[telemetry]`. CI telemetry is deferred (B-002).
 
 ## 12. Technology options and recommendation
 
@@ -446,3 +457,11 @@ pub struct ReworkWindow {
 | Price table | Old model ids | Current ids: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5-20251001`; dated |
 | Milestones | M0–M5 | Same order; one mission on `mission/observatory-v1`; M0 is the gate before detailed planning; M4 uses a private demo repo; M5 needs a human-produced reference spreadsheet; manual pre-capture optional |
 | FR-G | PR per feature | Mission branch identification, fast checks → lane 6, mission PR detection, rule attribution, fix on same branch, completion on merge |
+
+### v0.2 → v0.3 (repo readiness, 2026-10-22)
+
+| Area | v0.2 | v0.3 |
+|---|---|---|
+| Telemetry | Not addressed | New §11.4: Grafana Cloud over OTLP for app telemetry and lane-9 mission metrics; metric names as contract; off by default (D-004) |
+| Models per role | Not stated | §2: orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5` (D-006) |
+| Repository | None | Readiness scaffold: CI gate (D-003), ruleset (D-007), Renovate (D-005), hooks, config contract, decisions, backlog |

@@ -15,6 +15,7 @@ Cargo.lock.orig
 node_modules/
 
 # Local tool state
+.lycheecache
 .factory/readiness-report.json
 .factory/*.local.json
 *.log

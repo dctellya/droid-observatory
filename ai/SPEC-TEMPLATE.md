@@ -2,7 +2,7 @@
 
 The structure every SPEC.md follows in this project. Adapted from the artstudio template for a build run as a Factory Mission: milestones instead of team phases, one mission branch, one pull request.
 
-```
+```text
 # <product> — Spec for the mission
 Owner: David Carbajosa (architect, reviewer, the human in lane 7). Implementers: one Factory Mission (orchestrator, workers, validators) under ai/RULES.md. Status: v<X.Y> (<date>). Living document: §9 is the human feedback channel, §10 the as-built history.
 
