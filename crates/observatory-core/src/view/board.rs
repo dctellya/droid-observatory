@@ -18,7 +18,16 @@ pub struct BoardView {
 
 impl BoardView {
     pub fn empty() -> Self {
-        Self { lanes: Vec::new() }
+        let lanes = Lane::ALL
+            .iter()
+            .map(|&lane| LaneView {
+                lane,
+                name: lane.name(),
+                aria_label: format!("lane-{}", lane.number()),
+                card_count: 0,
+            })
+            .collect();
+        Self { lanes }
     }
 
     pub fn card_count(&self) -> usize {
