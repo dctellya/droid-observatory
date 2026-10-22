@@ -9,3 +9,4 @@ publish.workspace = true
 
 [dependencies]
 leptos = { version = "0.8.22", features = ["csr"] }
+observatory-core = { workspace = true, default-features = false }

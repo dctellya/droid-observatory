@@ -6,7 +6,7 @@
   "build": {
     "devUrl": "http://localhost:3141",
     "frontendDist": "../ui/dist",
-    "beforeDevCommand": "trunk serve --config ui/Trunk.toml",
+    "beforeDevCommand": "trunk serve --config ui/Trunk.toml --port 3141 --open false",
     "beforeBuildCommand": "trunk build --release --config ui/Trunk.toml"
   },
   "app": {

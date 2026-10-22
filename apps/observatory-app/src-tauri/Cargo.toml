@@ -12,12 +12,14 @@ name = "observatory_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = "2.12.5"
+observatory-core.workspace = true
+tauri = { version = "2.12.5", features = [] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "process", "macros"] }
 
-# Declared ahead of host.rs (M2), the first tokio user; remove the entry with that module.
+# Declared ahead of their first use: tokio by host.rs (M2), observatory-core by the first Tauri
+# command (M1). Remove each entry with that module.
 [package.metadata.cargo-machete]
-ignored = ["tokio"]
+ignored = ["tokio", "observatory-core"]

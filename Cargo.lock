@@ -2753,6 +2753,7 @@ dependencies = [
 name = "observatory-app"
 version = "0.1.0"
 dependencies = [
+ "observatory-core",
  "tauri",
  "tauri-build",
  "tokio",
@@ -2788,6 +2789,7 @@ name = "observatory-ui"
 version = "0.1.0"
 dependencies = [
  "leptos",
+ "observatory-core",
 ]
 
 [[package]]
