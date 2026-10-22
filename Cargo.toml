@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/observatory-core"]
+members = [
+  "crates/observatory-core",
+  "crates/observatory-cli",
+  "apps/observatory-app/src-tauri",
+  "apps/observatory-app/ui",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +15,7 @@ repository = "https://github.com/dctellya/droid-observatory"
 publish = false
 
 [workspace.dependencies]
+observatory-core = { path = "crates/observatory-core", version = "0.1.0" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }
