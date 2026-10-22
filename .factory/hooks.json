@@ -1,0 +1,19 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "Execute",
+      "commandRegex": "git ",
+      "hooks": [
+        { "type": "command", "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/guard-git.sh", "timeout": 10 }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/log-tool-call.sh", "timeout": 10 }
+      ]
+    }
+  ]
+}

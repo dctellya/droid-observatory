@@ -1,0 +1,34 @@
+#!/bin/sh
+# Pre-commit: fast local checks. Enable with `make hooks`.
+# Mirrors the mission-branch CI so a red commit is caught before push (ai/RULES.md rule 6).
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: secrets"
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner --redact
+else
+  echo "  gitleaks missing (brew install gitleaks); CI will catch secrets, local check skipped"
+fi
+
+echo "pre-commit: file size"
+MAX_FILE_KB=${MAX_FILE_KB:-200} sh scripts/check-file-size.sh
+
+echo "pre-commit: debt markers"
+sh scripts/check-todos.sh
+
+if git diff --cached --name-only | grep -q '^docs/decisions/D-'; then
+  echo "pre-commit: decisions index"
+  sh scripts/gen-decisions-index.sh | diff -q docs/decisions/README.md - >/dev/null \
+    || { echo "  decisions index stale: run 'make decisions-index' and stage it"; exit 1; }
+fi
+
+if [ -f Cargo.toml ] && git diff --cached --name-only | grep -q '\.rs$'; then
+  echo "pre-commit: rustfmt"
+  cargo fmt --all -- --check
+fi
+
+if git diff --cached --name-only | grep -q '\.md$' && command -v markdownlint-cli2 >/dev/null 2>&1; then
+  echo "pre-commit: markdown"
+  git diff --cached --name-only --diff-filter=ACM | grep '\.md$' | xargs markdownlint-cli2
+fi

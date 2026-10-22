@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-push: refuse history rewrites and direct pushes to main (ai/RULES.md rule 12).
+set -eu
+remote=$1
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "pre-push: direct push to main refused; open the mission's pull request instead"
+      exit 1 ;;
+  esac
+  # A non-fast-forward push means history was rewritten.
+  if [ "$remote_sha" != "0000000000000000000000000000000000000000" ] && [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+      echo "pre-push: $remote_ref is not a fast-forward; history rewrites are forbidden (rule 12)"
+      exit 1
+    fi
+  fi
+done
+exit 0

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Commit message: first line under 72 characters, non-empty, no WIP.
+set -eu
+msg_file=$1
+first=$(head -n1 "$msg_file")
+len=$(printf '%s' "$first" | wc -c | tr -d ' ')
+if [ -z "$first" ]; then echo "commit-msg: empty subject"; exit 1; fi
+if [ "$len" -gt 72 ]; then echo "commit-msg: subject is $len chars, limit 72"; exit 1; fi
+case "$first" in
+  WIP*|wip*|fixup!*|squash!*) echo "commit-msg: no WIP/fixup/squash commits on shared branches (rule 12)"; exit 1 ;;
+esac
