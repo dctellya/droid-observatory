@@ -22,3 +22,4 @@ the reason struck through, not deleted.
 | B-014 | Dead code and unused dependency checks (`cargo-udeps`, `cargo-machete`) in the mission-branch CI | Needs code; nightly toolchain for udeps is a cost to weigh. Spec §7 decides. | with skeleton |
 | B-015 | Readiness report re-run at every milestone integration, stored in `reports/readiness/` | Baseline exists; cadence belongs to the spec. | each milestone |
 | B-016 | `release.yml` checks that the `Cargo.toml` workspace version equals the tag | Needs `Cargo.toml` (D-009). | with skeleton |
+| B-017 | Spec states the exported metric set, histogram buckets and the computed active-series count, under 200 (D-010) | Needs the metric set frozen; label cardinalities come from the spec's milestone and cause lists. | spec session |

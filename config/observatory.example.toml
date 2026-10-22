@@ -50,27 +50,41 @@ budget = 0.0
 
 [telemetry]
 # OTLP export of the app's own traces/metrics and of lane-9 mission metrics to Grafana Cloud
-# (docs/decisions/D-004). Off by default: the observatory must work fully offline.
+# (docs/decisions/D-004, contract in D-010). Off by default: the observatory must work fully
+# offline. Also stays off, with a visible UI state, when the keychain item below is missing.
 enabled = false
 # Protocol Grafana Cloud's OTLP gateway accepts.
 protocol = "http/protobuf"
-# Endpoint and headers are NOT here: OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
-# come from the environment or the keychain entry "droid-observatory/otlp-headers".
+# The owner's stack gateway (D-010). Not a secret. Signals go to /v1/metrics, /v1/traces, /v1/logs.
+endpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
+# The Authorization header value ("Authorization=Basic ...") is read at runtime from the macOS
+# keychain item with this service name and the current user as account. It is never written
+# to config, the store or logs. No environment fallback in the app (CI uses B-002's secret).
+keychain_service = "droid-observatory/otlp-headers"
 service_name = "droid-observatory"
-# Resource attributes added to every signal. deployment.environment distinguishes the
-# dogfooding mission from real use.
-resource_attributes = { "deployment.environment" = "dev", "service.namespace" = "droid-observatory" }
+# Resource attributes are fixed by D-010: service.name (above) and service.version (crate
+# version, added by the app). No other resource attribute is sent.
 # Metric export cadence. 15 s is Grafana Cloud's default scrape-equivalent and keeps
 # the lane-9 budget meter near-live without flooding the gateway.
 metric_export_interval_s = 15
-# Which lane-9 series to export (names are the contract; see docs/decisions/D-004).
+# Attributes a metric may carry (D-010). Anything else is a bug: never session id, event id,
+# feature id or free text.
+metric_labels_allowed = ["mission", "milestone", "role", "model", "cause"]
+# Active series the app may add on the stack (D-010). The spec states the computed number
+# for the metric set below (BACKLOG B-017); the exporter refuses to start above it.
+max_series = 200
+# Lane-9 series to export (names are the contract; D-010). Counters and histograms only.
+# Former per-attribute splits are now in the name (tokens by class, cost in USD).
 mission_metrics = [
   "observatory.mission.cycle_seconds",
   "observatory.feature.cycle_seconds",
   "observatory.waste_seconds",
   "observatory.rework_windows",
   "observatory.fix_loops",
-  "observatory.tokens",
-  "observatory.cost",
-  "observatory.active_agents",
+  "observatory.tokens.input",
+  "observatory.tokens.output",
+  "observatory.tokens.cache_read",
+  "observatory.tokens.cache_write",
+  "observatory.cost_usd",
+  "observatory.unknown_events",
 ]
