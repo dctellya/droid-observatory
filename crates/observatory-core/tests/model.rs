@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
     Event, EventId, EventKind, FeatureId, Lane, MilestoneId, MissionId, ModelId, Role, SessionId,
     SourcePtr, Timestamp, TokenUsage,
@@ -74,6 +75,7 @@ fn event_with(source: SourcePtr, kind: EventKind) -> Event {
             credits: Some(0.5),
         }),
         source,
+        mapping_version: MappingVersion::LATEST,
     }
 }
 
@@ -125,4 +127,33 @@ fn event_rejects_unknown_fields() {
     let mut value = serde_json::to_value(&event).expect("event serializes");
     value["surprise"] = serde_json::json!(true);
     assert!(serde_json::from_value::<Event>(value).is_err());
+}
+
+#[test]
+fn every_event_carries_the_mapping_version() {
+    let pointers = [
+        jsonl_pointer(),
+        SourcePtr::Git {
+            repo: PathBuf::from("/work/repo"),
+            sha: "7f64f5a".to_owned(),
+        },
+        SourcePtr::App { action_id: 7 },
+    ];
+
+    for source in pointers {
+        let event = event_with(source, EventKind::TaskDone);
+        assert_eq!(event.mapping_version, MappingVersion::LATEST);
+
+        let mut value = serde_json::to_value(&event).expect("event serializes");
+        assert_eq!(value["mapping_version"], "v1");
+
+        value
+            .as_object_mut()
+            .expect("event is an object")
+            .remove("mapping_version");
+        assert!(
+            serde_json::from_value::<Event>(value).is_err(),
+            "an event without mapping_version must not deserialize"
+        );
+    }
 }
