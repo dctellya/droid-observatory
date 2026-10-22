@@ -1,0 +1,33 @@
+name: Feature
+description: A capability the observatory should have
+title: "[feature] "
+labels: ["type:feature", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What the mission owner, reviewer, or lead cannot see or do today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What changes on the board, in Details, in metrics, or in the data model.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: How a validator would prove it works (test, fixture, QA scenario).
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: ["area:core", "area:ingest", "area:metrics", "area:ui", "area:gate", "area:ci", "area:docs"]
+    validations:
+      required: true

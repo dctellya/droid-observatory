@@ -1,0 +1,72 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates with a 7-day release-age gate (ai/RULES.md rule 3; docs/decisions/D-005). Renovate verified at 44.176.3 on 2026-10-22.",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitsDisabled"
+  ],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "dependencyDashboard": true,
+  "baseBranches": ["main"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Madrid",
+  "prConcurrentLimit": 3,
+  "labels": ["type:chore", "area:deps"],
+  "commitMessagePrefix": "deps:",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "All Cargo updates in one grouped PR",
+      "matchManagers": ["cargo"],
+      "groupName": "cargo dependencies",
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "GitHub Actions grouped, digests pinned with version comment",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "pinDigests": true
+    },
+    {
+      "description": "Rust toolchain moves only by decision file: PR opened, never auto-merged",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["rust"],
+      "groupName": "rust toolchain",
+      "addLabels": ["type:decision"]
+    },
+    {
+      "description": "Security advisories bypass the release-age gate",
+      "matchCategories": ["security"],
+      "minimumReleaseAge": null,
+      "prPriority": 10
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "rust-toolchain.toml channel",
+      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "packageNameTemplate": "rust-lang/rust",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Container images referenced in workflows (semgrep, actionlint)",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": ["(?:image|uses):\\s*(?:docker://)?(?<depName>semgrep/semgrep|rhysd/actionlint):(?<currentValue>[\\w.-]+)"],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["type:security"]
+  },
+  "osvVulnerabilityAlerts": true
+}
