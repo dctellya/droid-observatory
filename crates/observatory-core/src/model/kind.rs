@@ -13,6 +13,9 @@ macro_rules! event_kinds {
         #[serde(rename_all = "snake_case")]
         pub enum EventKind {
             $($variant,)*
+            /// A raw record the mapping does not know. It is counted and shown, never
+            /// dropped (rule 18); `raw_type` is the record's own `type` value.
+            Unknown { raw_type: String },
         }
 
         impl EventKind {
@@ -24,13 +27,15 @@ macro_rules! event_kinds {
             pub fn prd_name(&self) -> Cow<'_, str> {
                 match self {
                     $(EventKind::$variant => Cow::Borrowed($name),)*
+                    EventKind::Unknown { .. } => Cow::Borrowed("unknown.event"),
                 }
             }
 
-            /// The PRD lane of a known kind.
+            /// The PRD lane of a known kind; `None` for `Unknown`, where the session role decides.
             pub fn lane(&self) -> Option<Lane> {
                 match self {
                     $(EventKind::$variant => Some(Lane::$lane),)*
+                    EventKind::Unknown { .. } => None,
                 }
             }
         }
