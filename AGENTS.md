@@ -30,6 +30,22 @@ make app-dev         # Tauri dev window (after the app exists)
 Toolchain: `rust-toolchain.toml` (1.99.1, rustfmt, clippy, wasm32 target). Do not change it
 without a decision file.
 
+## Runtime limits (measured)
+
+Measured 2026-10-22 on the owner's machine; source `reports/readiness/2026-10-22-validation-readiness.md`
+(SPEC §5.8):
+
+- At most 3 concurrent agent-browser validator sessions per `trunk serve` (1.34-1.54 GB RSS each,
+  CPU negligible idle); use `--session <name>` per validator.
+- `cargo llvm-cov` runs alone (1-min load 3.3 → 14.6 on 10 cores during the scratch run).
+- All cargo builds serialize on the shared `CARGO_TARGET_DIR` lock
+  (`Blocking waiting for file lock on build directory`); expect waits, not failures.
+- `trunk serve` and `cargo tauri dev` coexist only when exactly one trunk owns port 3141
+  (`cargo tauri dev` starts its own); killing `cargo-tauri` alone orphans trunk and the app binary.
+- Cold `trunk serve` 55.94 s, incremental 1.46-2.08 s, `cargo tauri dev` to running app 37.66 s.
+- The Tauri window has no CDP endpoint; validators use the smoke check (process alive, `Running`
+  log line, WebKit connections on 3141, System Events listing) plus the browser path on 3141.
+
 ## Interactive QA path
 
 Until the app exists: `make check` is the only runnable target.
@@ -121,6 +137,11 @@ Deviations from the spec are proposed with reason and cost, and wait for approva
 See `.env.example`. Secrets come from the OS keychain (`droid-observatory/<name>` entries)
 or the environment, never from the repository, the store, or logs. Raw session JSONL may
 contain secrets: render read-only, never upload, never copy into the store.
+
+- The GitHub token is a read-only fine-grained PAT; read check results via Actions runs
+  (`/repos/{o}/{r}/actions/runs`) and commit statuses (`/repos/{o}/{r}/commits/{sha}/status`), not the
+  Checks API (no Checks permission). Keychain items are generic passwords with service
+  `droid-observatory/<name>` (see `reports/readiness/2026-10-22-dependency-readiness.md`).
 
 Grafana Cloud OTLP (`OTEL_EXPORTER_OTLP_*`) is the telemetry backend; export is off unless
 `[telemetry].enabled = true`.

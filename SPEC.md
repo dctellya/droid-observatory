@@ -2,7 +2,7 @@
 
 Owner: David Carbajosa (architect, reviewer, the human in lane 7). Implementers: one Factory
 Mission (orchestrator, workers, validators) under ai/RULES.md. Status: v0.1 approved by the owner
-(2026-10-22). Living document: §9 is the human feedback channel, §10 the as-built history.
+(2026-10-22); v0.2: §5.8 concurrency limits added (owner decision 2026-10-22). Living document: §9 is the human feedback channel, §10 the as-built history.
 
 Inputs: `ai/prd/droid-observatory-prd.md` (v0.5), `ai/prd/review-2026-10-22.md`, `ai/RULES.md`,
 `ai/SPEC-TEMPLATE.md`, `docs/decisions/D-001..D-010`, `BACKLOG.md`, `config/observatory.example.toml`,
@@ -525,6 +525,17 @@ The UI holds at most the visible window of events; everything else is a store qu
 mission can emit tens of thousands of lines; the board must stay at 60 fps on a laptop). The host
 child process is reaped on window close (M2 test). No network access except GitHub (when a token
 is present) and the OTLP gateway (when enabled); both are shown in a status bar.
+
+Validation and build concurrency (measured 2026-10-22; source:
+`reports/readiness/2026-10-22-validation-readiness.md`):
+
+- At most 3 concurrent agent-browser validator sessions per `trunk serve` (1.34-1.54 GB RSS each,
+  CPU negligible idle).
+- `cargo llvm-cov` runs alone (1-min load 3.3 → 14.6 on 10 cores during the scratch run).
+- All cargo builds serialize on the shared `CARGO_TARGET_DIR` lock
+  (`Blocking waiting for file lock on build directory`).
+- `trunk serve` and `cargo tauri dev` coexist only when exactly one trunk owns port 3141.
+- Cold `trunk serve` 55.94 s, incremental 1.46-2.08 s, `cargo tauri dev` to running app 37.66 s.
 
 ### 5.9 Security
 
