@@ -1,0 +1,71 @@
+# droid-observatory configuration (example). Copy to ~/.droid-observatory/config.toml.
+# Every value has a default and a reason (ai/RULES.md rule 4). Secrets never live here:
+# they come from the OS keychain or the environment (see .env.example).
+#
+# Status: contract for the mission to implement. Keys may be added by decision file;
+# none are read by any code yet.
+
+[mission]
+# Default models per role, mirrored in .factory/settings.json and the mission command
+# (ai/RULES.md rule 19; docs/decisions/D-006). A change is a decision file.
+orchestrator_model = "claude-fable-5-1"
+worker_model = "claude-sonnet-5-5"
+validator_model = "claude-opus-5-5"
+# Branch the mission integrates into (PRD §2). "<name>" is the mission name.
+branch_pattern = "mission/<name>"
+
+[ingest]
+# Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
+factory_sessions_dir = "~/.factory/sessions"
+# How often the attach/replay tailer re-reads a growing JSONL file. 500 ms keeps
+# "live within 1 s" (PRD FR-B6) with headroom and negligible IO.
+jsonl_poll_ms = 500
+
+[github]
+# Poll interval for PR, checks and rulesets on the gate. 30 s stays well under GitHub's
+# unauthenticated-equivalent budget for a single-user app and is fast enough for a human watching a gate.
+poll_interval_s = 30
+# App-level override of the merge policy read from branch protection/rulesets (PRD FR-G4).
+# "auto" = read from GitHub; "human" = always require the Merge button; "policy" = never show it.
+merge_policy = "auto"
+
+[intervention]
+# A feature with no active time for this long raises the stall flag (PRD FR-H5).
+# 20 minutes matches the troubleshooting examples in Factory's mission docs.
+stall_threshold_min = 20
+
+[metrics]
+# Price table used for cost when the stream does not expose credits (PRD §10.5).
+# Dated file so every cost names the prices it used.
+price_table = "config/prices/2026-10-22.toml"
+# Mission overhead apportionment: "separate" (default, PRD §10.3) or "equal".
+overhead_apportionment = "separate"
+# Optional budget in the price table's currency; 0 disables the budget meter (PRD FR-M6).
+budget = 0.0
+
+[telemetry]
+# OTLP export of the app's own traces/metrics and of lane-9 mission metrics to Grafana Cloud
+# (docs/decisions/D-004). Off by default: the observatory must work fully offline.
+enabled = false
+# Protocol Grafana Cloud's OTLP gateway accepts.
+protocol = "http/protobuf"
+# Endpoint and headers are NOT here: OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
+# come from the environment or the keychain entry "droid-observatory/otlp-headers".
+service_name = "droid-observatory"
+# Resource attributes added to every signal. deployment.environment distinguishes the
+# dogfooding mission from real use.
+resource_attributes = { "deployment.environment" = "dev", "service.namespace" = "droid-observatory" }
+# Metric export cadence. 15 s is Grafana Cloud's default scrape-equivalent and keeps
+# the lane-9 budget meter near-live without flooding the gateway.
+metric_export_interval_s = 15
+# Which lane-9 series to export (names are the contract; see docs/decisions/D-004).
+mission_metrics = [
+  "observatory.mission.cycle_seconds",
+  "observatory.feature.cycle_seconds",
+  "observatory.waste_seconds",
+  "observatory.rework_windows",
+  "observatory.fix_loops",
+  "observatory.tokens",
+  "observatory.cost",
+  "observatory.active_agents",
+]

@@ -1,0 +1,38 @@
+name: Bug
+description: Something the observatory does that it should not, or does not do that it should
+title: "[bug] "
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed
+      description: What happened. Paste the exact output, event, or screenshot.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What the PRD, spec, or a decision file says should happen. Link the section.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps, or the fixture / session id that reproduces it (`fixtures/streams/...`, `~/.factory/sessions/...`).
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Lane
+      options: ["1 Intent", "2 Orchestrator", "3 Workers", "4 Scrutiny", "5 User testing", "6 Integration", "7 Human", "8 Outside", "9 Time/Waste/Cost", "App shell / other"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v0.1.0 or 56ba6c6"

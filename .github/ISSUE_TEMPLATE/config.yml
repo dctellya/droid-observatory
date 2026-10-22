@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Backlog
+    url: https://github.com/dctellya/droid-observatory/blob/main/BACKLOG.md
+    about: Deferred items with their reasons live here, not in issues, until they are scheduled.

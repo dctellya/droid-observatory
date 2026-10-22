@@ -1,0 +1,28 @@
+name: Decision needed
+description: A choice the human must make before or between milestones (ai/RULES.md rules 9 and 15)
+title: "[decision] "
+labels: ["type:decision", "needs-triage"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options with cost and consequence
+      description: One line each. The orchestrator proposes; the human decides.
+    validations:
+      required: true
+  - type: input
+    id: blocks
+    attributes:
+      label: Blocks
+      placeholder: "M2 start / nothing yet / fix cycle on M4"
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: Filled when decided. Becomes docs/decisions/D-NNN-slug.md.

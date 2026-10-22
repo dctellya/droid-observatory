@@ -1,0 +1,164 @@
+# The gate: the mission's single pull request into main (ai/RULES.md rules 6 and 12).
+# Everything from mission-branch.yml plus SAST, filesystem scan, workflow policy,
+# SBOM, the macOS Tauri bundle, build provenance and cosign signatures.
+# It never deploys.
+#
+# `gate` is the aggregate job and the only required status check in the main
+# ruleset (docs/decisions/D-003). Add jobs by appending them to its `needs`.
+
+name: gate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  detect:
+    name: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_rust: ${{ steps.probe.outputs.has_rust }}
+      has_fixtures: ${{ steps.probe.outputs.has_fixtures }}
+      has_tauri: ${{ steps.probe.outputs.has_tauri }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: probe
+        run: |
+          if [ -f Cargo.toml ]; then echo "has_rust=true" >> "$GITHUB_OUTPUT"; else echo "has_rust=false" >> "$GITHUB_OUTPUT"; fi
+          if ls fixtures/streams/*.jsonl >/dev/null 2>&1; then echo "has_fixtures=true" >> "$GITHUB_OUTPUT"; else echo "has_fixtures=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -f apps/observatory-app/src-tauri/tauri.conf.json ]; then echo "has_tauri=true" >> "$GITHUB_OUTPUT"; else echo "has_tauri=false" >> "$GITHUB_OUTPUT"; fi
+
+  light:
+    name: light
+    uses: ./.github/workflows/mission-branch.yml
+    permissions:
+      contents: read
+
+  sast:
+    name: sast
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: semgrep/semgrep:1.182.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: semgrep
+        run: semgrep scan --config p/default --config p/rust --config p/secrets --config p/github-actions --error --metrics=off
+
+  fs-scan:
+    name: fs-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+
+  workflow-policy:
+    name: workflow-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: checkov on the workflows themselves
+        uses: bridgecrewio/checkov-action@c3e106d5f8f4253a6de5110efb41a080f83db294 # v12
+        with:
+          directory: .github/workflows
+          framework: github_actions
+          soft_fail: false
+
+  sbom:
+    name: sbom
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: sbom.spdx.json
+          upload-artifact: true
+
+  bundle:
+    name: bundle
+    needs: detect
+    if: needs.detect.outputs.has_tauri == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable; version from rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: trunk,tauri-cli
+      - name: build bundle
+        run: make app-build
+      - name: attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/macos/*.app.tar.gz
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: cosign sign (keyless)
+        run: |
+          for f in target/release/bundle/dmg/*.dmg; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-macos
+          path: |
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/dmg/*.sigstore.json
+
+  gate:
+    name: gate
+    needs: [detect, light, sast, fs-scan, workflow-policy, sbom, bundle]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: aggregate
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"result": *"(failure|cancelled)"'; then
+            echo "a gate job failed"; exit 1
+          fi
+          echo "gate green"

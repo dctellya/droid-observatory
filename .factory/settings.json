@@ -1,0 +1,8 @@
+{
+  "missionOrchestratorModel": "claude-fable-5-1",
+  "missionModelSettings": {
+    "workerModel": "claude-sonnet-5-5",
+    "validationWorkerModel": "claude-opus-5-5"
+  },
+  "keepSystemAwakeDuringMissions": true
+}

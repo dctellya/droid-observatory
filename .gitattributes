@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.rs text diff=rust
+*.toml text
+*.md text
+*.yml text
+*.yaml text
+*.json text
+*.sh text eol=lf
+Cargo.lock -diff merge=binary
+*.png binary
+*.webp binary
+*.mp4 binary
+*.jsonl text -diff

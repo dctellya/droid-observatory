@@ -1,0 +1,25 @@
+# Rules
+
+The rules this project inherits, adapted for a build run as a Factory Mission (orchestrator, workers, validators) with the human as owner. Derived from the artstudio set (14-oct-2026); rules that only made sense for a hand-run team are struck, not deleted, so the decision is visible.
+
+1. **Tests before code.** No production code without a failing test that asks for it. Workers write the test first and commit it red; validators check that the red run exists in the log. Tests are the contract between the spec and the build.
+2. **A walking skeleton first.** The thinnest end-to-end slice (core crate, canonical event model, `observatory replay` over one captured session, an empty board that starts) is on the mission branch before any milestone deepens its area, so every integration is checked by real acceptance tests.
+3. **Versions verified, latest stable.** Every crate, tool and image is pinned to a version checked against the official source on the day it is added; the spec's version table says when.
+4. **No secrets, no magic values.** Credentials only from the OS keychain or the environment, never in the repo, the store or the logs; every number (poll interval, stall threshold, price) comes from configuration with a stated default and a reason in the spec.
+5. **Everything from a clean clone.** `cargo test`, `cargo run -p observatory-cli -- replay <fixture>` and the app build work on a machine that has only the Rust toolchain and the Tauri prerequisites; the README's commands are the ones CI runs.
+6. **CI is a gate, not infrastructure.** Light checks on the mission branch: `cargo fmt --check`, `clippy -D warnings`, `cargo test`, the replay fixtures, `cargo deny` (advisories and licences), gitleaks. The full attested run on the one pull request into `main`: everything above plus Semgrep (SAST), Trivy filesystem scan on `Cargo.lock`, Checkov on the workflows themselves, an SBOM (`syft` or `cargo-sbom`), the Tauri bundle built on macOS, build provenance with `actions/attest-build-provenance`, cosign-signed artifacts, with the Trivy results and the SBOM attached to the release. It never deploys.
+7. **Counts come off the tool.** Test counts, timings, token usage and scan results are pasted from the run that produced them, never estimated.
+8. **The spec is as-built.** When the code and the spec disagree at the end of a milestone, the spec is updated in the same integration, with the reason in `docs/decisions/`.
+9. **Deviations are the human's to approve.** The orchestrator proposes, with reason and cost, and waits.
+10. **Honest time.** The README states the real time and usage spent per milestone; what was left out is listed, not hidden.
+11. **CI under three minutes warm on the mission branch.** Independent jobs in parallel, cargo and tool caches, prebuilt actions; the heavy stage only on the final pull request. Measured per run and reported.
+12. **Git forward only, one PR per mission.** Never amend, reset, rebase or stash; a mistake is fixed by a new commit. Milestones live in worktrees and are integrated into `mission/<name>`; nothing reaches `main` except the mission's single pull request. A milestone is never shippable; the mission is.
+13. **One file per decision, no shared files across worktrees.** `docs/decisions/D-NNN-slug.md` (what, why, alternatives, consequences); the index is generated. Two worktrees never edit the same file; the living spec sections are written by the orchestrator on the mission branch at integration time.
+14. **Review fixes what blocks.** Blocking and security findings are fixed in the milestone, once; everything else goes to `BACKLOG.md` with its reason. A review never starts a second round for style.
+15. **Nothing reaches an agent mid-task.** Decisions are settled before a milestone starts; what comes up later waits for the next milestone or goes to the backlog. The human messages the mission only at milestone boundaries or when the stall flag is up.
+16. **Deliverables grow with the work.** README, decisions, backlog, build-log and the session log start with the skeleton and are extended at every integration, never written at the end.
+17. **Everything is logged.** Hooks record every tool call to `build-log/`; every session transcript is linked from the session log; usage per model and per milestone is recorded. The build of the observatory is itself a dataset for the observatory.
+18. **Unknown is surfaced, never dropped.** An event the mapper does not recognise is counted and shown; a milestone that adds a source ends with zero unknown events on its capture.
+19. **Models per role are declared.** Orchestrator, worker and validator models are named in the spec and in the mission command; a change of model is a decision file.
+
+Struck from the artstudio set: *tester, coder and reviewer as separate agents per team* (the Mission's workers and validators take those roles; if the validators prove weaker, custom sub-droids bring the split back, as a decision); *the 90-minute box* (replaced by usage budgets per milestone).
