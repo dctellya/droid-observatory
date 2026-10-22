@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::mapping::MappingVersion;
+
 use super::ids::{EventId, FeatureId, MilestoneId, MissionId, ModelId, SessionId};
 use super::kind::EventKind;
 use super::lane::Lane;
@@ -61,6 +63,7 @@ pub struct Event {
     pub duration: Option<Duration>,
     pub usage: Option<TokenUsage>,
     pub source: SourcePtr,
+    pub mapping_version: MappingVersion,
 }
 
 /// `Duration` on the wire is an integer number of milliseconds.
