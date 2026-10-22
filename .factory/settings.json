@@ -1,8 +1,11 @@
 {
   "missionOrchestratorModel": "claude-fable-5.1",
+  "missionOrchestratorReasoningEffort": "high",
   "missionModelSettings": {
     "workerModel": "claude-sonnet-5-5",
-    "validationWorkerModel": "claude-opus-5-5"
+    "workerReasoningEffort": "high",
+    "validationWorkerModel": "claude-opus-5-5",
+    "validationWorkerReasoningEffort": "high"
   },
   "keepSystemAwakeDuringMissions": true
 }

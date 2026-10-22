@@ -7,7 +7,7 @@ anything here; this file is the operational summary.
 
 droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that shows a Factory Mission moving
 through nine lanes, with validation, gate, agent attribution, waste and cost per sub-droid.
-PRD: `ai/prd/droid-observatory-prd.md`. Spec (when written): `SPEC.md`.
+PRD: `ai/prd/droid-observatory-prd.md`. Spec: `SPEC.md` (approved 2026-10-22; the mission plans from it).
 
 Current state: no application code. The walking skeleton (core crate, canonical `Event`,
 `observatory replay` over one captured session, an empty board that starts) is the first
@@ -93,7 +93,8 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 
 - A decision is one file: `docs/decisions/D-NNN-slug.md` with `**Date:**`, `**Status:**`,
   context, decision, alternatives, consequences. Run `make decisions-index` after adding one.
-- Deferred work goes to `BACKLOG.md` as `B-NNN` with a reason, not into TODOs or issues.
+- Deferred work goes to the backlog (GitHub issues labelled `backlog`, indexed in `BACKLOG.md`)
+  as `B-NNN` with a reason, not into TODOs (rule 14).
 - Every session is logged under `ai/session/` with transcript links; every tool call is
   logged to `build-log/` by the PostToolUse hook. Do not disable the hooks.
 - Usage and waste per milestone go to `reports/` pasted from the tool that produced them.
@@ -108,7 +109,8 @@ Models per role (rule 19; `.factory/settings.json`; D-006):
 | Workers | `claude-sonnet-5-5` |
 | Validators (scrutiny, user testing) | `claude-opus-5-5` |
 
-Command: see README "Running it as a mission". Reasoning effort per role is set in `SPEC.md`.
+Command: see README "Running it as a mission".
+Reasoning effort: orchestrator `high`, workers `high`, validators `high` (SPEC §2).
 A model change is a decision file.
 
 The human answers only at milestone boundaries or when the stall flag is up (rule 15).
