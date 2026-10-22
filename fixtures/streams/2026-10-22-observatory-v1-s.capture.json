@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "droid_version": "0.247.0",
+  "captured_at": "2026-10-22T17:03:03Z",
+  "source_dir": "~/.factory/sessions/-Users-dct-code-EllyaOrg-projects-dalimaray-droid-observatory",
+  "mission_name": "observatory-v1",
+  "mapping_version": "v1",
+  "sessions": [
+    {
+      "id": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c",
+      "role": "orchestrator",
+      "file": "2026-10-22-observatory-v1-s.jsonl"
+    },
+    {
+      "id": "05820c7d-bd0e-4fe8-b869-cebb72727faa",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/05820c7d-bd0e-4fe8-b869-cebb72727faa.jsonl"
+    },
+    {
+      "id": "0b1286d9-4bf0-41ff-a14a-67ca7852ddc4",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/0b1286d9-4bf0-41ff-a14a-67ca7852ddc4.jsonl"
+    },
+    {
+      "id": "101b9e5d-3e26-424c-bb8d-6c5ad1d1e356",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/101b9e5d-3e26-424c-bb8d-6c5ad1d1e356.jsonl"
+    },
+    {
+      "id": "12af01f5-f1d7-4487-8595-767298110266",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/12af01f5-f1d7-4487-8595-767298110266.jsonl"
+    },
+    {
+      "id": "2abf7f4f-100f-4c9c-b12d-78675596ee0f",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/2abf7f4f-100f-4c9c-b12d-78675596ee0f.jsonl"
+    },
+    {
+      "id": "35fca0ab-5f7e-4924-9d1a-8bf250e785af",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/35fca0ab-5f7e-4924-9d1a-8bf250e785af.jsonl"
+    },
+    {
+      "id": "3d385317-7e9b-45de-b116-6ebc278d6ec0",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/3d385317-7e9b-45de-b116-6ebc278d6ec0.jsonl"
+    },
+    {
+      "id": "44e19307-7533-41a1-8f66-1234a1386401",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/44e19307-7533-41a1-8f66-1234a1386401.jsonl"
+    },
+    {
+      "id": "59ee8736-e49e-4091-9ade-536696563973",
+      "role": "explorer",
+      "file": "2026-10-22-observatory-v1-s.children/59ee8736-e49e-4091-9ade-536696563973.jsonl"
+    },
+    {
+      "id": "73cd8242-3b2c-46ef-b15c-3d2cb7088061",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/73cd8242-3b2c-46ef-b15c-3d2cb7088061.jsonl"
+    },
+    {
+      "id": "777c6203-0e4b-45db-8064-21ba6f1e9a51",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/777c6203-0e4b-45db-8064-21ba6f1e9a51.jsonl"
+    },
+    {
+      "id": "7be541b9-cee5-4643-b588-ae6c1f31c74c",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/7be541b9-cee5-4643-b588-ae6c1f31c74c.jsonl"
+    },
+    {
+      "id": "82ad1581-fe75-4436-ac9c-9bc1e20a789b",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/82ad1581-fe75-4436-ac9c-9bc1e20a789b.jsonl"
+    },
+    {
+      "id": "8ca62365-1d34-4e94-9473-df95d2229445",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/8ca62365-1d34-4e94-9473-df95d2229445.jsonl"
+    },
+    {
+      "id": "9b0e8fc9-8828-4ef3-8d63-ab3d05dc733d",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/9b0e8fc9-8828-4ef3-8d63-ab3d05dc733d.jsonl"
+    },
+    {
+      "id": "9d874ce8-7d72-4d9b-8c98-5f176e7ebd30",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/9d874ce8-7d72-4d9b-8c98-5f176e7ebd30.jsonl"
+    },
+    {
+      "id": "b19ddede-7907-444a-a16d-28ac6d1c122e",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/b19ddede-7907-444a-a16d-28ac6d1c122e.jsonl"
+    },
+    {
+      "id": "b82fb5f0-0e21-47d5-b3ae-fd37b86e9116",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/b82fb5f0-0e21-47d5-b3ae-fd37b86e9116.jsonl"
+    },
+    {
+      "id": "c911e77f-129c-45d7-bcb4-6a0136a28cb6",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/c911e77f-129c-45d7-bcb4-6a0136a28cb6.jsonl"
+    },
+    {
+      "id": "ca58108e-3da3-4ed6-bf3e-0a7073d5833b",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/ca58108e-3da3-4ed6-bf3e-0a7073d5833b.jsonl"
+    },
+    {
+      "id": "cef762e9-5544-40a6-a9fa-0b9b3593f743",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/cef762e9-5544-40a6-a9fa-0b9b3593f743.jsonl"
+    },
+    {
+      "id": "d1083556-f835-4f44-a0cf-c907eb18e1ab",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/d1083556-f835-4f44-a0cf-c907eb18e1ab.jsonl"
+    },
+    {
+      "id": "d7960fc7-c0a0-4f02-b8cf-408b7a8d3b92",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/d7960fc7-c0a0-4f02-b8cf-408b7a8d3b92.jsonl"
+    },
+    {
+      "id": "e2e3d113-d82b-4548-8809-4ebd269d1629",
+      "role": "explorer",
+      "file": "2026-10-22-observatory-v1-s.children/e2e3d113-d82b-4548-8809-4ebd269d1629.jsonl"
+    },
+    {
+      "id": "e5cb8077-02f7-4d30-acb4-349e8ee0abea",
+      "role": "worker",
+      "file": "2026-10-22-observatory-v1-s.children/e5cb8077-02f7-4d30-acb4-349e8ee0abea.jsonl"
+    }
+  ],
+  "captured_with": "droid --version",
+  "gitleaks": "clean 2026-10-22 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 25.72 MB scanned, no leaks found)",
+  "reviewed_by": "factory-droid[bot]"
+}
