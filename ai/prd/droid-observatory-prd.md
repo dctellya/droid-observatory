@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft v0.4 for review |
+| Status | Draft v0.5 for review |
 | Date | 2026-10-22 |
 | Owner | dct |
 | Author | Droid (ideation session, see `ai/session/2026-10-22-session.md`) |
-| Changes from v0.1, v0.2 and v0.3 | See Appendix C |
+| Changes from v0.1 to v0.4 | See Appendix C |
 
 ---
 
@@ -333,9 +333,9 @@ Open items: the exact JSON-RPC event schema for missions (how worker child sessi
 Two kinds of telemetry leave the app, both over OpenTelemetry OTLP (`http/protobuf`) to a Grafana Cloud stack, both off by default so the app works fully offline (decision D-004):
 
 - **App telemetry**: `tracing` spans for ingest, mapping, metrics, and control; errors as span events.
-- **Mission metrics**: the lane-9 series, so the budget meter and waste can be charted and alerted on outside the desktop window. Metric names are a contract: `observatory.mission.cycle_seconds`, `observatory.feature.cycle_seconds`, `observatory.waste_seconds` (by role and cause), `observatory.rework_windows`, `observatory.fix_loops`, `observatory.tokens` (by role, model, class), `observatory.cost` (by unit and price table), `observatory.active_agents`.
+- **Mission metrics**: the lane-9 series, so the budget meter and waste can be charted and alerted on outside the desktop window. Metric names are a contract: `observatory.mission.cycle_seconds`, `observatory.feature.cycle_seconds`, `observatory.waste_seconds`, `observatory.rework_windows`, `observatory.fix_loops`, `observatory.tokens.{input,output,cache_read,cache_write}`, `observatory.cost_usd`, `observatory.unknown_events`.
 
-Endpoint and credentials come from `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` or the OS keychain, never from the repository. Config keys and defaults: `config/observatory.example.toml` `[telemetry]`. CI telemetry is deferred (B-002).
+Contract (owner, D-010): OTLP over HTTP to `https://otlp-gateway-prod-eu-west-2.grafana.net/otlp` (`/v1/metrics`, `/v1/traces`, `/v1/logs`). The `Authorization=Basic …` header value is read at runtime from the macOS keychain item with service `droid-observatory/otlp-headers` and account = current user; never written to config, the store or logs; if the item is missing, telemetry stays off and the UI says so. Resource attributes: `service.name=droid-observatory`, `service.version`. Metric labels only from `mission`, `milestone`, `role`, `model`, `cause`; never session id, event id or free text. Counters and histograms only, no per-event gauges. The spec states the number of active series the app adds and keeps it under 200 (B-017). Config keys and defaults: `config/observatory.example.toml` `[telemetry]`. CI telemetry is deferred (B-002).
 
 ## 12. Technology options and recommendation
 
@@ -484,3 +484,15 @@ Source: `ai/prd/review-2026-10-22.md` item 5; decision D-008.
 | M3 | Intervention | Unchanged scope; stated as lane 7 semantics over the M2 controls plus approve/deny, mark complete/skipped, stall flag |
 | Dogfooding | From M1 onward (unspecified how) | Via attach the moment M1 lands; M2–M5 watched without hosting |
 | Risks | — | Added: notifier coalescing/missed events (poll fallback, startup scan); `--tag` recoverability (confirmed in M0) |
+
+### v0.4 → v0.5 (telemetry contract, 2026-10-22)
+
+Source: owner message in `ai/session/2026-10-22-session.md` entry 17; decision D-010.
+
+| Area | v0.4 | v0.5 |
+|---|---|---|
+| §11.4 endpoint and credential | Region placeholder; header from env or keychain | Fixed gateway `otlp-gateway-prod-eu-west-2`; header only from the keychain item `droid-observatory/otlp-headers`; missing item = telemetry off, shown in the UI |
+| §11.4 labels | `feature`, `session`, `class`, `unit`, `price_table`, `status` among attributes | Only `mission`, `milestone`, `role`, `model`, `cause`; splits moved into metric names (`tokens.*`, `cost_usd`) |
+| §11.4 instruments | Gauge `active_agents` | Counters and histograms only; `active_agents` not exported; `unknown_events` added |
+| §11.4 budget | Not stated | Spec states the series count, under 200 (B-017) |
+| Resource attributes | `deployment.environment`, `service.namespace` too | `service.name`, `service.version` only |

@@ -13,7 +13,9 @@ policy reader (FR-G4) will find, and they must not hang the final PR.
 GitHub ruleset `main-gate`, enforcement active, target `refs/heads/main`:
 
 - pull request required, **required approving reviews: 0** (the human merges by hand; the
-  gate is the review), dismiss stale reviews on push, conversation resolution not required;
+  gate is the review), dismiss stale reviews on push, conversation resolution not required,
+  `require_extra_approval_for_unattributed_changes` off (the API default of on was found
+  after the first merge and switched off by the owner on 2026-10-22);
 - required status check: **`gate`** (from `gate.yml`), strict (branch up to date);
 - deletion blocked, non-fast-forward (force push) blocked;
 - no bypass actors: admins included.

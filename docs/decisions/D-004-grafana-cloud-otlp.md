@@ -1,7 +1,7 @@
 # D-004: Grafana Cloud over OTLP as the telemetry backend
 
 **Date:** 2026-10-22
-**Status:** accepted (contract now, code in the mission)
+**Status:** accepted for the backend and the two kinds of telemetry; attribute list, resource attributes and the `active_agents` gauge superseded by D-010
 
 ## Context
 
