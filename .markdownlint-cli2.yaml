@@ -1,0 +1,18 @@
+# markdownlint-cli2 configuration for ai/, docs/, README, AGENTS.
+config:
+  default: true
+  MD013: false          # line length: prose and tables wrap naturally
+  MD033: false          # inline HTML: allowed for diagrams and badges
+  MD041: false          # first line heading: PRD/spec files start with front matter tables
+  MD024:
+    siblings_only: true # repeated headings allowed in different sections (changelog style)
+  MD060: false          # table pipe spacing: compact delimiter rows are fine
+  MD036: false          # bold lead-ins ("**Decisions**") are used deliberately in logs
+globs:
+  - "**/*.md"
+ignores:
+  - "ai/session/**"     # verbatim records of human and agent text, not edited for lint
+  - "node_modules/**"
+  - "target/**"
+  - "build-log/**"
+  - "LICENSE"

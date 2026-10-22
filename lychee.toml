@@ -1,0 +1,13 @@
+# lychee link checker. Runs on the mission branch and the gate PR.
+exclude_path = ["target", "node_modules", "build-log"]
+exclude = [
+  "^https://otlp-gateway-.*\\.grafana\\.net",   # placeholder endpoints in docs
+  "^https://api\\.factory\\.ai",                # authenticated API
+  "^http://localhost",
+  "^https://github\\.com/dctellya/droid-observatory/(pull|issues)/\\d+$",
+]
+accept = ["200..=204", "429"]
+max_retries = 2
+timeout = 20
+cache = true
+max_cache_age = "1d"

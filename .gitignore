@@ -1,0 +1,36 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Rust
+/target/
+**/target/
+Cargo.lock.orig
+
+# Tauri / frontend build output
+/dist/
+**/dist/
+/apps/**/gen/schemas/
+node_modules/
+
+# Local tool state
+.factory/readiness-report.json
+.factory/*.local.json
+*.log
+!build-log/**/*.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage and reports produced locally
+/coverage/
+lcov.info
+*.profraw

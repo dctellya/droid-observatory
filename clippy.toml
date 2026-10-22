@@ -1,0 +1,6 @@
+# Thresholds are stated here so they are not magic (ai/RULES.md rule 4).
+# cognitive-complexity: the PRD's metric engine has genuinely branching code; 25 keeps
+# functions reviewable without forcing artificial splits.
+cognitive-complexity-threshold = 25
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250
