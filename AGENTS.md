@@ -109,8 +109,8 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 
 - A decision is one file: `docs/decisions/D-NNN-slug.md` with `**Date:**`, `**Status:**`,
   context, decision, alternatives, consequences. Run `make decisions-index` after adding one.
-- Deferred work goes to the backlog (GitHub issues labelled `backlog`, indexed in `BACKLOG.md`)
-  as `B-NNN` with a reason, not into TODOs (rule 14).
+- Deferred work goes to `BACKLOG.md` as `B-NNN` with a reason, not into TODOs or GitHub issues
+  (rule 14; owner decision 2026-10-22 at mission approval).
 - Every session is logged under `ai/session/` with transcript links; every tool call is
   logged to `build-log/` by the PostToolUse hook. Do not disable the hooks.
 - Usage and waste per milestone go to `reports/` pasted from the tool that produced them.
