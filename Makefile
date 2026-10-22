@@ -76,7 +76,7 @@ endif
 
 lint: ## Clippy with warnings denied
 ifneq (,$(HAS_CARGO))
-	@cargo clippy --workspace --all-targets --all-features -- -D warnings
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
 else
 	@echo "lint: no Cargo.toml yet, skipped"
 endif

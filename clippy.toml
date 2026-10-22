@@ -1,4 +1,5 @@
 # Thresholds are stated here so they are not magic (ai/RULES.md rule 4).
+# cognitive_complexity is a nursery lint; the Makefile's lint target enables it with -W.
 # cognitive-complexity: the PRD's metric engine has genuinely branching code; 25 keeps
 # functions reviewable without forcing artificial splits.
 cognitive-complexity-threshold = 25
