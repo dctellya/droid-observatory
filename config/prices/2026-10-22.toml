@@ -1,0 +1,37 @@
+# Price table used to turn tokens into money when the stream does not report credits
+# (PRD §10.5). Dated: every cost shown by the observatory names the table it used.
+#
+# Prices are per million tokens, USD. Values below are PLACEHOLDERS to be filled from
+# the vendor price page on the day this file is adopted (ai/RULES.md rule 3: verified,
+# dated). Zero means "not priced yet"; the UI must show that, not a false $0.
+effective = "2026-10-22"
+currency = "USD"
+source = "https://www.anthropic.com/pricing (verify on adoption)"
+verified = false
+
+[models."claude-fable-5-1"]
+role_default = "orchestrator"
+input_per_m = 0.0
+output_per_m = 0.0
+cache_read_per_m = 0.0
+cache_write_per_m = 0.0
+
+[models."claude-opus-5-5"]
+role_default = "validator"
+input_per_m = 0.0
+output_per_m = 0.0
+cache_read_per_m = 0.0
+cache_write_per_m = 0.0
+
+[models."claude-sonnet-5-5"]
+role_default = "worker"
+input_per_m = 0.0
+output_per_m = 0.0
+cache_read_per_m = 0.0
+cache_write_per_m = 0.0
+
+[models."claude-haiku-4-5-20251001"]
+input_per_m = 0.0
+output_per_m = 0.0
+cache_read_per_m = 0.0
+cache_write_per_m = 0.0
