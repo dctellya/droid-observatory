@@ -58,6 +58,14 @@
     },
     {
       "customType": "regex",
+      "description": "Tool versions in the devcontainer provisioning script",
+      "managerFilePatterns": ["/^\\.devcontainer/post-create\\.sh$/"],
+      "matchStrings": [
+        "_VERSION=(?<currentValue>[\\w.-]+) # renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)(?: extractVersion=(?<extractVersion>[^\\s]+))?"
+      ]
+    },
+    {
+      "customType": "regex",
       "description": "Container images referenced in workflows (semgrep, actionlint)",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": ["(?:image|uses):\\s*(?:docker://)?(?<depName>semgrep/semgrep|rhysd/actionlint):(?<currentValue>[\\w.-]+)"],
