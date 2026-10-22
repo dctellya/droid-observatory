@@ -30,7 +30,9 @@ This section defines the units the board shows. Everything else follows from it.
 
 On the board: **cards are milestones**; the gate group in lane 8 is the mission's one PR; lane 6 is integration into `mission/<name>`; lane 8 is the PR.
 
-**Models per role** (decision D-006; `ai/RULES.md` rule 19): orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`. Reasoning effort per role is declared in the spec. A change of model is a decision file.
+**Models per role** (decision D-006; `ai/RULES.md` rule 19): orchestrator `claude-fable-5.1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`. Reasoning effort per role is declared in the spec. A change of model is a decision file.
+
+The orchestrator catalog ID spelling was corrected on 2026-10-22 (D-006); Appendix C retains the historical spelling.
 
 ## 3. Problem
 
@@ -258,7 +260,7 @@ Price table example (values illustrative, table dated):
 effective = "2026-10-22"
 currency = "USD"
 
-[models."claude-fable-5-1"]
+[models."claude-fable-5.1"]
 input_per_m = 0.0
 output_per_m = 0.0
 cache_read_per_m = 0.0

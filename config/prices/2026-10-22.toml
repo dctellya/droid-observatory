@@ -9,7 +9,7 @@ currency = "USD"
 source = "https://platform.claude.com/docs/en/about-claude/pricing"
 verified = true
 
-[models."claude-fable-5-1"]
+[models."claude-fable-5.1"]
 role_default = "orchestrator"
 input_per_m = 10.0
 output_per_m = 50.0

@@ -8,7 +8,7 @@
 [mission]
 # Default models per role, mirrored in .factory/settings.json and the mission command
 # (ai/RULES.md rule 19; docs/decisions/D-006). A change is a decision file.
-orchestrator_model = "claude-fable-5-1"
+orchestrator_model = "claude-fable-5.1"
 worker_model = "claude-sonnet-5-5"
 validator_model = "claude-opus-5-5"
 # Branch the mission integrates into (PRD §2). "<name>" is the mission name.

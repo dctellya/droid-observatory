@@ -104,7 +104,7 @@ Models per role (rule 19; `.factory/settings.json`; D-006):
 
 | Role | Model |
 |---|---|
-| Orchestrator | `claude-fable-5-1` |
+| Orchestrator | `claude-fable-5.1` |
 | Workers | `claude-sonnet-5-5` |
 | Validators (scrutiny, user testing) | `claude-opus-5-5` |
 

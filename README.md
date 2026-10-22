@@ -70,11 +70,11 @@ command the gate runs.
 ## Running it as a mission
 
 Models per role (ai/RULES.md rule 19, `.factory/settings.json`, D-006):
-orchestrator `claude-fable-5-1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`.
+orchestrator `claude-fable-5.1`, workers `claude-sonnet-5-5`, validators `claude-opus-5-5`.
 
 ```sh
 droid exec --mission --auto high \
-  --model claude-fable-5-1 \
+  --model claude-fable-5.1 \
   --worker-model claude-sonnet-5-5 \
   --validator-model claude-opus-5-5 \
   -f SPEC.md
