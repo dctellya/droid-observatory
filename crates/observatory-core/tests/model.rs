@@ -157,3 +157,32 @@ fn every_event_carries_the_mapping_version() {
         );
     }
 }
+
+#[test]
+fn unknown_event_keeps_raw_type_and_byte_offset() {
+    let kind = EventKind::Unknown {
+        raw_type: "todo_state".to_owned(),
+    };
+    assert_eq!(kind.prd_name(), "unknown.event");
+    assert_eq!(kind.lane(), None);
+
+    let mut event = event_with(jsonl_pointer(), kind);
+    event.role = Role::Unresolved;
+    event.lane = Lane::for_role(event.role);
+
+    let json = serde_json::to_value(&event).expect("event serializes");
+    assert_eq!(
+        json["kind"],
+        serde_json::json!({"unknown": {"raw_type": "todo_state"}})
+    );
+    assert_eq!(json["source"]["byte_offset"], 1_204);
+
+    let back: Event = serde_json::from_value(json).expect("event deserializes");
+    assert_eq!(
+        back.kind,
+        EventKind::Unknown {
+            raw_type: "todo_state".to_owned()
+        }
+    );
+    assert_eq!(back.source, jsonl_pointer());
+}
