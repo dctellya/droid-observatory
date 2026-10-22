@@ -2,23 +2,26 @@
 # README, AGENTS.md, .githooks and .github/workflows all call these targets,
 # so a command documented is a command CI runs (ai/RULES.md rule 5).
 #
-# Rust targets are no-ops until the walking skeleton lands a Cargo.toml;
-# they activate automatically, nothing here needs to change.
+# Rust targets are no-ops when there is no Cargo.toml; they activate automatically.
 
 SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
 HAS_CARGO := $(wildcard Cargo.toml)
 HAS_TAURI := $(wildcard apps/observatory-app/src-tauri/tauri.conf.json)
+HAS_UI := $(wildcard apps/observatory-app/ui/Trunk.toml)
 HAS_FIXTURES := $(wildcard fixtures/streams/*.jsonl)
 
 # Thresholds (ai/RULES.md rule 4: every number has a home and a reason).
 # MAX_FILE_KB: source files over this are a review smell; captured stream fixtures are exempt.
 MAX_FILE_KB ?= 200
+# COVERAGE_MIN: line-coverage floor for observatory-core (SPEC section 6). S reports it,
+# M0 onward enforces 80; CI passes its own value through the same name.
+COVERAGE_MIN ?= 80
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
         check-todos check-decisions-index decisions-index check-secrets \
-        fmt fmt-check lint test deny replay-fixtures build app-dev app-build clean
+        fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-24s %s\n", $$1, $$2}'
@@ -31,7 +34,7 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets fmt-check lint test deny replay-fixtures ## All light checks (= mission-branch CI)
+check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets fmt-check lint test deny machete replay-fixtures ## All light checks (= mission-branch CI)
 
 check-docs: ## Lint markdown
 	@markdownlint-cli2 "**/*.md"
@@ -95,6 +98,20 @@ else
 	@echo "deny: no Cargo.toml yet, skipped"
 endif
 
+machete: ## Fail on unused dependencies
+ifneq (,$(HAS_CARGO))
+	@cargo machete
+else
+	@echo "machete: no Cargo.toml yet, skipped"
+endif
+
+coverage: ## Line coverage of observatory-core (run alone, not part of check)
+ifneq (,$(HAS_CARGO))
+	@cargo llvm-cov -p observatory-core --fail-under-lines $(COVERAGE_MIN)
+else
+	@echo "coverage: no Cargo.toml yet, skipped"
+endif
+
 replay-fixtures: ## Replay every captured stream fixture through observatory-cli
 ifneq (,$(HAS_FIXTURES))
 	@for f in fixtures/streams/*.jsonl; do \
@@ -109,6 +126,13 @@ ifneq (,$(HAS_CARGO))
 	@cargo build --workspace --release
 else
 	@echo "build: no Cargo.toml yet, skipped"
+endif
+
+ui-serve: ## Serve the Leptos UI in the browser on the dev port
+ifneq (,$(HAS_UI))
+	@trunk serve --config apps/observatory-app/ui/Trunk.toml --port 3141 --open false
+else
+	@echo "ui-serve: no UI yet, skipped"
 endif
 
 app-dev: ## Open the Tauri dev window
