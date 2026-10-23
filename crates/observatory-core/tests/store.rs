@@ -10,8 +10,8 @@ use observatory_core::ingest::{
     JsonlSource, SessionTree, Source, mapping_version_of, read_capture, sidecar_path,
 };
 use observatory_core::mapping::TreeMapper;
-use observatory_core::model::{Event, EventId, EventKind, SourcePtr};
-use observatory_core::store::{CaptureInfo, Store, StoreError};
+use observatory_core::model::{Event, EventId, EventKind, Lane, SourcePtr, Timestamp};
+use observatory_core::store::{CaptureInfo, EventScope, Store, StoreError, TimeRange};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -270,6 +270,7 @@ fn store_schema_has_the_pointer_index_and_no_payload_column() {
             "milestone_id",
             "feature_id",
             "lane",
+            "overlay",
             "kind",
             "raw_type",
             "mapping_version",
@@ -541,4 +542,185 @@ fn a_root_only_replay_records_only_the_root_session() {
         query_count(&db, "SELECT count(*) FROM sessions WHERE parent_id IS NULL"),
         1
     );
+}
+
+#[test]
+fn the_overlay_column_marks_the_human_events_and_lane_counts_are_the_phases() {
+    let (_dir, db, events) = indexed_m0();
+
+    assert_eq!(
+        query_count(&db, "SELECT count(*) FROM events WHERE overlay = 'human'"),
+        70
+    );
+    assert_eq!(
+        query_count(&db, "SELECT count(*) FROM events WHERE overlay IS NULL"),
+        i64::try_from(events.len()).unwrap() - 70
+    );
+    let by_lane = query_strings(
+        &db,
+        "SELECT lane || ':' || count(*) FROM events GROUP BY lane ORDER BY lane",
+    );
+    assert_eq!(
+        by_lane,
+        ["1:443", "2:69", "3:424", "4:87", "5:122", "6:134"]
+    );
+}
+
+#[test]
+fn the_events_table_refuses_a_ninth_lane_and_an_unknown_overlay() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("observatory.sqlite");
+    drop(Store::open(&db).unwrap());
+    let conn = Connection::open(&db).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    conn.execute(
+        "INSERT INTO mapping_versions VALUES ('vx', 'x', 'x') ON CONFLICT DO NOTHING",
+        [],
+    )
+    .unwrap();
+    let insert = |lane: i64, overlay: Option<&str>| {
+        conn.execute(
+            "INSERT INTO events (id, mission_id, lane, overlay, kind, mapping_version, role, at, source) \
+             VALUES (?1, 'm', ?2, ?3, 'x', 'v1', 'worker', 't', 'app')",
+            rusqlite::params![format!("e{lane}{overlay:?}"), lane, overlay],
+        )
+    };
+    assert!(insert(7, Some("commander")).is_ok());
+    assert!(insert(8, None).is_err());
+    assert!(insert(0, None).is_err());
+    assert!(insert(1, Some("robot")).is_err());
+}
+
+fn wire_form(events: &[Event]) -> Vec<Event> {
+    let mut events: Vec<Event> = events
+        .iter()
+        .map(|event| serde_json::from_value(serde_json::to_value(event).unwrap()).unwrap())
+        .collect();
+    events.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    events
+}
+
+#[test]
+fn events_read_back_the_whole_mission_as_mapped_in_time_order() {
+    let (_dir, db, events) = indexed_m0();
+    let store = Store::open_existing(&db).unwrap();
+    let mission = events[0].mission_id.clone();
+
+    let stored = store
+        .events(&EventScope::Mission(mission), TimeRange::ALL)
+        .unwrap();
+
+    assert_eq!(stored.len(), events.len());
+    assert!(stored.windows(2).all(|pair| pair[0].at <= pair[1].at));
+    let mut by_id = stored.clone();
+    by_id.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    assert_eq!(by_id, wire_form(&events));
+}
+
+#[test]
+fn events_are_scoped_by_milestone_feature_session_and_time_range() {
+    let (_dir, db, events) = indexed_m0();
+    let store = Store::open_existing(&db).unwrap();
+    let mission = events[0].mission_id.clone();
+    let all = |scope| store.events(&scope, TimeRange::ALL).unwrap();
+
+    let milestone = events.iter().find_map(|e| e.milestone_id.clone()).unwrap();
+    let in_milestone = all(EventScope::Milestone(mission.clone(), milestone.clone()));
+    let expected = events
+        .iter()
+        .filter(|e| e.milestone_id.as_ref() == Some(&milestone))
+        .count();
+    assert_eq!(in_milestone.len(), expected);
+    assert!(expected > 0 && expected < events.len());
+
+    let feature = events.iter().find_map(|e| e.feature_id.clone()).unwrap();
+    let in_feature = all(EventScope::Feature(feature.clone()));
+    assert_eq!(
+        in_feature.len(),
+        events
+            .iter()
+            .filter(|e| e.feature_id.as_ref() == Some(&feature))
+            .count()
+    );
+
+    let session = events.iter().find_map(|e| e.session_id.clone()).unwrap();
+    let in_session = all(EventScope::Session(session.clone()));
+    assert_eq!(
+        in_session.len(),
+        events
+            .iter()
+            .filter(|e| e.session_id.as_ref() == Some(&session))
+            .count()
+    );
+
+    let stored = all(EventScope::Mission(mission.clone()));
+    let middle: Timestamp = stored[stored.len() / 2].at;
+    let until = store
+        .events(
+            &EventScope::Mission(mission.clone()),
+            TimeRange::until(middle),
+        )
+        .unwrap();
+    assert_eq!(
+        until.len(),
+        stored.iter().filter(|e| e.at <= middle).count()
+    );
+    let from = store
+        .events(
+            &EventScope::Mission(mission),
+            TimeRange {
+                from: Some(middle),
+                to: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(from.len(), stored.iter().filter(|e| e.at >= middle).count());
+}
+
+#[test]
+fn events_keep_the_phase_and_overlay_they_were_stored_with() {
+    let (_dir, db, events) = indexed_m0();
+    let store = Store::open_existing(&db).unwrap();
+
+    let stored = store
+        .events(
+            &EventScope::Mission(events[0].mission_id.clone()),
+            TimeRange::ALL,
+        )
+        .unwrap();
+
+    assert_eq!(stored.iter().filter(|e| e.overlay.is_some()).count(), 70);
+    assert_eq!(
+        stored.iter().filter(|e| e.lane == Lane::Contract).count(),
+        69
+    );
+}
+
+#[test]
+fn missions_list_the_capture_with_its_name_date_and_event_count() {
+    let (_dir, db, events) = indexed_m0();
+    let store = Store::open_existing(&db).unwrap();
+
+    let missions = store.missions().unwrap();
+
+    assert_eq!(missions.len(), 1);
+    assert_eq!(missions[0].id, events[0].mission_id);
+    assert!(!missions[0].name.is_empty());
+    assert!(!missions[0].started_at.is_empty());
+    assert_eq!(missions[0].event_count, events.len() as u64);
+}
+
+#[test]
+fn an_empty_store_has_no_missions_and_no_events() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("empty.sqlite")).unwrap();
+
+    assert!(store.missions().unwrap().is_empty());
+    let nothing = store
+        .events(
+            &EventScope::Mission(observatory_core::model::MissionId("none".into())),
+            TimeRange::ALL,
+        )
+        .unwrap();
+    assert!(nothing.is_empty());
 }

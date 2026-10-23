@@ -95,11 +95,7 @@ fn replayed_events_carry_the_root_session_the_orchestrator_role_and_the_header_v
     );
     assert_eq!(first.role, Role::Orchestrator);
     assert!(events.iter().all(|e| e.role == Role::Orchestrator));
-    assert!(
-        events
-            .iter()
-            .all(|e| e.lane == e.kind.lane().unwrap_or(Lane::Orchestrator))
-    );
+    assert!(events.iter().all(|e| e.lane == e.kind.lane(e.role)));
     assert!(
         events
             .iter()
@@ -190,10 +186,20 @@ fn a_tree_replay_maps_every_session_under_its_own_role_and_lane() {
     for event in &events {
         let session = tree.get(event.session_id.as_ref().unwrap()).unwrap();
         assert_eq!(event.role, session.role);
-        assert_eq!(
-            event.lane,
-            event.kind.lane().unwrap_or(Lane::for_role(session.role))
-        );
+        match event.kind.fixed_lane() {
+            Some(fixed) => assert_eq!(event.lane, fixed),
+            None => assert!(
+                [
+                    event.kind.lane(session.role),
+                    Lane::Contract,
+                    Lane::Integrate
+                ]
+                .contains(&event.lane),
+                "{} in {:?}",
+                event.kind.prd_name(),
+                event.lane
+            ),
+        }
         assert_eq!(event.mission_id, *tree.mission_id());
     }
     assert!(events.iter().any(|e| e.role == Role::Worker));

@@ -40,33 +40,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_board_has_nine_lanes_and_no_cards() {
+    fn empty_board_has_seven_lanes_a_panel_and_no_cards() {
         let board = BoardView::empty();
 
-        assert_eq!(board.lanes.len(), 9);
+        assert_eq!(board.lanes.len(), 7);
         assert_eq!(board.card_count(), 0);
         let names: Vec<&str> = board.lanes.iter().map(|l| l.name).collect();
         assert_eq!(
             names,
             [
-                "Intent",
-                "Orchestrator",
-                "Workers",
-                "Validators, scrutiny",
-                "Validators, user testing",
-                "Integration",
-                "Human",
-                "Outside",
-                "Time, Waste, Cost and models",
+                "Plan",
+                "Contract",
+                "Build",
+                "Scrutiny",
+                "User testing",
+                "Integrate",
+                "Gate",
             ]
         );
         let labels: Vec<&str> = board.lanes.iter().map(|l| l.aria_label.as_str()).collect();
         assert_eq!(
             labels,
             [
-                "lane-1", "lane-2", "lane-3", "lane-4", "lane-5", "lane-6", "lane-7", "lane-8",
-                "lane-9"
+                "lane-1", "lane-2", "lane-3", "lane-4", "lane-5", "lane-6", "lane-7"
             ]
         );
+        assert_eq!(board.panel.aria_label, "panel");
     }
 }

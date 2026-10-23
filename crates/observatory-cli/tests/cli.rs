@@ -97,8 +97,8 @@ fn replay_includes_the_child_sessions_under_their_own_lanes() {
         .lines()
         .filter_map(|line| line.split('\t').nth(1))
         .collect();
-    assert!(lanes.contains("2 Orchestrator"), "{lanes:?}");
-    assert!(lanes.contains("3 Workers"), "{lanes:?}");
+    assert!(lanes.contains("1 Plan"), "{lanes:?}");
+    assert!(lanes.contains("3 Build"), "{lanes:?}");
 }
 
 #[test]

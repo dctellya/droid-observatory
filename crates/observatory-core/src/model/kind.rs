@@ -118,6 +118,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+    use crate::model::Role;
 
     #[test]
     fn serde_name_is_the_prd_name_with_underscores() {
@@ -132,10 +133,11 @@ mod tests {
     fn prd_names_are_unique_and_every_kind_has_a_lane() {
         let names: HashSet<_> = EventKind::KNOWN.iter().map(EventKind::prd_name).collect();
         assert_eq!(names.len(), EventKind::KNOWN.len());
-        assert!(
-            EventKind::KNOWN
-                .iter()
-                .all(|kind| kind.lane().is_some_and(|lane| lane != Lane::TimeWasteCost))
-        );
+        assert_eq!(EventKind::KNOWN.len(), 59);
+        for kind in EventKind::KNOWN {
+            for role in [Role::Orchestrator, Role::Worker, Role::External] {
+                assert!(Lane::ALL.contains(&kind.lane(role)), "{}", kind.prd_name());
+            }
+        }
     }
 }
