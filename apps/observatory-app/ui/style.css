@@ -63,3 +63,22 @@ html, body { margin: 0; font-family: -apple-system, system-ui, sans-serif; font-
 .overlay-list, .tray { border: 1px solid #c8ccd0; border-radius: 6px; padding: 6px 10px; max-height: 30vh; overflow-y: auto; }
 .overlay-list ul, .tray ul { margin: 0; padding-left: 16px; }
 .raw { white-space: pre-wrap; word-break: break-all; background: #f1f2f4; padding: 6px; border-radius: 4px; user-select: text; }
+
+.card button, .row-open { font-size: 11px; }
+.row-open { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; color: #0c66e4; font-weight: 600; }
+.card .now { color: #1d2125; }
+
+.agents, .details { border: 1px solid #c8ccd0; border-radius: 6px; padding: 6px 10px; margin: 8px 0; }
+.agents h2, .details h2, .agent-stream h3 { margin: 0 0 4px; font-size: 13px; }
+.agent-table { max-height: 28vh; overflow: auto; }
+.agents table, .details table { border-collapse: collapse; width: 100%; }
+.agents th, .agents td, .details th, .details td { text-align: left; padding: 2px 8px; border-bottom: 1px solid #eceef1; }
+.agents tr.drift td { color: #b65c02; }
+.agent-stream { margin-top: 6px; }
+.agent-stream .rows-list { max-height: 30vh; overflow-y: auto; }
+.row.marker { background: #fff4d6; }
+.agent-marker { color: #b65c02; }
+.details { position: fixed; inset: 5vh 3vw; z-index: 10; background: #fff; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.details header { display: flex; align-items: center; gap: 16px; }
+.details .event-id { font-family: ui-monospace, monospace; font-size: 11px; }
+.details tr.unmapped { background: #fff0f0; }

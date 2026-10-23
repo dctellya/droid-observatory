@@ -3,12 +3,15 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use observatory_core::config::MissionConfig;
 use observatory_core::ingest::MemoryReplay;
-use observatory_core::model::{EventId, Timestamp};
+use observatory_core::model::{EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
     BoardView, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber, ViewConfig,
     WorkerGrouping, branch_of,
 };
 
+use crate::agents::AgentPanel;
+use crate::ctx::BoardCtx;
+use crate::details::DetailsView;
 use crate::lanes::Lanes;
 use crate::panel::{OverlayList, Panel};
 use crate::tray::Tray;
@@ -20,6 +23,7 @@ use crate::tray::Tray;
 pub fn Board(replay: Arc<MemoryReplay>, on_close: Callback<()>) -> impl IntoView {
     let mission = MissionConfig::default();
     let declared = DeclaredModels::from_config(&mission);
+    let agent_declared = declared.clone();
     let branch = branch_of(&mission, &replay.summary.name);
     let options = Arc::new(FilterOptions::of(&replay.events));
     let scrubber = Arc::new(Scrubber::new(&replay.events));
@@ -28,6 +32,11 @@ pub fn Board(replay: Arc<MemoryReplay>, on_close: Callback<()>) -> impl IntoView
     let grouping = RwSignal::new(WorkerGrouping::PerWorker);
     let at = RwSignal::new(None::<Timestamp>);
     let selected = RwSignal::new(None::<EventId>);
+    let details = RwSignal::new(None::<MilestoneId>);
+    provide_context(BoardCtx {
+        open_details: Callback::new(move |milestone| details.set(Some(milestone))),
+        sessions: Arc::new(replay.sessions.clone()),
+    });
 
     let board = Memo::new({
         let replay = replay.clone();
@@ -74,6 +83,8 @@ pub fn Board(replay: Arc<MemoryReplay>, on_close: Callback<()>) -> impl IntoView
             <FilterBar filter=filter options=options.clone() />
             <ScrubberBar scrubber=scrubber.clone() at=at />
             <Panel board=board />
+            <AgentPanel board=board replay=replay.clone() declared=agent_declared at=at />
+            <DetailsView replay=replay.clone() milestone=details />
             <Lanes board=board grouping=grouping />
             <div class="bottom">
                 <OverlayList board=board />

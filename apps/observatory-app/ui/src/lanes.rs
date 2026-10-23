@@ -1,8 +1,10 @@
 use leptos::prelude::*;
 use observatory_core::model::Lane;
 use observatory_core::view::{
-    BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping,
+    BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping, session_name,
 };
+
+use crate::ctx::BoardCtx;
 
 /// The seven phase lanes, left to right (F-028, D-024).
 #[component]
@@ -118,6 +120,22 @@ fn group_view(lane: &LaneView, group: &RowGroup) -> AnyView {
 fn row_view(row: &TimelineRow) -> AnyView {
     let time = row.at.to_rfc3339_millis();
     let overlay = row.overlay.map(|overlay| overlay.as_str());
+    let ctx = expect_context::<BoardCtx>();
+    let milestone = row.milestone.clone();
+    let kind = match milestone {
+        Some(milestone) => view! {
+            <button
+                type="button"
+                class="kind row-open"
+                aria-label=format!("open-details-{}", row.event_id.0)
+                on:click=move |_| ctx.open_details.run(milestone.clone())
+            >
+                {row.kind.clone()}
+            </button>
+        }
+        .into_any(),
+        None => view! { <span class="kind">{row.kind.clone()}</span> }.into_any(),
+    };
     view! {
         <li
             class="row"
@@ -129,7 +147,7 @@ fn row_view(row: &TimelineRow) -> AnyView {
         >
             <time>{time[11..23].to_owned()}</time>
             <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
-            <span class="kind">{row.kind.clone()}</span>
+            {kind}
             {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}
             {overlay
                 .map(|overlay| {
@@ -152,13 +170,29 @@ fn card_view(card: &Card) -> AnyView {
         .map(|f| f.0.clone())
         .collect::<Vec<_>>()
         .join(", ");
-    let now = card.now.as_ref().map(|now| {
-        view! {
-            <p class="now" aria-label="card-now">
-                {now.role.as_str()} " " {now.session_id.0.clone()}
-            </p>
+    let ctx = expect_context::<BoardCtx>();
+    let now = match (&card.now, card.idle) {
+        (Some(now), _) => {
+            let model = now
+                .model
+                .as_ref()
+                .map_or("model n/a", |model| model.0.as_str());
+            let feature = now.feature.as_ref().map_or("no feature", |f| f.0.as_str());
+            Some(format!(
+                "now: {} {} {} [{}] on {}",
+                now.role.as_str(),
+                model,
+                session_name(&ctx.sessions, &now.session_id),
+                now.session_id.0.get(..8).unwrap_or(&now.session_id.0),
+                feature
+            ))
         }
-    });
+        (None, Some(idle)) => Some(format!("now: idle, {}", idle.label())),
+        (None, None) => None,
+    }
+    .map(|text| view! { <p class="now">{text}</p> });
+    let milestone = card.milestone.clone();
+    let details = card.milestone.clone();
     view! {
         <article class="card" aria-label=format!("card-{}", card.milestone)>
             <h3>{card.milestone.0.clone()}</h3>
@@ -173,6 +207,13 @@ fn card_view(card: &Card) -> AnyView {
                 {card.features.len()} " features" {(!features.is_empty()).then(|| format!(": {features}"))}
             </p>
             {now}
+            <button
+                type="button"
+                aria-label=format!("details-{}", details)
+                on:click=move |_| ctx.open_details.run(milestone.clone())
+            >
+                "Details"
+            </button>
         </article>
     }
     .into_any()
