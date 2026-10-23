@@ -8,8 +8,9 @@ use observatory_core::ingest::JsonlSource;
 use observatory_core::model::{EventId, SourcePtr};
 use observatory_core::store::Store;
 
-/// Writes the line the stored pointer of `id` names, byte for byte, then a newline. The store
-/// is opened read-only; the session file is only read.
+/// Writes the line the stored pointer of `id` names, byte for byte and without a newline, so
+/// the output compares equal to the file slice. The store is opened read-only; the session
+/// file is only read.
 pub fn inspect(store: &Path, id: &str, out: &mut impl Write) -> Result<(), Box<dyn Error>> {
     let store = Store::open_existing(store)?;
     let line = match store.pointer(&EventId(id.to_owned()))? {
@@ -26,6 +27,5 @@ pub fn inspect(store: &Path, id: &str, out: &mut impl Write) -> Result<(), Box<d
         other => return Err(format!("event {id} has no raw line: its source is {other:?}").into()),
     };
     out.write_all(&line)?;
-    out.write_all(b"\n")?;
     Ok(())
 }

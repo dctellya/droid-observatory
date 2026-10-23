@@ -333,9 +333,7 @@ fn inspect_prints_the_raw_line_byte_identically() {
         );
 
         assert!(output.status.success(), "{:?}", output.status);
-        let mut expected = golden_line(event);
-        expected.push(b'\n');
-        assert_eq!(output.stdout, expected, "{}", event_id(event));
+        assert_eq!(output.stdout, golden_line(event), "{}", event_id(event));
         assert!(output.stderr.is_empty(), "{:?}", output.stderr);
     }
 }
@@ -439,9 +437,7 @@ fn replay_and_inspect_use_the_store_path_of_the_config_file_in_effect() {
         &["inspect", event_id(&events[0])],
     );
     assert!(output.status.success(), "{:?}", output.status);
-    let mut expected = golden_line(&events[0]);
-    expected.push(b'\n');
-    assert_eq!(output.stdout, expected);
+    assert_eq!(output.stdout, golden_line(&events[0]));
     let left_behind: Vec<_> = std::fs::read_dir(home.path()).unwrap().collect();
     assert!(left_behind.is_empty(), "{left_behind:?}");
 }
