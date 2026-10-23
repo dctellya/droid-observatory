@@ -1,0 +1,179 @@
+use leptos::prelude::*;
+use observatory_core::model::Lane;
+use observatory_core::view::{
+    BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping,
+};
+
+/// The seven phase lanes, left to right (F-028, D-024).
+#[component]
+pub fn Lanes(board: Memo<BoardView>, grouping: RwSignal<WorkerGrouping>) -> impl IntoView {
+    let columns = (0..Lane::ALL.len())
+        .map(|index| {
+            view! {
+                {move || board.with(|b| lane_column(&b.lanes[index], grouping))}
+            }
+        })
+        .collect_view();
+    view! { <div class="lanes">{columns}</div> }
+}
+
+fn lane_column(lane: &LaneView, grouping: RwSignal<WorkerGrouping>) -> AnyView {
+    let number = lane.lane.number();
+    let toggle = (lane.lane == Lane::Build).then(|| {
+        view! {
+            <button
+                type="button"
+                class="toggle"
+                aria-label=format!("lane-{number}-grouping-toggle")
+                on:click=move |_| {
+                    grouping
+                        .update(|g| {
+                            *g = match g {
+                                WorkerGrouping::PerWorker => WorkerGrouping::PerFeature,
+                                WorkerGrouping::PerFeature => WorkerGrouping::PerWorker,
+                            };
+                        });
+                }
+            >
+                {move || match grouping.get() {
+                    WorkerGrouping::PerWorker => "Per worker (switch to per feature)",
+                    WorkerGrouping::PerFeature => "Per feature (switch to per worker)",
+                }}
+            </button>
+        }
+    });
+    let cards = lane.cards.iter().map(card_view).collect_view();
+    let placeholder = lane.placeholder.as_ref().map(|p| {
+        let verdict = match p.last_gate_command {
+            Some(GateVerdict::Passed) => "passed",
+            Some(GateVerdict::Failed) => "failed",
+            None => "none yet",
+        };
+        let clocks = p
+            .clocks
+            .iter()
+            .map(|clock| {
+                view! {
+                    <li aria-label="gate-clock">
+                        {clock.label.clone()} ": " {clock.value.clone().unwrap_or_default()}
+                    </li>
+                }
+            })
+            .collect_view();
+        view! {
+            <div class="gate-placeholder" aria-label="gate-placeholder">
+                <p class="gate-state">{p.text.clone()}</p>
+                <p aria-label="gate-branch">"mission branch: " {p.branch.clone()}</p>
+                <p aria-label="gate-last-verdict">
+                    "last gate command (Integrate): " {verdict}
+                </p>
+                <ul>{clocks}</ul>
+            </div>
+        }
+    });
+    let groups = lane
+        .groups
+        .iter()
+        .map(|group| group_view(lane, group))
+        .collect_view();
+    view! {
+        <section class="lane" aria-label=lane.aria_label.clone()>
+            <h2 class="lane-name">
+                {lane.name} " "
+                <span class="count" aria-label=format!("lane-{number}-count")>{lane.event_count}</span>
+            </h2>
+            {toggle}
+            <div class="cards">{cards}</div>
+            {placeholder}
+            <div class="rows">{groups}</div>
+        </section>
+    }
+    .into_any()
+}
+
+fn group_view(lane: &LaneView, group: &RowGroup) -> AnyView {
+    let rows = group.rows.iter().map(row_view).collect_view();
+    if !lane.grouped {
+        return view! { <ul class="rows-list">{rows}</ul> }.into_any();
+    }
+    let kind = if lane.lane == Lane::Build {
+        "sublane"
+    } else {
+        "milestone"
+    };
+    let role = group.role.map(|role| role.as_str());
+    view! {
+        <section class="sublane" aria-label=format!("{kind}-{}", group.key)>
+            <h3>
+                {group.label.clone()} " "
+                <span class="count">{group.rows.len()}</span>
+                {role.map(|role| view! { <span class=format!("role role-{role}")>{role}</span> })}
+            </h3>
+            <ul class="rows-list">{rows}</ul>
+        </section>
+    }
+    .into_any()
+}
+
+fn row_view(row: &TimelineRow) -> AnyView {
+    let time = row.at.to_rfc3339_millis();
+    let overlay = row.overlay.map(|overlay| overlay.as_str());
+    view! {
+        <li
+            class="row"
+            class:unmapped=row.unmapped
+            data-event-id=row.event_id.0.clone()
+            data-role=row.role.as_str()
+            data-model=row.model.as_ref().map(|m| m.0.clone())
+            data-feature=row.feature.as_ref().map(|f| f.0.clone())
+        >
+            <time>{time[11..23].to_owned()}</time>
+            <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
+            <span class="kind">{row.kind.clone()}</span>
+            {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}
+            {overlay
+                .map(|overlay| {
+                    view! {
+                        <span class=format!("overlay overlay-{overlay}") aria-label="overlay-marker">
+                            {overlay}
+                        </span>
+                    }
+                })}
+        </li>
+    }
+    .into_any()
+}
+
+fn card_view(card: &Card) -> AnyView {
+    let badge = card.validation;
+    let features = card
+        .features
+        .iter()
+        .map(|f| f.0.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let now = card.now.as_ref().map(|now| {
+        view! {
+            <p class="now" aria-label="card-now">
+                {now.role.as_str()} " " {now.session_id.0.clone()}
+            </p>
+        }
+    });
+    view! {
+        <article class="card" aria-label=format!("card-{}", card.milestone)>
+            <h3>{card.milestone.0.clone()}</h3>
+            <span
+                class=format!("badge badge-{}", badge.as_str())
+                aria-label="validation-badge"
+            >
+                {badge.label()}
+            </span>
+            <p class="meta" aria-label="card-events">{card.event_count} " events"</p>
+            <p class="meta" aria-label="card-features">
+                {card.features.len()} " features" {(!features.is_empty()).then(|| format!(": {features}"))}
+            </p>
+            {now}
+        </article>
+    }
+    .into_any()
+}

@@ -10,3 +10,9 @@ publish.workspace = true
 [dependencies]
 leptos = { version = "0.8.22", features = ["csr"] }
 observatory-core = { workspace = true, default-features = false }
+serde_json.workspace = true
+# Already in Cargo.lock through leptos; named here to choose the web-sys features the file picker
+# and the library storage use.
+web-sys = { version = "0.3.106", features = ["Blob", "File", "FileList", "HtmlInputElement", "Storage", "Window"] }
+js-sys = "0.3.106"
+wasm-bindgen-futures = "0.4.79"
