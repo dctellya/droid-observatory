@@ -1,7 +1,7 @@
 # D-023: mapping v1 is frozen, and the PRD §11.1 open items are answered
 
 **Date:** 2026-10-23
-**Status:** accepted (M0 exit criterion; frozen at 86df619, recorded at the M0 integration)
+**Status:** accepted (M0 exit criterion; v1 frozen at the M0 merge commit f66a9f5, rules first committed in 86df619)
 
 ## Context
 
@@ -209,10 +209,18 @@ version, with a fixture, and removed from this list in the same change.
   `\n128x128@2x.png` into `\user@example.invalid`, which is invalid JSON (9 lines: S 3, M0 6). The
   rule now refuses to start an address right after a backslash; 6 M0 and 2 S children were
   re-redacted from the originals and their `redacted_sha256` updated in both headers. Line counts
-  and original hashes are unchanged. Hashes and the reason are in the D-020 addendum.
+  and original hashes are unchanged. Hashes and the reason are in the [D-020 addendum](D-020-pii-in-fixtures-is-redacted-at-capture.md).
 - **`inspect`** prints the raw line without a trailing newline, so `cmp` against a `dd` slice of
   `byte_len` bytes at `byte_offset` of the source file is exact.
 - **`replay` writes no store** unless `--store` is given or a config `[store].path` is in effect.
+- **Gate rule limits found by scrutiny (accepted v1 behaviour, golden frozen at the merge).** The
+  gate verdict reads the exit code of the Execute result. (1) A command that ends `; echo exit=$?`
+  or is piped into another command masks the real exit, so four failing `make check` runs map to
+  `gate_command.passed` (root:516, 9d874ce8:83, bfc3f3f7:71, fef523bb:62 in the M0 capture). (2) A
+  `fireAndForget` launch whose result text is `Background process started` carries no exit code and
+  maps to `passed` (49847d4f:32). Both are fixed in the next mapping version (`BACKLOG.md` B-030,
+  B-031). Further limits not seen in the capture: B-028 (non-gate non-zero exits map to no event)
+  and B-029 (command lexer forms).
 
 ## Alternatives
 

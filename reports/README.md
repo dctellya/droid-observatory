@@ -13,9 +13,12 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
 - `usage/<milestone>.md`: tokens per role and model, waste by cause, wall time, per
   integrated milestone (written by the orchestrator at integration).
   `usage/s.md`: milestone S, 13.21 USD-eq of the 40 cap on workers and validators.
+  `usage/m0.md`: milestone M0, 49.05 USD-eq of the 60 cap priced so far; orchestrator delta 66.87 against 32.
 - `ci/<date>-<milestone>.md`: the `mission-checks` runs on the integration pushes: run ids, wall
   times, per-job durations, verdict against the 3-minute budget. `ci/2026-10-23-s.md`: S, red.
+  `ci/2026-10-23-m0.md`: M0, green, 1 min 45 s.
 - `readiness/<date>-<milestone>.json`: Agent Readiness report at an integration.
   `2026-10-23-s.json`: 42 of 66, hand re-evaluation of the criteria S changed (see its `method`).
+  `2026-10-23-m0.json`: 44 of 66, hand re-evaluation of the criteria M0 changed.
 - `screenshots/<date>-<milestone>.png`: the owner's unlocked-display screenshot per integration.
-  Expected at S: `screenshots/2026-10-23-s.png`.
+  Expected at S: `screenshots/2026-10-23-s.png`; at M0: `screenshots/2026-10-23-m0.png`.

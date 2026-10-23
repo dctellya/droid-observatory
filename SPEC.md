@@ -143,8 +143,10 @@ At the M0 boundary the orchestrator proposes re-caps for M1–M5 from the measur
 20 % of that milestone's cap, measured as the delta of its own session's `tokenUsage` (session
 `e194b9e3`, not `inclusiveTokenUsage`) from the baseline recorded in `reports/usage/s.md`
 (input 629 245, output 499 465, cache read 32 674 587, cache write 3 520 336; 83.44 USD-eq
-mission-to-date), priced at the `claude-fable-5.1` row: M0 12, M1 30, M2 16, M3 12, M4 24, M5 24
-USD-eq. The shares are re-set at the M0 boundary together with the milestone caps. Each
+mission-to-date), priced at the `claude-fable-5.1` row: M0 32 (raised from 12 by the owner on
+2026-10-23 after the second pass, F-024: the baseline stays and the 18.94 USD-eq spent on the S to M0
+boundary counts against M0), M1 30, M2 16, M3 12, M4 24, M5 24 USD-eq. The shares are re-set at the
+M0 boundary together with the milestone caps. Each
 `reports/usage/<m>.md` shows the delta and records the new absolute `tokenUsage` as the next baseline.
 
 At a cap the orchestrator stops dispatching, writes the usage so far to `reports/usage/`, raises
@@ -620,6 +622,13 @@ replay-fixtures`. The apt variant took 4 min 24 s and 4 min 50 s, over the 3 min
 `mission-branch.yml` also runs on push to `wt/**`. Measured: run 39928967884 on the integration
 commit, wall time 2 min 56 s (`reports/ci/2026-10-23-s.md`).
 
+**As-built at the M0 integration (budget evidence).** With the coverage job enforced at 80 %, `wt/m0`
+run 39942226174 took 3 min 58 s (`rust` 220 s was the critical path, `coverage` 59 s ran in parallel), so
+the fallback above (coverage on the final PR only) would not have shortened the wall time. The first
+`mission-checks` run on the mission branch after the M0 merge (run 39953923391) took 1 min 45 s (`rust`
+87 s, `coverage` 77 s). Per-job tables: `reports/ci/2026-10-23-m0.md`. The budget stays 3 min until the
+owner answers the boundary question (raise to 5 min, or shrink the `rust` job).
+
 **B-014 settled: `cargo-machete`, not `cargo-udeps`.** Reason: machete runs on the stable toolchain
 in seconds; udeps needs nightly, which is a second toolchain to pin and cache for a check that
 finds a strict superset only in edge cases. Revisit if machete misses a real unused dependency.
@@ -697,13 +706,17 @@ Written by the orchestrator on the mission branch, never in a worktree.
 | F-014 | 2026-10-22 | Owner approval of the mission proposal (entry 27), with four comments: (1) "Budget vs plan: 630 USD-eq total against a Max month (and the 5-hour/7-day limits) will likely hit throttling mid-M1 or M4. State what happens at a throttle (pause at the boundary, no silent model downgrade) and keep the M0 re-cap step."; (2) "M4 acceptance contradicts my decision: it reads \"merge from the app → badge updates\". Make the M4 exit: Merge button visible when policy allows, the app surfaces the 403 cleanly with the read-only token, and the merge happens by me(UI or API); the badge updates from the poll. Write-token question stays at the M3→M4 boundary."; (3) "Reasoning effort: §8 says \"all high\"; the spec sets workers to medium. One or the other."; (4) "Backlog: \"hybrid backlog (gh issues labelled backlog)\" reopens the Issues question you closed yesterday; AGENTS.md says deferred work goes to BACKLOG.md, not Issues. Pick BACKLOG.md only, unless you want Issues back on purpose." | §2, §3 M4, §8, D-014, D-015 | (1) in mission files, M0 re-cap kept; (2) done, §3 M4 amended; (3) checked, all `high`, no change; (4) done, §8 amended, F-003 withdrawn |
 | F-015 | 2026-10-23 | Owner decision at the S to M0 boundary: the models and reasoning efforts defined at mission approval never change for the lifetime of the mission; at a usage limit the mission stops, never continues on a fallback model | §2, D-018, `ai/RULES.md` rule 20 | done (as-built at the S integration) |
 | F-016 | 2026-10-23 | Owner decision at the S to M0 boundary: communication. "Think as much as you need, say little. To the human: one line of status per milestone event, a decision request in three lines (what, options, your recommendation) when rule 15 requires one, and nothing else." | D-019, `ai/RULES.md` rule 21, `.factory/output-styles/mission-terse.md` | done (second S integration pass); the owner selects the style with `/settings` |
-| F-017 | 2026-10-23 | Owner decision: PII in fixtures. Redact emails and `/Users/dct` paths deterministically, originals outside the repo with both SHA-256 in the decision file, offsets against the redacted file, gitleaks before commit, every future fixture | D-020, `ai/RULES.md` rule 22, S fixture redacted (`92d2208`) | done; open point: the hyphenated `-Users-dct-code-...` form (M0 to M1 list) |
+| F-017 | 2026-10-23 | Owner decision: PII in fixtures. Redact emails and `/Users/dct` paths deterministically, originals outside the repo with both SHA-256 in the decision file, offsets against the redacted file, gitleaks before commit, every future fixture | D-020, `ai/RULES.md` rule 22, S fixture redacted (`92d2208`) | done; the hyphenated `-Users-dct-code-...` form was settled by F-026 |
 | F-018 | 2026-10-23 | Owner decision: orchestrator cap, 20 % of each milestone cap, measured as the delta of session `e194b9e3`'s own `tokenUsage` from the baseline in `reports/usage/s.md`; re-set at the M0 boundary | §2 | done (as-built); re-cap at M0 boundary |
 | F-019 | 2026-10-23 | Owner confirms D-011 with two addenda: BSL-1.0 is the Boost Software License (not Business Source); RUSTSEC-2024-0436 ignored with a re-check date 2027-01-21 | D-011 | done |
 | F-020 | 2026-10-23 | Owner decision: the tool-call hook logs a `script` field (first 200 characters of `tool_input.script`) | D-021, `.factory/hooks/log-tool-call.sh`, B-022 | done (verified: 300-character payload logs length 200, other tools log null) |
 | F-021 | 2026-10-23 | Owner: `.capture.json` `reviewed_by` stays `factory-droid[bot]` | S fixture capture header | done (no change) |
 | F-022 | 2026-10-23 | Owner approves the rule 14 wording "everything else goes to `BACKLOG.md` with its reason" | `ai/RULES.md` rule 14, D-015 | done; F-003 and F-009 fully closed |
 | F-023 | 2026-10-23 | Owner: keep `ai/prd/review-2026-10-22.md` (restored with `git checkout`); §1 unchanged | §1 | done (no edit needed) |
+| F-024 | 2026-10-23 | Owner decision after the second pass: the M0 orchestrator cap is raised from 12 to 32 USD-eq; the baseline in `reports/usage/s.md` is kept and the 18.94 USD-eq boundary delta counts against M0; M1 to M5 orchestrator caps unchanged (30, 16, 12, 24, 24) | §2 | done (as-built at the M0 integration); `reports/usage/m0.md` shows the delta against 32 |
+| F-025 | 2026-10-23 | Owner decision: orchestrator subagents run at the highest effort (`Task` `complexity: heavy`); sessions `180b4a60` and `4162070f` ran at `medium` before the rule | `reports/usage/m0.md` (episode) | done (listed as an episode) |
+| F-026 | 2026-10-23 | Owner decision: the PII rule covers the hyphenated session-directory form, `-Users-dct` becomes `-home-user` (third rule of `scripts/redact-fixture.sh`); S fixture re-redacted, M0 capture redacted with all three rules | D-020 addendum, `ai/RULES.md` rule 22 | done (S `fcfbc32`, M0 `c623365`); closes the open point of F-017 |
+| F-027 | 2026-10-23 | Owner restates the communication rule and adds: "Decision requests carry no background paragraph; the owner asks for context when needed. Instructions are acknowledged in one line." | D-019 addendum, `ai/RULES.md` rule 21, `.factory/output-styles/mission-terse.md` | done (M0 integration) |
 
 ## 10. Evolution log
 
@@ -714,3 +727,21 @@ reports.
 |---|---|---|---|---|---|---|
 | S | 2026-10-23 | Cargo workspace (`observatory-core`, `observatory-cli`, `observatory-app`), `Cargo.lock`; canonical `Event` with 61 PRD kinds plus `Unknown`; `JsonlSource`, capture header and the Unknown-only `mapping::v1`; `observatory-cli replay` (`unknown events: 2027` on the S fixture); Leptos UI and Tauri window with nine empty lanes; S fixture (orchestrator session plus 25 children, gitleaks clean); `machete` and `coverage` jobs, tag check in `release.yml`, pinned bundle tools; D-011 | `cargo test --workspace --all-features`: 41 passed, 0 failed; `make check` exit 0 on the merge commit `38e5617`; coverage 94.48 % lines on `observatory-core` (reported, not enforced); 20 of 20 VAL-SKEL assertions passed; **`mission-checks` red on the first run** (run 39919592562, `rust` job: the Linux runner lacks `glib-2.0`, which the Tauri shell needs), see `reports/ci/2026-10-23-s.md` | 13.21 USD-eq of the 40 cap on workers and validators (`reports/usage/s.md`); orchestrator share not exposed | §3 M0 and §5.2 amended (mapping version from the fixture header, D-012); §3 M4 acceptance amended (owner merges, app surfaces 403, D-014); §8 hybrid backlog withdrawn (D-015); D-011 (deny exceptions) awaits owner confirmation; kimi-k3 episode at the boundary (D-018) | 2027 on the S fixture (expected: the S mapper knows no kind); 0 required from the M0 fixture |
 | S, second pass (M0 pre-work) | 2026-10-23 | `wt/m0` merged as `cc05aa5` (`Integrate m0 CI fix and S fixture redaction`): Linux `rust` job without the Tauri shell and `wt/**` trigger (D-022); `scripts/redact-fixture.sh`, `make redact-check` and the redacted S fixture (D-020); owner decisions D-019, D-020, D-021, D-011 and D-018 addenda, rules 14, 21, 22; hook `script` field | `make check` exit 0 on `cc05aa5`; `mission-checks` green, run 39928967884, 2 min 56 s; user-testing round 2 on `claude-opus-5-5`: 20 of 20 VAL-SKEL passed | S unchanged at 13.21 USD-eq of 40; round-2 validators 2.69; orchestrator delta 18.94 USD-eq (`reports/usage/s.md`) | S row above: "`mission-checks` red" is superseded by this row; D-022 (Linux CI excludes the shell, B-024) | 2027 on the S fixture (unchanged); 0 required from the M0 fixture |
+| M0 | 2026-10-23 | Redacted M0 capture (this mission's own sessions: root plus 55 children, 112 fixture files, gitleaks clean); sidecar reader and session tree with role resolution; `replay` over the root and its children, `--root-only`; mapping v1 (30 observed kinds, 31 defined-not-observed, golden `.events.json`, `unknown events: 0`); SQLite pointer store, `inspect` and `replay --store`; gate rule from the exit code; redactor fix for JSON escapes; coverage job enforced at 80 %; D-023 | `make check` exit 0 on the merge commit `f66a9f5`; 128 tests passed, 0 failed (`cargo test --workspace`); coverage 94.21 % lines on `observatory-core` (floor 80, `COVERAGE_MIN` "80" in `mission-branch.yml`); `mission-checks` green, run 39953923391, 1 min 45 s (`reports/ci/2026-10-23-m0.md`); scrutiny round 2 PASS at `88866ef`; user testing round 1: 26 of 27 passed, VAL-PROC-039 failed until the D-020 addendum written at this integration | Workers and validators 33.28 USD-eq plus orchestrator subagents 15.77 plus this pass, 49.05 priced of the 60 cap; orchestrator own delta 66.87 USD-eq against 32 (209 %); `reports/usage/m0.md` | D-023 added; D-020 addendum (third rule, hash tables, redactor fix); M0 orchestrator cap 32 (F-024); `source_dir` stored redacted; CI warm budget 3 min exceeded on `wt/m0` (run 39942226174, 3 min 58 s, cold rust job 3 min 40 s), met on the mission branch (1 min 45 s); orchestrator cap exceeded (deviation, rule 9) | 0 on the S and M0 fixtures (S 661 events, M0 1279 events over 8735 records) |
+
+**Frozen from the M0 integration (D-020, D-023).** Fixture and golden hashes (`shasum -a 256`, redacted
+bytes at the merge commit `f66a9f5`); a change needs a decision file:
+
+| File | SHA-256 |
+|---|---|
+| `fixtures/streams/2026-10-22-observatory-v1-m0.jsonl` | `ab23da5510478bb1c519adb78e1f47f959398477bfd802a9329bc71318a9a58c` |
+| `fixtures/streams/2026-10-22-observatory-v1-m0.settings.json` | `efef27eb7fe491e2cef90bd83634230e4b845a742d00141658c88dd6154076ec` |
+| `fixtures/streams/2026-10-22-observatory-v1-m0.capture.json` | `d6d790fb583e870a21960c1dba6c3409bada99e277fea3728d76dc657ca9adba` |
+| `fixtures/streams/2026-10-22-observatory-v1-m0.events.json` (golden, 1279 events) | `f055657a46af2713f50d1963dab684495d5f3770225f942adfcbb28e8331f3e1` |
+| `fixtures/streams/2026-10-22-observatory-v1-s.jsonl` | `e9746b0979596003373d584abb273a921c476ff6f43d2c47d76284d81f370b25` |
+| `fixtures/streams/2026-10-22-observatory-v1-s.settings.json` | `42f6b820dc6c797cf408994df08f19dd5954a16610e923ed358b1f986f0113d9` |
+| `fixtures/streams/2026-10-22-observatory-v1-s.capture.json` | `3658c14010bc9b4dfb472ce8481c13af0e4bc41273b929187297bc82ba558262` |
+
+The per-file hashes of the `.children/` directories are `redaction.files[]` in each `.capture.json`
+and the pairs are in the D-020 addendum. Mapping v1 golden counts: M0 1279 events (root only 474), S 661
+events (root only 364); `gate_command.run/passed/failed` 35/34/1 (D-023).

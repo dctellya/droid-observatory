@@ -37,3 +37,10 @@ Status lines and decision requests are short; the reasoning that used to be sent
 written to the session log. A worker handoff addressed to the human is a rule 21 violation and is
 caught at scrutiny. The output style takes effect only after the owner selects it, because styles
 cannot be forced from the repository.
+
+## Addendum 2026-10-23 (M0 to M1 boundary)
+
+The owner restated the rule after the second pass of the M0 boundary and added one sentence:
+"Decision requests carry no background paragraph; the owner asks for context when needed. Instructions are acknowledged in one line." It is appended to `ai/RULES.md` rule 21 and to
+`.factory/output-styles/mission-terse.md`. A decision request is the three lines of rule 21 and
+nothing before them.

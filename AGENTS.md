@@ -9,9 +9,10 @@ droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that shows a Factory Mi
 through nine lanes, with validation, gate, agent attribution, waste and cost per sub-droid.
 PRD: `ai/prd/droid-observatory-prd.md`. Spec: `SPEC.md` (approved 2026-10-22; the mission plans from it).
 
-Current state: the walking skeleton (core crate, canonical `Event`, `observatory-cli replay` over
-one captured session, an empty board that starts) is integrated on `mission/observatory-v1`
-(2026-10-23). Each later milestone deepens one area from it.
+Current state: the walking skeleton (S) and the stream capture and mapping milestone (M0) are
+integrated on `mission/observatory-v1` (2026-10-23): core crate, canonical `Event`, mapping v1 with
+its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, and an empty board
+that starts. Each later milestone deepens one area from it.
 
 ## Setup, build, test
 
@@ -53,9 +54,11 @@ Once the skeleton lands, the path the validators follow is:
 
 1. `make doctor` reports no missing required tools.
 2. `cargo run -p observatory-cli -- replay fixtures/streams/<capture>.jsonl` prints lane
-   events and ends with `unknown events: N`: `2027` on the S fixture
-   (`2026-10-22-observatory-v1-s.jsonl`, the mapper knows no kind yet), `0` from the M0 fixture
-   onward.
+   events and ends with `unknown events: N`. `replay <root.jsonl>` includes the child sessions
+   and ends `unknown events: 0` on both fixtures: S 661 events over 4636 records, M0 1279 events
+   over 8735 records. `replay --root-only <root.jsonl>` reads the root file alone: S 364 events
+   over 2027 records, M0 474 events over 2820 records. `make replay-fixtures` replays with
+   children.
 3. `make app-dev` opens the window; open the same fixture (Replay); the nine lanes render
    and a card opens its Details view.
 4. With the window open, start `droid exec --mission ...` in a terminal; the new session
@@ -99,6 +102,10 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 
 - Forward only (rule 12): never amend, reset, rebase, stash, or force-push. Fix with a new
   commit. `.factory/hooks/guard-git.sh` and `.githooks/pre-push` enforce this.
+  `guard-git.sh` blocks every stash form of git, including the read-only `list` subcommand;
+  inspect the tree with `git status` and `git diff`.
+- The Linux CI `rust` job does not lint or test `apps/observatory-app/src-tauri` (D-022). Shell
+  changes are caught by local `make check` and by the macOS bundle job on the final pull request.
 - Nothing reaches `main` except the mission's single pull request. `main` has a ruleset:
   PR required, `gate` check required, no force push, no bypass.
 - Milestones live in worktrees and integrate into `mission/<name>`. Two worktrees never edit

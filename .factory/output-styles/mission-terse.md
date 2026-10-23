@@ -14,3 +14,5 @@ To the human:
 
 No narration of reasoning, no restating the plan. Explanations go to the session log and the
 mission files. Workers and validators report to the orchestrator, not to the human.
+
+Decision requests carry no background paragraph; the owner asks for context when needed. Instructions are acknowledged in one line.
