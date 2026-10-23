@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use leptos::prelude::*;
 use observatory_core::ingest::SessionInfo;
 use observatory_core::model::MilestoneId;
@@ -9,5 +7,5 @@ use observatory_core::model::MilestoneId;
 #[derive(Clone)]
 pub struct BoardCtx {
     pub open_details: Callback<MilestoneId>,
-    pub sessions: Arc<Vec<SessionInfo>>,
+    pub sessions: ArcRwSignal<Vec<SessionInfo>>,
 }

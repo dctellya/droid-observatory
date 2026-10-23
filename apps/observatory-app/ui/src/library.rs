@@ -2,10 +2,11 @@ use leptos::html::Input;
 use leptos::prelude::*;
 use observatory_core::view::{MissionRow, library};
 
+use crate::attach::AttachPanel;
 use crate::backend::files_of;
 
-/// FR-L4: the captures known to this browser with name, date and event count, and the controls
-/// that open a capture. One selection holds the root `.jsonl`, `<slug>.children/*.jsonl`, the
+/// FR-L4: the captures known to this host (the store's in the Tauri window, those opened in this
+/// browser otherwise) with name, date and event count, and the controls that open a capture. One selection holds the root `.jsonl`, `<slug>.children/*.jsonl`, the
 /// `.settings.json` sidecars and the `.capture.json`.
 #[component]
 pub fn Library(
@@ -13,9 +14,12 @@ pub fn Library(
     #[prop(into)] reopenable: Signal<Vec<String>>,
     #[prop(into)] status: Signal<Option<String>>,
     #[prop(into)] failure: Signal<Option<String>>,
+    tauri: bool,
     on_pick: Callback<Vec<web_sys::File>>,
     on_open: Callback<String>,
+    on_open_path: Callback<String>,
 ) -> impl IntoView {
+    let path = RwSignal::new(String::new());
     let folder: NodeRef<Input> = NodeRef::new();
     Effect::new(move |_| {
         if let Some(input) = folder.get() {
@@ -32,7 +36,7 @@ pub fn Library(
                 fallback=|| {
                     view! {
                         <p aria-label="library-empty">
-                            "No capture opened in this browser yet. Open one below."
+                            "No capture opened yet. Open one below."
                         </p>
                     }
                 }
@@ -86,30 +90,62 @@ pub fn Library(
                 </table>
             </Show>
 
-            <h2>"Open a capture"</h2>
-            <p>
-                "Pick the root session .jsonl together with its .children/*.jsonl, the .settings.json sidecars and the .capture.json, or pick the folder that holds them."
-            </p>
-            <label class="picker">
-                "Capture files "
-                <input
-                    type="file"
-                    multiple
-                    accept=".jsonl,.json"
-                    aria-label="open-files"
-                    on:change=move |ev| on_pick.run(files_of(&ev))
-                />
-            </label>
-            <label class="picker">
-                "Capture folder "
-                <input
-                    node_ref=folder
-                    type="file"
-                    multiple
-                    aria-label="open-folder"
-                    on:change=move |ev| on_pick.run(files_of(&ev))
-                />
-            </label>
+            <AttachPanel />
+
+            {tauri.then(|| {
+                view! {
+                    <h2>"Open a capture"</h2>
+                    <p>
+                        "Type the path of the root session .jsonl (or its .capture.json); its child sessions are read with it."
+                    </p>
+                    <form
+                        class="picker"
+                        on:submit=move |ev| {
+                            ev.prevent_default();
+                            on_open_path.run(path.get_untracked());
+                        }
+                    >
+                        <label>
+                            "Capture path "
+                            <input
+                                type="text"
+                                aria-label="open-path"
+                                prop:value=move || path.get()
+                                on:input=move |ev| path.set(event_target_value(&ev))
+                            />
+                        </label>
+                        <button type="submit" aria-label="open-path-go">"Open"</button>
+                    </form>
+                }
+            })}
+            {(!tauri).then(|| {
+                view! {
+                    <h2>"Open a capture"</h2>
+                    <p>
+                        "Pick the root session .jsonl together with its .children/*.jsonl, the .settings.json sidecars and the .capture.json, or pick the folder that holds them."
+                    </p>
+                    <label class="picker">
+                        "Capture files "
+                        <input
+                            type="file"
+                            multiple
+                            accept=".jsonl,.json"
+                            aria-label="open-files"
+                            on:change=move |ev| on_pick.run(files_of(&ev))
+                        />
+                    </label>
+                    <label class="picker">
+                        "Capture folder "
+                        <input
+                            node_ref=folder
+                            type="file"
+                            multiple
+                            aria-label="open-folder"
+                            on:change=move |ev| on_pick.run(files_of(&ev))
+                        />
+                    </label>
+                }
+            })}
             <p role="status" aria-label="load-status">{move || status.get()}</p>
             <Show when=move || failure.get().is_some()>
                 <p role="alert" class="error" aria-label="load-error">

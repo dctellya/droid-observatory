@@ -1,6 +1,6 @@
 //! `BrowserBackend` (architecture §7): the file picker's files are mapped and folded in wasm by
-//! `observatory-core`, with no store. The same UI runs in the Tauri window's webview; the shell
-//! commands (`open_replay`, `board`, attach) arrive with the attach feature.
+//! `observatory-core`, with no store. The Tauri window's webview runs the same UI over the shell
+//! commands instead (`shell`, `capture`): the library is the store's and a row reopens from it.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

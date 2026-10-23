@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
+use crate::capture::Capture;
 use leptos::prelude::*;
-use observatory_core::ingest::MemoryReplay;
 use observatory_core::model::{SessionId, Timestamp};
 use observatory_core::view::{
     AgentEntry, AgentStatus, AgentStream, BoardView, DeclaredModels, MarkerKind, TimelineRow,
@@ -22,14 +20,17 @@ fn status_text(status: AgentStatus) -> &'static str {
 #[component]
 pub fn AgentPanel(
     board: Memo<BoardView>,
-    replay: Arc<MemoryReplay>,
+    capture: Capture,
     declared: DeclaredModels,
     at: RwSignal<Option<Timestamp>>,
 ) -> impl IntoView {
     let selected = RwSignal::new(None::<SessionId>);
-    let sessions = replay.clone();
+    let sessions = capture.sessions.clone();
     let entries = Memo::new(move |_| {
-        board.with(|b| agent_entries(&b.agents, &sessions.sessions, &declared, at.get().is_none()))
+        board.with(|b| {
+            sessions
+                .with(|sessions| agent_entries(&b.agents, sessions, &declared, at.get().is_none()))
+        })
     });
     view! {
         <section class="agents" aria-label="agents">
@@ -73,7 +74,9 @@ pub fn AgentPanel(
                 selected
                     .get()
                     .map(|session| {
-                        let stream = agent_stream(&replay.events, &session, at.get());
+                        let stream = capture
+                            .events
+                            .with(|events| agent_stream(events, &session, at.get()));
                         stream_view(&stream, selected, &entries.get())
                     })
             }}

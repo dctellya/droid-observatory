@@ -77,7 +77,10 @@ impl LiveIngest {
         }
         self.store_and_queue(batch.events, &mut step);
         for warning in &batch.warnings {
-            self.warnings.push(warning.to_string());
+            self.warnings.push(match warning {
+                IngestError::TooLarge { .. } => format!("TooLarge: {warning}"),
+                other => other.to_string(),
+            });
         }
         step.warnings = batch.warnings;
         self.unwatched = batch.unwatched;

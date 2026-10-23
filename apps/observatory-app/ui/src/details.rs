@@ -1,29 +1,24 @@
-use std::sync::Arc;
-
 use leptos::prelude::*;
-use observatory_core::ingest::MemoryReplay;
 use observatory_core::model::{EventId, MilestoneId};
 use observatory_core::view::{TimelineRow, details};
 
+use crate::capture::Capture;
 use crate::raw::RawLine;
 
 /// FR-D1: the Details of one milestone, opened from its card or from any event row. M1 has the
 /// Timeline tab only; the other tabs arrive with M5.
 #[component]
-pub fn DetailsView(
-    replay: Arc<MemoryReplay>,
-    milestone: RwSignal<Option<MilestoneId>>,
-) -> impl IntoView {
+pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -> impl IntoView {
     let selected = RwSignal::new(None::<EventId>);
     Effect::new(move |_| {
         milestone.track();
         selected.set(None);
     });
-    let events = replay.clone();
+    let events = capture.events.clone();
     let model = Memo::new(move |_| {
         milestone
             .get()
-            .map(|milestone| details(&events.events, &milestone))
+            .map(|milestone| events.with(|events| details(events, &milestone)))
     });
     move || {
         model.get().map(|model| {
@@ -47,7 +42,7 @@ pub fn DetailsView(
                         "Timeline rows: "
                         <span aria-label="details-row-count">{model.timeline.len()}</span>
                     </p>
-                    <RawLine replay=replay.clone() selected=selected />
+                    <RawLine capture=capture.clone() selected=selected />
                     <table aria-label="details-timeline">
                         <thead>
                             <tr>

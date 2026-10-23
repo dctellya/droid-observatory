@@ -182,7 +182,8 @@ fn card_view(card: &Card) -> AnyView {
                 "now: {} {} {} [{}] on {}",
                 now.role.as_str(),
                 model,
-                session_name(&ctx.sessions, &now.session_id),
+                ctx.sessions
+                    .with(|sessions| session_name(sessions, &now.session_id)),
                 now.session_id.0.get(..8).unwrap_or(&now.session_id.0),
                 feature
             ))

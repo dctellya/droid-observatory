@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use leptos::prelude::*;
-use observatory_core::ingest::MemoryReplay;
 use observatory_core::model::EventId;
 use observatory_core::view::BoardView;
 
+use crate::capture::Capture;
 use crate::raw::RawLine;
 
 /// FR-B7: events the mapping did not know, counted and listed; an entry opens its raw line
@@ -12,7 +10,7 @@ use crate::raw::RawLine;
 #[component]
 pub fn Tray(
     board: Memo<BoardView>,
-    replay: Arc<MemoryReplay>,
+    capture: Capture,
     selected: RwSignal<Option<EventId>>,
 ) -> impl IntoView {
     view! {
@@ -47,7 +45,7 @@ pub fn Tray(
                         })
                 }}
             </ul>
-            <RawLine replay=replay selected=selected />
+            <RawLine capture=capture selected=selected />
         </section>
     }
 }
