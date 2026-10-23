@@ -36,4 +36,4 @@ apple-native-keyring-store = { workspace = true, optional = true }
 # Declared ahead of the modules that use them; each worker removes its entry when the
 # first use lands (cargo machete reads this list).
 [package.metadata.cargo-machete]
-ignored = ["rusqlite", "keyring-core", "apple-native-keyring-store"]
+ignored = ["keyring-core", "apple-native-keyring-store"]

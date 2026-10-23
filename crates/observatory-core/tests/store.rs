@@ -201,16 +201,29 @@ fn store_never_contains_raw_line_text() {
         }
         needles.push(String::from_utf8_lossy(&line[..line.len().min(60)]).into_owned());
     }
-    let sidecar: Value =
-        serde_json::from_slice(&std::fs::read(sidecar_path(&m0_root())).unwrap()).unwrap();
-    let system_prompt = sidecar["systemPrompt"]
-        .as_str()
-        .expect("the sidecar has a systemPrompt");
-    needles.push(system_prompt.chars().take(NEEDLE_CHARS).collect());
+    let children = streams_dir().join(format!("{SLUG}.children"));
+    let sidecars = std::fs::read_dir(&children)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.to_string_lossy().ends_with(".settings.json"))
+        .chain([sidecar_path(&m0_root())]);
+    let mut prompts = 0;
+    for path in sidecars {
+        let sidecar: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        if let Some(prompt) = sidecar["systemPrompt"].as_str() {
+            needles.push(prompt.chars().take(NEEDLE_CHARS).collect());
+            prompts += 1;
+        }
+    }
+    assert!(prompts > 0, "the capture has sessions with a systemPrompt");
     assert!(needles.len() > 100, "{} needles", needles.len());
 
+    // The capture's source directory is a header value the `captures` row keeps on purpose.
+    let header = read_capture(&m0_root()).unwrap().unwrap();
+    let source_dir = header.source_dir.expect("the header names its source dir");
     let found: Vec<&String> = needles
         .iter()
+        .filter(|needle| !source_dir.contains(needle.as_str()))
         .filter(|needle| stored.contains(needle.as_str()))
         .collect();
     assert!(found.is_empty(), "raw text in the store: {found:?}");

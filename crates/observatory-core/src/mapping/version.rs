@@ -12,6 +12,21 @@ pub enum MappingVersion {
 
 impl MappingVersion {
     pub const LATEST: MappingVersion = MappingVersion::V1;
+    pub const ALL: [MappingVersion; 1] = [MappingVersion::V1];
+
+    /// The Droid releases whose session files these rules cover, as the store records them.
+    pub fn droid_version_range(self) -> String {
+        match self {
+            MappingVersion::V1 => format!("{V1_DROID_SERIES}.*"),
+        }
+    }
+
+    /// Day the rules were frozen (`m0-mapping-v1`); a later change of rules is a new version.
+    pub fn frozen_at(self) -> &'static str {
+        match self {
+            MappingVersion::V1 => "2026-10-23",
+        }
+    }
 
     /// Picks the rules for the session format of a `droid --version` string. An absent,
     /// empty or unrecognised version gets `LATEST`: showing events with the newest rules

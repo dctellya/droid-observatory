@@ -27,6 +27,18 @@ pub enum SourceKind {
 pub enum IngestError {
     #[error("cannot read {}: {source}", path.display())]
     Io { path: PathBuf, source: io::Error },
+    /// The line a stored pointer names cannot be read back: the file moved, was rewritten
+    /// or is shorter than the pointer says. The error carries the whole pointer.
+    #[error(
+        "cannot read the raw line at path={} byte_offset={byte_offset} byte_len={byte_len}: {source}",
+        path.display()
+    )]
+    PointerLost {
+        path: PathBuf,
+        byte_offset: u64,
+        byte_len: u32,
+        source: io::Error,
+    },
     #[error("{} is shorter than what was already read (moved, rotated or rewritten)", path.display())]
     FileMoved { path: PathBuf },
     #[error("{} is not a valid capture header: {message}", path.display())]

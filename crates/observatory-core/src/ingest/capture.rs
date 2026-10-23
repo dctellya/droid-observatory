@@ -11,6 +11,9 @@ use crate::mapping::{MappingVersion, Warning, select_version};
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct CaptureHeader {
     pub droid_version: Option<String>,
+    pub source_dir: Option<String>,
+    pub captured_at: Option<String>,
+    pub mission_name: Option<String>,
 }
 
 /// `<dir>/<slug>.jsonl` has its header at `<dir>/<slug>.capture.json`.

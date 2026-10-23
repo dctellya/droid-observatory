@@ -132,14 +132,19 @@ impl JsonlSource {
         &self.files[0].session_id
     }
 
-    /// Re-reads the line a pointer names.
+    /// Re-reads the line a pointer names. A moved, shortened or unreadable file is
+    /// `PointerLost`, which names the pointer.
     pub fn read_at(path: &Path, byte_offset: u64, byte_len: u32) -> Result<Vec<u8>, IngestError> {
-        let mut file = File::open(path).map_err(|source| io_error(path, source))?;
-        file.seek(SeekFrom::Start(byte_offset))
-            .map_err(|source| io_error(path, source))?;
+        let lost = |source: std::io::Error| IngestError::PointerLost {
+            path: path.to_owned(),
+            byte_offset,
+            byte_len,
+            source,
+        };
+        let mut file = File::open(path).map_err(lost)?;
+        file.seek(SeekFrom::Start(byte_offset)).map_err(lost)?;
         let mut line = vec![0; byte_len as usize];
-        file.read_exact(&mut line)
-            .map_err(|source| io_error(path, source))?;
+        file.read_exact(&mut line).map_err(lost)?;
         Ok(line)
     }
 
