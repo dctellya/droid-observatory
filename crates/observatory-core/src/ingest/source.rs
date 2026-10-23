@@ -31,6 +31,8 @@ pub enum IngestError {
     FileMoved { path: PathBuf },
     #[error("{} is not a valid capture header: {message}", path.display())]
     BadCapture { path: PathBuf, message: String },
+    #[error("{} is not a valid session settings file: {message}", path.display())]
+    BadSidecar { path: PathBuf, message: String },
 }
 
 pub trait Source {

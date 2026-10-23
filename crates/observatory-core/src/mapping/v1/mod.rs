@@ -1,7 +1,12 @@
 //! Mapping rules for Droid 0.247 session files. The skeleton knows none of them yet: every
 //! record becomes `Unknown`, so the unknown count equals the line count.
 
+mod roles;
+
 use serde_json::Value;
+
+pub use roles::RoleEvidence;
+pub(in crate::mapping) use roles::resolve_role;
 
 use super::MapContext;
 use crate::ingest::RawRecord;

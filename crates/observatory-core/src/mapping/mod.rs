@@ -3,6 +3,7 @@
 mod v1;
 mod version;
 
+pub use v1::RoleEvidence;
 pub use version::MappingVersion;
 
 use crate::ingest::RawRecord;
@@ -34,6 +35,13 @@ pub struct MapContext<'a> {
     pub version: MappingVersion,
     /// Time given to a record that carries none of its own.
     pub fallback_at: Timestamp,
+}
+
+/// Which role a session has, by the rules of the mapping version.
+pub fn resolve_role(version: MappingVersion, evidence: &RoleEvidence<'_>) -> Role {
+    match version {
+        MappingVersion::V1 => v1::resolve_role(evidence),
+    }
 }
 
 /// Total: every record yields at least one event and the call never panics (invariant I5).

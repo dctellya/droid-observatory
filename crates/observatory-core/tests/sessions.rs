@@ -115,7 +115,7 @@ fn discovery_finds_children_beside_the_root_and_beneath_it_and_skips_strangers()
 
     let mut ids: Vec<_> = tree.sessions().iter().map(|s| s.id.0.as_str()).collect();
     ids.sort_unstable();
-    assert_eq!(ids, ["beside", "below", "grandchild", "root"]);
+    assert_eq!(ids, ["below", "beside", "grandchild", "root"]);
     assert_eq!(
         tree.get(&id("grandchild")).unwrap().parent,
         Some(id("beside"))

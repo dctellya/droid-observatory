@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use super::{IngestError, RawRecord, Source, SourceKind};
+use super::{IngestError, RawRecord, SessionTree, Source, SourceKind};
 use crate::config::IngestConfig;
 use crate::model::{SessionId, SourcePtr};
 
@@ -103,6 +103,15 @@ impl JsonlSource {
             chunk_bytes: chunk_bytes.max(1),
         };
         source.add_file(root)?;
+        Ok(source)
+    }
+
+    /// Opens the root of a discovered tree, then every child in it.
+    pub fn open_tree(tree: &SessionTree, cfg: &IngestConfig) -> Result<Self, IngestError> {
+        let mut source = Self::open(&tree.root().path, cfg)?;
+        for child in &tree.sessions()[1..] {
+            source.add_file(&child.path)?;
+        }
         Ok(source)
     }
 
