@@ -460,3 +460,57 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
         .collect();
     assert_eq!(once, twice, "a second run is a no-op");
 }
+
+#[test]
+fn every_line_of_every_session_fixture_is_valid_json() {
+    let mut broken = Vec::new();
+    let mut lines = 0;
+    for path in files_under(&streams_dir()) {
+        if path.extension().is_none_or(|ext| ext != "jsonl") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).expect("fixture file reads");
+        let mut offset = 0;
+        for line in bytes.split_inclusive(|b| *b == b'\n') {
+            lines += 1;
+            let body = line.strip_suffix(b"\n").unwrap_or(line);
+            if serde_json::from_slice::<Value>(body).is_err() {
+                broken.push(format!("{}@{offset}", path.display()));
+            }
+            offset += line.len();
+        }
+    }
+
+    assert!(lines > 0, "fixtures/streams must hold session files");
+    assert!(
+        broken.is_empty(),
+        "{} redacted lines are no longer JSON, first ones:\n{}",
+        broken.len(),
+        broken
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn redaction_leaves_the_escape_in_front_of_an_email_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("fx.jsonl");
+    std::fs::write(
+        &root,
+        "{\"out\":\"icons\\nfoo@bar.com\\n128x128@2x.png\\tlast@c.io\"}\n",
+    )
+    .unwrap();
+
+    redact(&root);
+
+    let line = std::fs::read_to_string(&root).unwrap();
+    assert_eq!(
+        line,
+        "{\"out\":\"icons\\nuser@example.invalid\\nuser@example.invalid\\tuser@example.invalid\"}\n"
+    );
+    serde_json::from_str::<Value>(&line).expect("the redacted line is still JSON");
+}
