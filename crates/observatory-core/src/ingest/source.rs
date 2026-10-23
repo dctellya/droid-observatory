@@ -48,6 +48,10 @@ pub enum IngestError {
         path.display()
     )]
     TooLarge { path: PathBuf, mb: u64 },
+    #[error(
+        "no session file among the {files} files selected (a session starts with a `session_start` line)"
+    )]
+    NoSession { files: usize },
     #[error("{} is not a valid capture header: {message}", path.display())]
     BadCapture { path: PathBuf, message: String },
     #[error("{} is not a valid session settings file: {message}", path.display())]

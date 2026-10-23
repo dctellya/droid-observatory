@@ -10,6 +10,7 @@ mod library;
 mod scrub;
 mod scrubber;
 mod state;
+mod summary;
 
 pub use agents::{AgentRow, AgentStatus, Marker, MarkerKind, agent_markers};
 pub use board::{BoardView, LaneView, PanelView};
@@ -21,3 +22,4 @@ pub use library::{LibraryEntry, MissionRow, library};
 pub use scrub::{ScrubbedLine, scrub};
 pub use scrubber::{lane_counts, overlay_markers, scrub_to, tray_count};
 pub use state::{BoardState, SubLane, TrayEntry};
+pub use summary::MissionSummary;

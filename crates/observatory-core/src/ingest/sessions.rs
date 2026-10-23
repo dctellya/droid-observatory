@@ -79,13 +79,29 @@ impl SessionTree {
     pub fn discover(root: &Path, cfg: &IngestConfig) -> Result<Self, IngestError> {
         let head_bytes =
             usize::try_from(cfg.tail_chunk_kb.saturating_mul(KB)).unwrap_or(usize::MAX);
-        let root_head = read_head(root, head_bytes)?.unwrap_or_default();
+        let version = mapping_version_of(root)?;
+        Self::assemble(
+            &DiskFiles { head_bytes },
+            root,
+            candidate_paths(root)?,
+            version,
+        )
+    }
+
+    /// The tree of `root` among `candidates`, read through `files`.
+    pub(super) fn assemble(
+        files: &dyn Files,
+        root: &Path,
+        candidates: Vec<PathBuf>,
+        version: MappingVersion,
+    ) -> Result<Self, IngestError> {
+        let root_head = files.head(root)?.unwrap_or_default();
         let root_id = SessionId(root_head.id.clone().unwrap_or_else(|| file_stem(root)));
 
         let mut known: HashSet<SessionId> = HashSet::from([root_id.clone()]);
         let mut pending = Vec::new();
-        for path in candidate_paths(root)? {
-            let Some(head) = read_head(&path, head_bytes)? else {
+        for path in candidates {
+            let Some(head) = files.head(&path)? else {
                 continue;
             };
             if let (Some(id), Some(caller)) = (head.id.clone(), head.calling_session_id.clone()) {
@@ -120,10 +136,9 @@ impl SessionTree {
             }
         }
 
-        let version = mapping_version_of(root)?;
         let sidecars = attached
             .iter()
-            .map(|entry| read_sidecar(&entry.path))
+            .map(|entry| files.sidecar(&entry.path))
             .collect::<Result<Vec<_>, _>>()?;
         let mission_id = sidecars[0]
             .as_ref()
@@ -133,7 +148,7 @@ impl SessionTree {
                 |id| MissionId(id.to_owned()),
             );
 
-        let mut transcripts = Transcripts::default();
+        let mut transcripts = Transcripts::new(files);
         let milestones = transcripts
             .get(&attached[0].path)?
             .proposals
@@ -225,7 +240,7 @@ fn resolve(
     is_root: bool,
     sidecar: Option<&Sidecar>,
     all: &[Attached],
-    transcripts: &mut Transcripts,
+    transcripts: &mut Transcripts<'_>,
 ) -> Result<Role, IngestError> {
     let parent_path = all
         .iter()
@@ -261,7 +276,7 @@ fn is_contract(
     version: MappingVersion,
     entry: &Attached,
     all: &[Attached],
-    transcripts: &mut Transcripts,
+    transcripts: &mut Transcripts<'_>,
 ) -> Result<bool, IngestError> {
     let parent_path = all
         .iter()
@@ -279,31 +294,57 @@ fn is_contract(
 
 /// First line of a session file.
 #[derive(Default)]
-struct Head {
-    id: Option<String>,
-    calling_session_id: Option<String>,
-    calling_tool_use_id: Option<String>,
+pub(super) struct Head {
+    pub(super) id: Option<String>,
+    pub(super) calling_session_id: Option<String>,
+    pub(super) calling_tool_use_id: Option<String>,
 }
 
-/// `None` when the first line is not a `session_start`, so a stray `.jsonl` is not a session.
-fn read_head(path: &Path, limit: usize) -> Result<Option<Head>, IngestError> {
-    let mut bytes = Vec::new();
-    let file = File::open(path).map_err(|source| io_error(path, source))?;
-    BufReader::new(file.take(limit as u64))
-        .read_until(b'\n', &mut bytes)
-        .map_err(|source| io_error(path, source))?;
-    let Ok(line) = serde_json::from_slice::<Value>(&bytes) else {
-        return Ok(None);
-    };
-    if line["type"] != "session_start" {
-        return Ok(None);
+impl Head {
+    /// `None` when the line is not a `session_start`, so a stray `.jsonl` is not a session.
+    pub(super) fn of_line(line: &[u8]) -> Option<Self> {
+        let line = serde_json::from_slice::<Value>(line).ok()?;
+        if line["type"] != "session_start" {
+            return None;
+        }
+        let text = |key: &str| line[key].as_str().map(str::to_owned);
+        Some(Self {
+            id: text("id"),
+            calling_session_id: text("callingSessionId"),
+            calling_tool_use_id: text("callingToolUseId"),
+        })
     }
-    let text = |key: &str| line[key].as_str().map(str::to_owned);
-    Ok(Some(Head {
-        id: text("id"),
-        calling_session_id: text("callingSessionId"),
-        calling_tool_use_id: text("callingToolUseId"),
-    }))
+}
+
+/// Where the files of a tree are read from: the disk, or memory for the browser host.
+pub(super) trait Files {
+    fn head(&self, path: &Path) -> Result<Option<Head>, IngestError>;
+    fn sidecar(&self, path: &Path) -> Result<Option<Sidecar>, IngestError>;
+    fn transcript(&self, path: &Path) -> Result<Transcript, IngestError>;
+}
+
+struct DiskFiles {
+    head_bytes: usize,
+}
+
+impl Files for DiskFiles {
+    fn head(&self, path: &Path) -> Result<Option<Head>, IngestError> {
+        let mut bytes = Vec::new();
+        let file = File::open(path).map_err(|source| io_error(path, source))?;
+        BufReader::new(file.take(self.head_bytes as u64))
+            .read_until(b'\n', &mut bytes)
+            .map_err(|source| io_error(path, source))?;
+        Ok(Head::of_line(&bytes))
+    }
+
+    fn sidecar(&self, path: &Path) -> Result<Option<Sidecar>, IngestError> {
+        read_sidecar(path)
+    }
+
+    fn transcript(&self, path: &Path) -> Result<Transcript, IngestError> {
+        let file = File::open(path).map_err(|source| io_error(path, source))?;
+        scan(BufReader::new(file)).map_err(|source| io_error(path, source))
+    }
 }
 
 fn candidate_paths(root: &Path) -> Result<Vec<PathBuf>, IngestError> {
@@ -350,7 +391,7 @@ fn io_error(path: &Path, source: std::io::Error) -> IngestError {
 
 /// What role resolution reads from a transcript.
 #[derive(Default)]
-struct Transcript {
+pub(super) struct Transcript {
     /// `Task` tool_use id to its `input.subagent_type`.
     subagent_types: HashMap<String, String>,
     /// `Task` tool_use id to its `input.description`.
@@ -362,15 +403,23 @@ struct Transcript {
 }
 
 /// Transcripts are large and only a few are needed, so each is read at most once and only on demand.
-#[derive(Default)]
-struct Transcripts {
+struct Transcripts<'a> {
+    files: &'a dyn Files,
     scanned: HashMap<PathBuf, Transcript>,
 }
 
-impl Transcripts {
+impl<'a> Transcripts<'a> {
+    fn new(files: &'a dyn Files) -> Self {
+        Self {
+            files,
+            scanned: HashMap::new(),
+        }
+    }
+
     fn get(&mut self, path: &Path) -> Result<&Transcript, IngestError> {
         if !self.scanned.contains_key(path) {
-            self.scanned.insert(path.to_owned(), scan(path)?);
+            self.scanned
+                .insert(path.to_owned(), self.files.transcript(path)?);
         }
         Ok(&self.scanned[path])
     }
@@ -382,17 +431,13 @@ const WATCHED_TOOLS: [&[u8]; 3] = [
     br#""name":"ProposeMission""#,
 ];
 
-fn scan(path: &Path) -> Result<Transcript, IngestError> {
-    let file = File::open(path).map_err(|source| io_error(path, source))?;
-    let mut reader = BufReader::new(file);
+/// Reads the transcript lines of `reader`, which hold the tool_uses role resolution needs.
+pub(super) fn scan(mut reader: impl BufRead) -> std::io::Result<Transcript> {
     let mut transcript = Transcript::default();
     let mut line = Vec::new();
     loop {
         line.clear();
-        let read = reader
-            .read_until(b'\n', &mut line)
-            .map_err(|source| io_error(path, source))?;
-        if read == 0 {
+        if reader.read_until(b'\n', &mut line)? == 0 {
             return Ok(transcript);
         }
         // Compact JSON writes the part as `"name":"Task"`; the same text inside a string value
