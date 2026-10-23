@@ -20,6 +20,9 @@ enum Command {
     Replay {
         /// The orchestrator session `.jsonl`.
         file: PathBuf,
+        /// Replay only this file, not the child sessions found beside it.
+        #[arg(long)]
+        root_only: bool,
     },
 }
 
@@ -38,9 +41,9 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(None)?;
     match command {
-        Command::Replay { file } => {
+        Command::Replay { file, root_only } => {
             let mut out = BufWriter::new(io::stdout().lock());
-            replay::replay(&file, &config.ingest, &mut out)?;
+            replay::replay(&file, root_only, &config.ingest, &mut out)?;
             out.flush()?;
             Ok(())
         }

@@ -6,7 +6,9 @@ mod version;
 pub use v1::RoleEvidence;
 pub use version::MappingVersion;
 
-use crate::ingest::RawRecord;
+use std::collections::HashMap;
+
+use crate::ingest::{RawRecord, SessionTree};
 use crate::model::{Event, MissionId, ModelId, Role, SessionId, Timestamp};
 
 /// What the mapping needs to know about the session a record came from.
@@ -81,5 +83,44 @@ impl Mapper {
             self.last_at = last.at;
         }
         events
+    }
+}
+
+/// One `Mapper` per session of a tree, picked by the record's session id.
+pub struct TreeMapper {
+    mappers: HashMap<SessionId, Mapper>,
+    mission_id: MissionId,
+    version: MappingVersion,
+}
+
+impl TreeMapper {
+    pub fn new(tree: &SessionTree, version: MappingVersion) -> Self {
+        let mappers = tree
+            .sessions()
+            .iter()
+            .map(|session| (session.id.clone(), Mapper::new(tree.meta(session), version)))
+            .collect();
+        Self {
+            mappers,
+            mission_id: tree.mission_id().clone(),
+            version,
+        }
+    }
+
+    /// A record from a session the tree does not know is mapped as `Unresolved`, not dropped.
+    pub fn map(&mut self, record: &RawRecord) -> Vec<Event> {
+        let (mission_id, version) = (&self.mission_id, self.version);
+        self.mappers
+            .entry(record.session_id.clone())
+            .or_insert_with(|| {
+                let session = SessionMeta {
+                    id: record.session_id.clone(),
+                    mission_id: mission_id.clone(),
+                    role: Role::Unresolved,
+                    model: None,
+                };
+                Mapper::new(session, version)
+            })
+            .map(record)
     }
 }
