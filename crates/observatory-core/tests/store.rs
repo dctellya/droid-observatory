@@ -506,3 +506,23 @@ fn opening_a_store_twice_applies_the_schema_once() {
     assert_eq!(query_count(&db, "SELECT count(*) FROM schema_version"), 1);
     assert_eq!(query_count(&db, "SELECT count(*) FROM mapping_versions"), 1);
 }
+
+#[test]
+fn opening_a_missing_store_read_only_fails_and_creates_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("absent.sqlite");
+
+    let err = Store::open_existing(&db).err().expect("no store there");
+
+    assert!(err.to_string().contains("absent.sqlite"), "{err}");
+    assert!(!db.exists());
+}
+
+#[test]
+fn a_store_opened_read_only_answers_pointer_queries() {
+    let (_dir, db, events) = indexed_m0();
+
+    let store = Store::open_existing(&db).unwrap();
+
+    assert_eq!(store.pointer(&events[0].id).unwrap(), events[0].source);
+}

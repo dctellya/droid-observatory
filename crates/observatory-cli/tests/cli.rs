@@ -273,3 +273,175 @@ fn root_only_replay_of_the_m0_capture_also_ends_with_zero_unknown_events() {
             .all(|session| session == SESSION)
     );
 }
+
+/// The golden lane events of the M0 capture: ids and the pointers they were mapped from.
+fn golden_events() -> Vec<serde_json::Value> {
+    let path = m0_fixture().with_extension("events.json");
+    serde_json::from_slice(&std::fs::read(path).expect("the golden file exists"))
+        .expect("the golden file is a JSON array")
+}
+
+/// The line the golden event points at, cut from the fixture file by hand.
+fn golden_line(event: &serde_json::Value) -> Vec<u8> {
+    let source = &event["source"];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = std::fs::read(root.join(source["path"].as_str().unwrap())).unwrap();
+    let offset = usize::try_from(source["byte_offset"].as_u64().unwrap()).unwrap();
+    let len = usize::try_from(source["byte_len"].as_u64().unwrap()).unwrap();
+    bytes[offset..offset + len].to_vec()
+}
+
+fn event_id(event: &serde_json::Value) -> &str {
+    event["id"].as_str().unwrap()
+}
+
+fn run(home: &Path, config: Option<&Path>, args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_observatory-cli"));
+    command.env("HOME", home).env_remove("OBSERVATORY_CONFIG");
+    if let Some(config) = config {
+        command.env("OBSERVATORY_CONFIG", config);
+    }
+    command.args(args).output().expect("the binary starts")
+}
+
+fn utf8(path: &Path) -> &str {
+    path.to_str().unwrap()
+}
+
+#[test]
+fn inspect_prints_the_raw_line_byte_identically() {
+    let home = tempfile::tempdir().unwrap();
+    let store = home.path().join("observatory.sqlite");
+    let replayed = run(
+        home.path(),
+        None,
+        &["replay", "--store", utf8(&store), utf8(&m0_fixture())],
+    );
+    assert!(replayed.status.success(), "{:?}", replayed.status);
+    assert_eq!(last_line(&replayed.stdout), "unknown events: 0");
+
+    let events = golden_events();
+    let child = events
+        .iter()
+        .find(|event| event["session_id"] != SESSION)
+        .expect("the capture has a child session");
+    for event in [&events[0], &events[100], child, events.last().unwrap()] {
+        let output = run(
+            home.path(),
+            None,
+            &["inspect", "--store", utf8(&store), event_id(event)],
+        );
+
+        assert!(output.status.success(), "{:?}", output.status);
+        let mut expected = golden_line(event);
+        expected.push(b'\n');
+        assert_eq!(output.stdout, expected, "{}", event_id(event));
+        assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    }
+}
+
+#[test]
+fn inspect_names_the_pointer_when_the_file_is_gone() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = home.path().join("observatory.sqlite");
+    let copy = m0_copy(dir.path(), "0.247.0", "");
+    let replayed = run(
+        home.path(),
+        None,
+        &["replay", "--store", utf8(&store), utf8(&copy)],
+    );
+    assert!(replayed.status.success(), "{:?}", replayed.status);
+    let events = golden_events();
+    let event = events
+        .iter()
+        .find(|event| event["session_id"] == SESSION)
+        .unwrap();
+    let moved = dir.path().join("moved.jsonl");
+    std::fs::rename(&copy, &moved).unwrap();
+
+    let output = run(
+        home.path(),
+        None,
+        &["inspect", "--store", utf8(&store), event_id(event)],
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1), "an error, not a panic");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(stderr.contains(utf8(&copy)), "{stderr}");
+    let offset = event["source"]["byte_offset"].as_u64().unwrap();
+    let len = event["source"]["byte_len"].as_u64().unwrap();
+    assert!(
+        stderr.contains(&format!("byte_offset={offset}")),
+        "{stderr}"
+    );
+    assert!(stderr.contains(&format!("byte_len={len}")), "{stderr}");
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn inspect_of_an_unknown_event_id_exits_nonzero_naming_the_id() {
+    let home = tempfile::tempdir().unwrap();
+    let store = home.path().join("observatory.sqlite");
+    run(
+        home.path(),
+        None,
+        &["replay", "--store", utf8(&store), utf8(&m0_fixture())],
+    );
+
+    let output = run(
+        home.path(),
+        None,
+        &["inspect", "--store", utf8(&store), "no-such-session:0:0"],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no-such-session:0:0"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn inspect_without_a_store_fails_and_does_not_create_one() {
+    let home = tempfile::tempdir().unwrap();
+
+    let output = run(home.path(), None, &["inspect", "any-session:0:0"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("observatory.sqlite"), "{stderr}");
+    let left_behind: Vec<_> = std::fs::read_dir(home.path()).unwrap().collect();
+    assert!(left_behind.is_empty(), "{left_behind:?}");
+}
+
+#[test]
+fn replay_and_inspect_use_the_store_path_of_the_config_file_in_effect() {
+    let home = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let store = scratch.path().join("configured.sqlite");
+    let config = scratch.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!("[store]\npath = \"{}\"\n", store.display()),
+    )
+    .unwrap();
+
+    let replayed = run(home.path(), Some(&config), &["replay", utf8(&m0_fixture())]);
+    assert!(replayed.status.success(), "{:?}", replayed.status);
+    assert!(store.exists(), "the configured store was written");
+
+    let events = golden_events();
+    let output = run(
+        home.path(),
+        Some(&config),
+        &["inspect", event_id(&events[0])],
+    );
+    assert!(output.status.success(), "{:?}", output.status);
+    let mut expected = golden_line(&events[0]);
+    expected.push(b'\n');
+    assert_eq!(output.stdout, expected);
+    let left_behind: Vec<_> = std::fs::read_dir(home.path()).unwrap().collect();
+    assert!(left_behind.is_empty(), "{left_behind:?}");
+}
