@@ -119,6 +119,7 @@ endif
 replay-fixtures: ## Replay every captured stream fixture through observatory-cli
 ifneq (,$(HAS_FIXTURES))
 	@for f in fixtures/streams/*.jsonl; do \
+	  case "$$f" in *.usage-log.jsonl) continue;; esac; \
 	  echo "replay $$f"; cargo run -q -p observatory-cli -- replay "$$f" >/dev/null || exit 1; \
 	done
 else

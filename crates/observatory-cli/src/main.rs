@@ -25,6 +25,11 @@ enum Command {
         /// Replay only this file, not the child sessions found beside it.
         #[arg(long)]
         root_only: bool,
+        /// Join the turns of this Droid log file (`droid-log-single.log`) to the sessions and
+        /// print them as `turn.usage` lines with per-role totals; repeat the flag for rotated
+        /// files, oldest first. The files are only read.
+        #[arg(long, value_name = "FILE")]
+        usage_log: Vec<PathBuf>,
         /// Write the sessions and event pointers to this SQLite store. Without it, the
         /// store at `[store].path` is written when a config file is in effect
         /// (`OBSERVATORY_CONFIG` or `~/.droid-observatory/config.toml`), else none.
@@ -59,10 +64,15 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Replay {
             file,
             root_only,
+            usage_log,
             store,
         } => {
             // Pointers outlive the working directory only when they are absolute.
             let file = std::path::absolute(&file)?;
+            let usage_log = usage_log
+                .iter()
+                .map(std::path::absolute)
+                .collect::<Result<Vec<_>, _>>()?;
             let store_path =
                 store.or_else(|| config_file.is_some().then(|| config.store.resolved_path()));
             let mut store = store_path.as_deref().map(Store::open).transpose()?;
@@ -70,6 +80,7 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             replay::replay(
                 &file,
                 root_only,
+                &usage_log,
                 &config.ingest,
                 store.as_mut(),
                 &mut out,

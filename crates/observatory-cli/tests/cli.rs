@@ -463,6 +463,20 @@ fn replay_and_inspect_use_the_store_path_of_the_config_file_in_effect() {
     assert!(left_behind.is_empty(), "{left_behind:?}");
 }
 
+/// The lane as `inspect` and the event lines write it: number and name.
+fn lane_text(wire: &str) -> &'static str {
+    match wire {
+        "plan" => "1 Plan",
+        "contract" => "2 Contract",
+        "build" => "3 Build",
+        "scrutiny" => "4 Scrutiny",
+        "user_testing" => "5 User testing",
+        "integrate" => "6 Integrate",
+        "gate" => "7 Gate",
+        other => panic!("not a lane: {other}"),
+    }
+}
+
 const ROLES: [&str; 4] = [
     "orchestrator",
     "worker",
@@ -604,7 +618,7 @@ fn inspect_of_a_turn_prints_the_parsed_row_and_the_store_holds_no_log_text() {
         let mut expected = vec![
             format!("session: {}", turn["session_id"].as_str().unwrap()),
             format!("role: {}", turn["role"].as_str().unwrap()),
-            format!("lane: {}", turn["lane"].as_str().unwrap()),
+            format!("lane: {}", lane_text(turn["lane"].as_str().unwrap())),
             format!("log_ts: {}", usage["log_ts"].as_str().unwrap()),
             format!("model: {}", usage["model"].as_str().unwrap()),
         ];
@@ -614,7 +628,7 @@ fn inspect_of_a_turn_prints_the_parsed_row_and_the_store_holds_no_log_text() {
         for line in &expected {
             assert!(stdout.lines().any(|l| l == line), "{line} in {stdout}");
         }
-        assert_eq!(stdout.lines().count(), expected.len() + 1, "{stdout}");
+        assert_eq!(stdout.lines().count(), expected.len(), "{stdout}");
         assert!(!stdout.contains("Streaming result"), "{stdout}");
         assert!(!stdout.contains("Context"), "{stdout}");
     }
