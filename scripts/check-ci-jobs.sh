@@ -1,7 +1,11 @@
 #!/bin/sh
 # The aggregate job `mission-checks` is the single name other tooling depends on, so a Rust
 # job that is not in its `needs` list can fail without failing the gate. Assert the Rust jobs
-# added with the walking skeleton are listed.
+# added with the walking skeleton are listed. Two more facts are pinned because a miss is
+# invisible until a run fails or the budget (3 min warm, SPEC section 6) is blown: the Linux rust
+# job leaves the Tauri shell (apps/observatory-app/src-tauri, which needs the Tauri 2 Linux
+# libraries: apt install and a larger cache) to the macOS bundle job, and worktree
+# pushes (`wt/**`) trigger the same checks.
 set -eu
 wf="${1:-.github/workflows/mission-branch.yml}"
 required="machete coverage"
@@ -23,4 +27,37 @@ for job in $required; do
     status=1
   fi
 done
+
+rust_job=$(awk '
+  /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { in_job = ($1 == "rust:") }
+  in_job { print }
+' "$wf" | grep -v '^[[:space:]]*#')
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo clippy --workspace --exclude observatory-app'; then
+  echo "check-ci-jobs: the rust job does not run clippy with --exclude observatory-app"
+  status=1
+fi
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo clippy -p observatory-ui --target wasm32-unknown-unknown'; then
+  echo "check-ci-jobs: the rust job does not run the wasm32 clippy of observatory-ui"
+  status=1
+fi
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo test -p observatory-core -p observatory-cli'; then
+  echo "check-ci-jobs: the rust job does not test observatory-core and observatory-cli"
+  status=1
+fi
+if printf '%s\n' "$rust_job" | grep -q 'apt-get'; then
+  echo "check-ci-jobs: the rust job installs apt packages; the Tauri shell belongs to the bundle job"
+  status=1
+fi
+
+push_branches=$(awk '
+  /^on:/ { in_on = 1; next }
+  /^[A-Za-z]/ { in_on = 0 }
+  in_on && /^  push:/ { in_push = 1; next }
+  in_on && /^  [A-Za-z_]/ { in_push = 0 }
+  in_push && /^[[:space:]]+- / { print }
+' "$wf")
+if ! printf '%s\n' "$push_branches" | grep -Fq '"wt/**"'; then
+  echo "check-ci-jobs: on.push.branches does not list \"wt/**\""
+  status=1
+fi
 exit $status

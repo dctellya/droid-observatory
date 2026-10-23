@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - "mission/**"
+      - "wt/**"
   pull_request:
     branches:
       - "mission/**"
@@ -106,10 +107,15 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: fmt
         run: make fmt-check
+      # The Tauri shell (apps/observatory-app/src-tauri) needs the Tauri 2 Linux libraries; installing
+      # them pushed this job past the 3 min budget, so the macOS bundle job builds the shell and
+      # `make lint` / `make test` (whole workspace) stay the local check.
       - name: clippy
-        run: make lint
+        run: |
+          cargo clippy --workspace --exclude observatory-app --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
+          cargo clippy -p observatory-ui --target wasm32-unknown-unknown --all-targets --all-features -- -D warnings
       - name: test
-        run: make test
+        run: cargo test -p observatory-core -p observatory-cli --all-features
       - name: replay fixtures
         if: needs.detect.outputs.has_fixtures == 'true'
         run: make replay-fixtures
