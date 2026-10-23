@@ -21,6 +21,7 @@ pub enum SourceKind {
     Rpc,
     Git,
     GitHub,
+    UsageLog,
 }
 
 #[derive(Debug, thiserror::Error)]

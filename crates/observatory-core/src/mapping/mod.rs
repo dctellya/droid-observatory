@@ -8,7 +8,7 @@ pub use version::{MappingVersion, Warning, select_version};
 
 use std::collections::HashMap;
 
-use crate::ingest::{RawRecord, SessionTree};
+use crate::ingest::{RawRecord, SessionTree, UsageTurn};
 use crate::model::{
     Event, MilestoneId, MissionId, ModelId, Role, SessionId, Timestamp, TokenUsage,
 };
@@ -124,6 +124,13 @@ impl Mapper {
         }
     }
 
+    /// The `turn.usage` event of a turn of this session, in the phase the session is in now.
+    pub fn map_usage(&mut self, turn: &UsageTurn) -> Event {
+        match &self.state {
+            State::V1(state) => v1::turn_usage(turn, &self.session, self.version, state),
+        }
+    }
+
     /// Replaces the usage reported by `finish`: a live session's sidecar is only final once the
     /// session has ended, long after the mapper was created.
     pub fn set_usage(&mut self, usage: Option<TokenUsage>) {
@@ -182,6 +189,16 @@ impl TreeMapper {
                 Mapper::new(session, version)
             })
             .map(record)
+    }
+
+    /// The `turn.usage` event of a turn of one of the tree's sessions. `None` for a turn with
+    /// no session or of a session this tree does not hold: the caller counts those.
+    pub fn map_usage(&mut self, turn: &UsageTurn) -> Option<Event> {
+        let session = turn.session_id.as_ref()?;
+        self.mappers
+            .get_mut(session)
+            .filter(|_| self.order.contains(session))
+            .map(|mapper| mapper.map_usage(turn))
     }
 
     /// `Mapper::finish` for every session: the tree's own first, in tree order, then any

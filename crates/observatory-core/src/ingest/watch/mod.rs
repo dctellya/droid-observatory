@@ -7,7 +7,7 @@ mod live;
 mod scan;
 mod watcher;
 
-pub use attach::{Attach, AttachBatch, WatchedSession};
+pub use attach::{Attach, AttachBatch, UsageCounters, WatchedSession};
 #[cfg(feature = "store")]
 pub use live::{LiveIngest, LiveStep};
 pub use watcher::{DiscoveredSession, SessionWatcher, session_name};

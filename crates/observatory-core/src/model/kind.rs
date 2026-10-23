@@ -2,9 +2,11 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
+use super::ids::ModelId;
 use super::lane::Lane::{self, Contract, Gate, Integrate, Plan, Scrutiny, UserTesting};
 use super::overlay::Overlay::{self, Human};
 use super::role::Role;
+use super::timestamp::Timestamp;
 
 /// Declares one variant per PRD §7 event kind with its dotted PRD name, the phase that fixes
 /// its lane (`None`: the role decides, see `EventKind::lane`) and its overlay (D-024).
@@ -24,6 +26,18 @@ macro_rules! event_kinds {
                 pr_number: u64,
                 attestation_ids: Vec<String>,
             },
+            /// One model turn of the usage log (`[Agent] Streaming result`), with the token
+            /// counts of the turn. `model` is the log's `modelId`; `log_ts` is the log
+            /// line's own time. The sidecar `usage_reported` stays as the session's total.
+            TurnUsage {
+                input: u64,
+                output: u64,
+                cache_read: u64,
+                reasoning: u64,
+                total_input: u64,
+                model: Option<ModelId>,
+                log_ts: Timestamp,
+            },
             /// A raw record the mapping does not know. It is counted and shown, never
             /// dropped (rule 18); `raw_type` is the record's own `type` value.
             Unknown { raw_type: String },
@@ -38,6 +52,15 @@ macro_rules! event_kinds {
                     pr_number: 0,
                     attestation_ids: Vec::new(),
                 },
+                EventKind::TurnUsage {
+                    input: 0,
+                    output: 0,
+                    cache_read: 0,
+                    reasoning: 0,
+                    total_input: 0,
+                    model: None,
+                    log_ts: Timestamp(time::OffsetDateTime::UNIX_EPOCH),
+                },
             ];
 
             /// The dotted PRD name (`finding.blocking`), for display, the CLI and the
@@ -46,6 +69,7 @@ macro_rules! event_kinds {
                 match self {
                     $(EventKind::$variant => Cow::Borrowed($name),)*
                     EventKind::HandedToCd { .. } => Cow::Borrowed("handed_to_cd"),
+                    EventKind::TurnUsage { .. } => Cow::Borrowed("turn.usage"),
                     EventKind::Unknown { .. } => Cow::Borrowed("unknown.event"),
                 }
             }
@@ -56,7 +80,7 @@ macro_rules! event_kinds {
                 match self {
                     $(EventKind::$variant => $fixed,)*
                     EventKind::HandedToCd { .. } => Some(Gate),
-                    EventKind::Unknown { .. } => None,
+                    EventKind::TurnUsage { .. } | EventKind::Unknown { .. } => None,
                 }
             }
 
@@ -64,7 +88,9 @@ macro_rules! event_kinds {
             pub fn overlay(&self) -> Option<Overlay> {
                 match self {
                     $(EventKind::$variant => $overlay,)*
-                    EventKind::HandedToCd { .. } | EventKind::Unknown { .. } => None,
+                    EventKind::HandedToCd { .. }
+                    | EventKind::TurnUsage { .. }
+                    | EventKind::Unknown { .. } => None,
                 }
             }
         }

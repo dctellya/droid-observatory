@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use super::watcher::{DiscoveredSession, SessionWatcher, session_name};
 use crate::config::IngestConfig;
 use crate::ingest::{
-    IngestError, JsonlSource, SessionTree, Source, mapping_version_of, read_sidecar,
+    IngestError, JsonlSource, SessionTree, Source, UsageLogSource, mapping_version_of, read_sidecar,
 };
 use crate::mapping::{Mapper, SessionMeta};
 use crate::model::{Event, Role, SessionId};
@@ -110,8 +110,22 @@ impl Tail {
     }
 }
 
+/// What the usage-log tail has seen that is not a `turn.usage` event of a watched session.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UsageCounters {
+    /// Streaming result lines that joined no session (rule 18).
+    pub unknown_turns: u64,
+    /// Turns whose joined id differs from the line's own `tags.sessionId`.
+    pub join_mismatches: u64,
+    /// Turns of sessions this attach does not watch (other missions, sessions pushed out by
+    /// `max_watched_sessions`).
+    pub turns_elsewhere: u64,
+}
+
 pub struct Attach {
     watcher: SessionWatcher,
+    usage_log: Option<UsageLogSource>,
+    turns_elsewhere: u64,
     cfg: IngestConfig,
     tails: Vec<Tail>,
     unwatched: Vec<DiscoveredSession>,
@@ -124,6 +138,8 @@ impl Attach {
     pub fn start(cfg: &IngestConfig) -> Result<Self, IngestError> {
         Ok(Self {
             watcher: SessionWatcher::start(cfg)?,
+            usage_log: UsageLogSource::follow(cfg).ok(),
+            turns_elsewhere: 0,
             cfg: cfg.clone(),
             tails: Vec::new(),
             unwatched: Vec::new(),
@@ -152,8 +168,52 @@ impl Attach {
         for tail in &mut self.tails {
             tail.step(&mut batch);
         }
+        self.poll_usage_log(&mut batch);
         batch.unwatched = self.unwatched.len();
         batch
+    }
+
+    /// What the usage-log tail counts besides the events it yielded.
+    pub fn usage_counters(&self) -> UsageCounters {
+        UsageCounters {
+            unknown_turns: self
+                .usage_log
+                .as_ref()
+                .map_or(0, UsageLogSource::unknown_turns),
+            join_mismatches: self
+                .usage_log
+                .as_ref()
+                .map_or(0, UsageLogSource::join_mismatches),
+            turns_elsewhere: self.turns_elsewhere,
+        }
+    }
+
+    /// The turns appended to the log since the last poll, each given to the mapper of its
+    /// session. A turn is only ever read once, so one of a session that is not watched yet is
+    /// counted, not kept.
+    fn poll_usage_log(&mut self, batch: &mut AttachBatch) {
+        let Some(log) = self.usage_log.as_mut() else {
+            return;
+        };
+        match log.next_batch() {
+            Ok(turns) => {
+                for turn in &turns {
+                    let tail = turn.session_id.as_ref().and_then(|session| {
+                        self.tails
+                            .iter_mut()
+                            .find(|tail| tail.found.session_id == *session)
+                    });
+                    match tail {
+                        Some(tail) => batch.events.push(tail.mapper.map_usage(turn)),
+                        None => self.turns_elsewhere += 1,
+                    }
+                }
+            }
+            Err(err) => {
+                batch.warnings.push(err);
+                self.usage_log = None;
+            }
+        }
     }
 
     /// The sessions being tailed, in the order they were attached.

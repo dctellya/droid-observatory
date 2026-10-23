@@ -36,10 +36,12 @@ pub fn m0_lines(count: usize) -> Vec<Vec<u8>> {
     lines
 }
 
-/// Defaults, with the sessions directory and the poll interval of the test.
+/// Defaults, with the sessions directory and the poll interval of the test. The usage-log
+/// directory is one that does not exist, so no test reads the owner's `~/.factory/logs`.
 pub fn config(dir: &Path, poll_ms: u64) -> IngestConfig {
     IngestConfig {
         factory_sessions_dir: dir.to_string_lossy().into_owned(),
+        factory_logs_dir: dir.join("no-factory-logs").to_string_lossy().into_owned(),
         jsonl_poll_ms: poll_ms,
         ..IngestConfig::default()
     }

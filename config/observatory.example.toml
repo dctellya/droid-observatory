@@ -18,6 +18,10 @@ branch_pattern = "mission/<name>"
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
 factory_sessions_dir = "~/.factory/sessions"
+# Where Droid writes its CLI log, droid-log-single.log and its dated rotations. The session files
+# do not carry per-turn token counts; the log does (F-034, D-029). Read-only; no log line is
+# copied, only the parsed counts and a pointer to the line.
+factory_logs_dir = "~/.factory/logs"
 # Attach is the primary live mode (PRD §11.1, D-008): watch the sessions directory with a
 # filesystem notifier and attach to every new session JSONL automatically. Off means attach
 # only to files picked by hand.

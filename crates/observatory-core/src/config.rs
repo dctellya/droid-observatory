@@ -113,6 +113,7 @@ impl Default for MissionConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct IngestConfig {
     pub factory_sessions_dir: String,
+    pub factory_logs_dir: String,
     pub watch_sessions_dir: bool,
     pub jsonl_poll_ms: u64,
     pub max_watched_sessions: u32,
@@ -122,6 +123,11 @@ pub struct IngestConfig {
 }
 
 impl IngestConfig {
+    /// `factory_logs_dir` with a leading `~/` replaced by `$HOME`.
+    pub fn resolved_logs_dir(&self) -> PathBuf {
+        expand_home(&self.factory_logs_dir, std::env::var_os("HOME").as_deref())
+    }
+
     /// `factory_sessions_dir` with a leading `~/` replaced by `$HOME`.
     pub fn resolved_sessions_dir(&self) -> PathBuf {
         expand_home(
@@ -135,6 +141,7 @@ impl Default for IngestConfig {
     fn default() -> Self {
         Self {
             factory_sessions_dir: "~/.factory/sessions".into(),
+            factory_logs_dir: "~/.factory/logs".into(),
             watch_sessions_dir: true,
             jsonl_poll_ms: 500,
             max_watched_sessions: 64,

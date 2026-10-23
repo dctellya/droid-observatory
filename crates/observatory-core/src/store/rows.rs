@@ -58,6 +58,11 @@ impl PointerColumns {
                 byte_offset,
                 byte_len,
             } => file("rpc", path, *byte_offset, *byte_len),
+            SourcePtr::UsageLog {
+                path,
+                byte_offset,
+                byte_len,
+            } => file("usage_log", path, *byte_offset, *byte_len),
             SourcePtr::Git { repo, sha } => Ok(Self {
                 source: "git".into(),
                 repo: Some(utf8(repo)?),
@@ -105,6 +110,14 @@ impl PointerColumns {
             "rpc" => {
                 let (path, byte_offset, byte_len) = file(&self)?;
                 Ok(SourcePtr::Rpc {
+                    path,
+                    byte_offset,
+                    byte_len,
+                })
+            }
+            "usage_log" => {
+                let (path, byte_offset, byte_len) = file(&self)?;
+                Ok(SourcePtr::UsageLog {
                     path,
                     byte_offset,
                     byte_len,
@@ -167,6 +180,11 @@ mod tests {
                 path: "/s/spool.jsonl".into(),
                 byte_offset: 0,
                 byte_len: 1,
+            },
+            SourcePtr::UsageLog {
+                path: "/l/droid-log-single.log".into(),
+                byte_offset: 9,
+                byte_len: 300,
             },
             SourcePtr::Git {
                 repo: "/r".into(),

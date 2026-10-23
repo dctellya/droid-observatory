@@ -31,6 +31,13 @@ pub enum SourcePtr {
         byte_offset: u64,
         byte_len: u32,
     },
+    /// A `[Agent] Streaming result` line of the Droid CLI log (the usage-log source, §4.7).
+    /// Offsets are those of the file the line was read from.
+    UsageLog {
+        path: PathBuf,
+        byte_offset: u64,
+        byte_len: u32,
+    },
     Git {
         repo: PathBuf,
         sha: String,

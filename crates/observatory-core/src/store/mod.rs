@@ -19,7 +19,9 @@ pub use record::CaptureInfo;
 
 use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
-use crate::model::{Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp};
+use crate::model::{
+    Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp, TokenUsage,
+};
 
 /// How long a writer waits for another connection's write (the ingest thread and a command
 /// share the file); an ingest step or an `open_replay` is far shorter.
@@ -117,7 +119,25 @@ impl Store {
                     ptr.url,
                     ptr.action_id,
                 ])?;
-                if let (1, Some(usage)) = (new, event.usage) {
+                // The three counts of a turn.usage go to the usage table too, the one place a
+                // count lives besides the pointer; a session's reported total stays on its own
+                // usage_reported row.
+                let turn_counts = match &event.kind {
+                    EventKind::TurnUsage {
+                        input,
+                        output,
+                        cache_read,
+                        ..
+                    } => Some(TokenUsage {
+                        input: *input,
+                        output: *output,
+                        cache_read: *cache_read,
+                        cache_write: 0,
+                        credits: None,
+                    }),
+                    _ => None,
+                };
+                if let (1, Some(usage)) = (new, event.usage.or(turn_counts)) {
                     insert_usage.execute(params![
                         id,
                         to_i64(usage.input),

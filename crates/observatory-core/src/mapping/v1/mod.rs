@@ -1,4 +1,26 @@
 //! Mapping rules for Droid 0.247 session files. The rule table is in `kinds.rs`.
+//!
+//! # `turn.usage` and the usage-log heuristics (F-034, D-029)
+//!
+//! `turn.usage` is the one kind not read from a session file. It comes from Droid's CLI log
+//! (`droid-log-single.log` and its dated rotations), whose lines the session files cannot
+//! replace; `ingest::usage_log` parses them and this module only places a parsed turn.
+//!
+//! - Line format: `[<RFC 3339>] INFO: [Agent] Streaming result | Context: {json}`; the Context
+//!   holds `inputTokens`, `cacheReadInputTokens`, `totalInputTokens`, `reasoningTokens` and
+//!   `outputTokens`. The payload is `input`, `output`, `cache_read`, `reasoning`, `total_input`,
+//!   `model` and `log_ts`.
+//! - Join: the session and model of a turn come from the nearest preceding line whose Context
+//!   has a top-level `sessionId` and that has the same second as the turn. The turn line's own
+//!   `tags.sessionId` is a cross-check; a difference is counted as a join mismatch and shown.
+//!   A turn with no such line is an unknown turn: counted and shown, never dropped (rule 18).
+//! - Lane and role: those of the session the turn joined to, in the phase the mapper holds for
+//!   that session when the turn is mapped (the rule of the other role-neutral events,
+//!   architecture §5). The event is timed by `log_ts`; its id is
+//!   `<session>:<byte offset in the log>:<2^31>` so it cannot meet the id of a session line.
+//! - The log is a heuristic source, not a documented format: a Droid version that changes the
+//!   line text yields unknown turns, not a wrong join. `usage_reported`, derived from the
+//!   session sidecar, stays beside it.
 
 mod findings;
 mod ids;
@@ -16,7 +38,7 @@ pub(in crate::mapping) use roles::is_contract_task;
 pub(in crate::mapping) use roles::resolve_role;
 
 use super::{MappingVersion, SessionMeta};
-use crate::ingest::RawRecord;
+use crate::ingest::{RawRecord, UsageTurn};
 use crate::model::{
     Event, EventId, EventKind, FeatureId, Lane, MilestoneId, ModelId, Role, SourcePtr, Timestamp,
 };
@@ -235,6 +257,54 @@ pub(super) fn map_record(
             released
         }
         _ => events,
+    }
+}
+
+/// The `sub` of a `turn.usage` event. Its pointer is into the usage log, whose offsets can
+/// equal those of the session's own lines; a `sub` no line yields keeps the ids apart.
+const TURN_USAGE_SUB: u32 = 1 << 31;
+
+/// The `turn.usage` event of a turn of `session`: in the phase the session is in now (the same
+/// rule as its other role-neutral events), timed by the log line.
+pub(super) fn turn_usage(
+    turn: &UsageTurn,
+    session: &SessionMeta,
+    version: MappingVersion,
+    state: &State,
+) -> Event {
+    let kind = EventKind::TurnUsage {
+        input: turn.input,
+        output: turn.output,
+        cache_read: turn.cache_read,
+        reasoning: turn.reasoning,
+        total_input: turn.total_input,
+        model: turn.model.clone(),
+        log_ts: turn.log_ts,
+    };
+    Event {
+        id: EventId(format!(
+            "{}:{}:{TURN_USAGE_SUB}",
+            session.id,
+            byte_offset(&turn.ptr)
+        )),
+        mission_id: session.mission_id.clone(),
+        milestone_id: state.milestone(),
+        feature_id: state.feature.clone(),
+        lane: lane_of(&kind, session, state.feature.as_ref()),
+        overlay: None,
+        kind,
+        role: session.role,
+        session_id: Some(session.id.clone()),
+        model: turn
+            .model
+            .clone()
+            .or_else(|| state.model.clone())
+            .or_else(|| session.model.clone()),
+        at: turn.log_ts,
+        duration: None,
+        usage: None,
+        source: turn.ptr.clone(),
+        mapping_version: version,
     }
 }
 
@@ -566,7 +636,9 @@ fn between(from: Timestamp, to: Timestamp) -> Option<Duration> {
 
 fn byte_offset(ptr: &SourcePtr) -> u64 {
     match ptr {
-        SourcePtr::Jsonl { byte_offset, .. } | SourcePtr::Rpc { byte_offset, .. } => *byte_offset,
+        SourcePtr::Jsonl { byte_offset, .. }
+        | SourcePtr::Rpc { byte_offset, .. }
+        | SourcePtr::UsageLog { byte_offset, .. } => *byte_offset,
         SourcePtr::Git { .. } | SourcePtr::GitHub { .. } | SourcePtr::App { .. } => 0,
     }
 }

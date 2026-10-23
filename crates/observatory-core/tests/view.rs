@@ -21,7 +21,13 @@ fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/streams/2026-10-22-observatory-v1-m0.events.json");
     let text = std::fs::read_to_string(path).expect("the golden file is committed");
-    serde_json::from_str(&text).expect("the golden file is a list of events")
+    let events: Vec<Event> =
+        serde_json::from_str(&text).expect("the golden file is a list of events");
+    // Plain replay never reads the usage log; its turn.usage events are checked in usage_log.rs.
+    events
+        .into_iter()
+        .filter(|e| e.kind.prd_name() != "turn.usage")
+        .collect()
 }
 
 fn config(filter: Filter, at: Option<Timestamp>) -> ViewConfig {

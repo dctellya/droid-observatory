@@ -428,6 +428,11 @@ pub fn pointer_text(pointer: &SourcePtr) -> String {
             path,
             byte_offset,
             byte_len,
+        }
+        | SourcePtr::UsageLog {
+            path,
+            byte_offset,
+            byte_len,
         } => format!("{}:{byte_offset}+{byte_len}", path.display()),
         SourcePtr::Git { repo, sha } => format!("{}@{sha}", repo.display()),
         SourcePtr::GitHub { url } => url.clone(),

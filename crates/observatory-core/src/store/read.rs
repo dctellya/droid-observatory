@@ -173,6 +173,25 @@ fn event_of(row: &Row<'_>) -> Result<Event, StoreError> {
         }),
         None => None,
     };
+    let model = row.get::<_, Option<String>>(11)?.map(ModelId);
+    let at = Timestamp::parse(&at).map_err(|error| bad(format!("at {at:?}: {error}")))?;
+    // A turn.usage keeps input, output and cache_read in the usage table; `reasoning` and
+    // `total_input` have no column and read back as 0 (the pointer still names the line).
+    let (kind, usage) = match (kind, usage) {
+        (EventKind::TurnUsage { .. }, Some(counts)) => (
+            EventKind::TurnUsage {
+                input: counts.input,
+                output: counts.output,
+                cache_read: counts.cache_read,
+                reasoning: 0,
+                total_input: 0,
+                model: model.clone(),
+                log_ts: at,
+            },
+            None,
+        ),
+        other => other,
+    };
     Ok(Event {
         mission_id: MissionId(row.get(1)?),
         session_id: row.get::<_, Option<String>>(2)?.map(SessionId),
@@ -184,8 +203,8 @@ fn event_of(row: &Row<'_>) -> Result<Event, StoreError> {
         mapping_version: from_wire::<MappingVersion>(&version)
             .ok_or_else(|| bad(format!("mapping version {version:?}")))?,
         role: from_wire::<Role>(&role).ok_or_else(|| bad(format!("role {role:?}")))?,
-        model: row.get::<_, Option<String>>(11)?.map(ModelId),
-        at: Timestamp::parse(&at).map_err(|error| bad(format!("at {at:?}: {error}")))?,
+        model,
+        at,
         duration: row
             .get::<_, Option<i64>>(13)?
             .map(|ms| std::time::Duration::from_millis(unsigned(ms))),

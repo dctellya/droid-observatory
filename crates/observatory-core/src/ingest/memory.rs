@@ -259,7 +259,9 @@ fn records_of(session: &SessionId, path: &Path, bytes: &[u8]) -> Vec<RawRecord> 
 /// sorts what it receives by this key, so a live board and a replay list the same order.
 pub fn order_key(event: &Event) -> (crate::model::Timestamp, String, u64, u32) {
     let offset = match &event.source {
-        SourcePtr::Jsonl { byte_offset, .. } | SourcePtr::Rpc { byte_offset, .. } => *byte_offset,
+        SourcePtr::Jsonl { byte_offset, .. }
+        | SourcePtr::Rpc { byte_offset, .. }
+        | SourcePtr::UsageLog { byte_offset, .. } => *byte_offset,
         _ => 0,
     };
     let sub = event

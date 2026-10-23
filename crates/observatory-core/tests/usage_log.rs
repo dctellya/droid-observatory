@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -275,8 +275,8 @@ fn tail_picks_up_appended_turn_within_poll_interval() {
     assert_eq!(inputs(&source.next_batch().unwrap()), [14, 15]);
 
     // The current file shrinks with no dated file: it is read again from 0.
-    write(&current, &pair("2026-10-24", SESSION_A, 16));
-    assert_eq!(inputs(&source.next_batch().unwrap()), [16]);
+    write(&current, &pair("2026-10-24", SESSION_A, 6));
+    assert_eq!(inputs(&source.next_batch().unwrap()), [6]);
     assert!(source.next_batch().unwrap().is_empty());
 }
 
@@ -409,20 +409,19 @@ fn replay_with_usage_log_sums_tokens_per_role_on_m0_fixture() {
     }
     assert_eq!(sums.values().map(|sum| sum.0).sum::<u64>(), 1115);
 
-    // The lane of a turn is the lane of its session's `subagent.spawned` (Plan for the root).
-    let spawned: BTreeMap<_, _> = events
+    // The lane of a turn is the phase its session is in, as for the session's other role-neutral
+    // events: `usage_reported` is emitted last, with the final phase. (An integration session is
+    // only known to be one from its first prompt, so its `subagent_spawned` still says Build.)
+    let phase: HashMap<_, _> = events
         .iter()
-        .filter(|event| event.kind == EventKind::SubagentSpawned)
+        .filter(|event| event.kind == EventKind::UsageReported)
         .map(|event| (event.session_id.clone(), event.lane))
         .collect();
     for event in events
         .iter()
         .filter(|event| matches!(event.kind, EventKind::TurnUsage { .. }))
     {
-        let lane = spawned
-            .get(&event.session_id)
-            .copied()
-            .unwrap_or(Lane::Plan);
+        let lane = phase.get(&event.session_id).copied().unwrap_or(Lane::Plan);
         assert_eq!(event.lane, lane, "{}", event.id);
         assert!(
             matches!(event.source, SourcePtr::UsageLog { .. }),
@@ -441,4 +440,25 @@ fn replay_with_usage_log_sums_tokens_per_role_on_m0_fixture() {
         .filter(|event| matches!(event.kind, EventKind::TurnUsage { .. }))
         .count();
     assert_eq!(in_golden, 1115, "the golden carries the turn.usage events");
+}
+
+#[test]
+fn the_m0_extract_holds_only_turns_and_their_session_lines() {
+    let text = std::fs::read_to_string(m0_usage_log()).expect("the extract is committed");
+    let header = read_capture(&m0_root())
+        .unwrap()
+        .unwrap()
+        .usage_log
+        .unwrap();
+    let (mut turns, mut sessions) = (0_u64, 0_u64);
+    for line in text.lines() {
+        match parse_line(line.as_bytes()) {
+            LogLine::Turn(_) => turns += 1,
+            LogLine::Session(_) => sessions += 1,
+            LogLine::Other => panic!("a line that is neither a turn nor a session line"),
+        }
+    }
+    assert_eq!(Some(turns), header.turns);
+    assert_eq!(Some(turns + sessions), header.lines);
+    assert!(text.ends_with('\n'), "the last line ends in a newline");
 }

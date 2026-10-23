@@ -45,7 +45,13 @@ fn golden() -> Vec<Event> {
     let text =
         std::fs::read_to_string(repo_root().join(format!("fixtures/streams/{M0}.events.json")))
             .expect("the golden file is committed");
-    serde_json::from_str(&text).expect("the golden file is a list of events")
+    let events: Vec<Event> =
+        serde_json::from_str(&text).expect("the golden file is a list of events");
+    // Plain replay never reads the usage log; its turn.usage events are checked in usage_log.rs.
+    events
+        .into_iter()
+        .filter(|e| e.kind.prd_name() != "turn.usage")
+        .collect()
 }
 
 #[test]
