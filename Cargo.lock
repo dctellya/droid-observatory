@@ -2775,6 +2775,7 @@ version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
  "keyring-core",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

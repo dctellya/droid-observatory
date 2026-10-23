@@ -89,11 +89,6 @@ impl Build {
         self
     }
 
-    fn lane(mut self, lane: Lane) -> Self {
-        self.0.lane = lane;
-        self
-    }
-
     fn usage(mut self, usage: TokenUsage) -> Self {
         self.0.usage = Some(usage);
         self
@@ -583,9 +578,9 @@ fn filter_by_gate_state_keeps_the_board_only_when_the_gate_matches() {
     assert_eq!(pending.gate.badge, GateBadge::Pending);
     assert_eq!(pending.gate.pr_number, None);
 
-    let with_gate = |badge| {
+    let with_gate = |events: &[Event], badge| {
         BoardState::fold(
-            &events,
+            events,
             &config(
                 Filter {
                     gate: Some(badge),
@@ -595,9 +590,9 @@ fn filter_by_gate_state_keeps_the_board_only_when_the_gate_matches() {
             ),
         )
     };
-    assert_eq!(with_gate(GateBadge::Pending).event_count, 1);
-    assert_eq!(with_gate(GateBadge::CiRed).event_count, 0);
-    assert!(with_gate(GateBadge::CiRed).cards.is_empty());
+    assert_eq!(with_gate(&events, GateBadge::Pending).event_count, 1);
+    assert_eq!(with_gate(&events, GateBadge::CiRed).event_count, 0);
+    assert!(with_gate(&events, GateBadge::CiRed).cards.is_empty());
 
     let gh = |kind, second| {
         Build::new(kind, Role::External, "gh", second)
@@ -609,8 +604,8 @@ fn filter_by_gate_state_keeps_the_board_only_when_the_gate_matches() {
     events.push(gh(EventKind::CheckStarted, 3));
     events.push(gh(EventKind::CheckFailed, 4));
     assert_eq!(all(&events).gate.badge, GateBadge::CiRed);
-    assert_eq!(with_gate(GateBadge::CiRed).event_count, 4);
-    assert_eq!(with_gate(GateBadge::Pending).event_count, 0);
+    assert_eq!(with_gate(&events, GateBadge::CiRed).event_count, 4);
+    assert_eq!(with_gate(&events, GateBadge::Pending).event_count, 0);
 
     events.push(gh(EventKind::CheckStarted, 5));
     events.push(gh(EventKind::CheckPassed, 6));

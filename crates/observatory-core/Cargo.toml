@@ -24,6 +24,7 @@ thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true
 time.workspace = true
+regex.workspace = true
 rusqlite = { workspace = true, optional = true }
 keyring-core = { workspace = true, optional = true }
 
