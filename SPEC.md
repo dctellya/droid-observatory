@@ -2,7 +2,8 @@
 
 Owner: David Carbajosa (architect, reviewer, the human in lane 7). Implementers: one Factory
 Mission (orchestrator, workers, validators) under ai/RULES.md. Status: v0.1 approved by the owner
-(2026-10-22); v0.2: §5.8 concurrency limits added (owner decision 2026-10-22). Living document: §9 is the human feedback channel, §10 the as-built history.
+(2026-10-22); v0.2: §5.8 concurrency limits added (owner decision 2026-10-22); v0.3: amended
+as-built at the S integration (2026-10-23, rule 8): §3 M0, §3 M4, §5.2, §8, §9, §10. Living document: §9 is the human feedback channel, §10 the as-built history.
 
 Inputs: `ai/prd/droid-observatory-prd.md` (v0.5), `ai/prd/review-2026-10-22.md`, `ai/RULES.md`,
 `ai/SPEC-TEMPLATE.md`, `docs/decisions/D-001..D-010`, `BACKLOG.md`, `config/observatory.example.toml`,
@@ -58,7 +59,7 @@ silently broken board. And out: migrating the backlog before the mission starts 
 primary live mode, D-008). The owner decisions logged after PRD v0.5: the telemetry contract and
 series budget (D-010, B-017, §5.7), M4 on a demo branch pair in this repository instead of a
 private demo repository (entry 19, B-007, §3 M4), the hybrid backlog driven by the mission
-(entry 19, §8), the orchestrator model id `claude-fable-5.1` (entry 21, D-006 correction, §2),
+(entry 19, §8; withdrawn as-built, D-015), the orchestrator model id `claude-fable-5.1` (entry 21, D-006 correction, §2),
 and the backlog items the spec session owns: B-005 (§6), B-010 (§3), B-014 (§7), B-017 (§5.7).
 
 ## 2. Mission setup
@@ -209,14 +210,15 @@ from this mission's own files.
 
 - **Outcome.** `fixtures/streams/2026-10-22-observatory-v1-m0.jsonl` (+ children) frozen from this
   mission's sessions at `S` integration; `mapping::v1` from raw lines to PRD §7 kinds, selected by
-  the Droid version in the session `.settings.json`; confirmation of where `--tag`, child sessions,
-  roles, feature and milestone ids are recorded (PRD §11.1 open items), written to
-  `docs/decisions/` and `library` of the fixture; SQLite store with the pointer index (§5.3);
+  the Droid version in the fixture header `<capture>.capture.json` (session files carry no Droid
+  version; usage, model, tags and child links come from the sibling `<id>.settings.json`, D-012);
+  confirmation of where `--tag`, child sessions, roles, feature and milestone ids are recorded
+  (PRD §11.1 open items), written to `docs/decisions/` and `library` of the fixture; SQLite store with the pointer index (§5.3);
   `observatory-cli replay` and `inspect <event-id>` (prints the raw line by pointer).
 - **Tests green.** Golden tests `mapping_v1_matches_golden_lane_events()` (fixture → expected
   `.events.json`), `every_prd_kind_present_in_capture_is_mapped()`, `unknown_count_is_zero_on_m0_capture()`,
   `child_sessions_attach_to_their_parent()`, `roles_resolve_for_orchestrator_worker_and_both_validators()`,
-  `store_pointer_reads_back_the_exact_raw_line()`, `mapping_version_is_selected_by_droid_version()`.
+  `store_pointer_reads_back_the_exact_raw_line()`, `mapping_version_is_selected_by_droid_version()` (reads `droid_version` from the fixture header).
 - **Acceptance commands.** `make replay-fixtures`; `cargo run -p observatory-cli -- replay
   fixtures/streams/2026-10-22-observatory-v1-m0.jsonl` ends with `unknown events: 0`;
   `cargo test -p observatory-core --test mapping`.
@@ -312,8 +314,11 @@ from this mission's own files.
   `policy_merged_detected_without_human_action()`, `gate_command_runs_are_lane6_events_attributed_to_the_milestone()`,
   `target_branch_is_read_from_config_not_hardcoded()`.
 - **Acceptance commands.** `make check`; `demo/red-1` PR with `demo:red` → check fails → card
-  loops to lane 3 with cycle count 1; label removed → check passes → Merge visible → merge from the
-  app → badge updates → `demo/red-1` deleted. All run ids and PR numbers pasted.
+  loops to lane 3 with cycle count 1; label removed → check passes → Merge visible when policy
+  allows → with the read-only token (D-014) the app surfaces the `403` cleanly (message naming the
+  PR, the target and the missing permission; no crash, no retry storm) → the owner merges (UI or
+  API) → badge updates from the poll → `demo/red-1` deleted. All run ids and PR numbers pasted.
+  The question of a write-capable token for the Merge button stays at the M3→M4 boundary.
 - **Gate.** Common gate; zero `unknown.event` from the git and GitHub sources (rule 18).
 - **Exit criterion.** PRD §13 M4 validation satisfied on the demo pair; the decision file for the
   demo branch pair is written (the PRD §13 M4 row, §14 risk row and BACKLOG B-007 are already
@@ -412,7 +417,11 @@ can be read without scanning for the newline) is the only thing the store keeps 
 appendix A: every `Event` names the mapper that produced it, so the first Droid upgrade shows as a
 rising unknown-event count against a known version, never as a silently broken board (owner,
 entry 23). Mapping is a module `mapping::v1` with a `MappingVersion`
-selected from the Droid version in the session `.settings.json`; unknown Droid versions use the
+selected from the Droid version in the fixture header `<capture>.capture.json` (`droid_version`,
+written from `droid --version` at capture; a live attach records it in the `captures` row), because
+the session files carry no Droid version (D-012). Usage (`tokenUsage`, `inclusiveTokenUsage`,
+`childInclusiveTokenUsageBySessionId`), model, reasoning effort, tags (objects `{name, metadata}`)
+and child links are read from the sibling `<id>.settings.json`. Unknown Droid versions use the
 latest mapping and raise a one-line warning (reason: an old capture must keep replaying, rule 18
 covers the rest). A mapping version is frozen at M0 and never edited; a later Droid release gets
 `mapping::v2` and its own fixture. The golden file `fixtures/streams/<capture>.events.json` is the
@@ -616,16 +625,18 @@ Grown at every integration, never written at the end (rule 16).
 - **docs/decisions/**: one file per decision, `make decisions-index` regenerates the README. The
   mission writes at least: mapping v1 and the `--tag`/child-session findings (M0), coverage
   component and threshold (S), machete (S), series allocation (M5 or earlier), demo branch pair
-  superseding the private repo (M4), hybrid backlog (S), any model or effort change (rule 19), and
-  the M1 go/no-go outcome.
-- **BACKLOG.md and the hybrid backlog** (entry 19, mission-driven): at S integration the
-  orchestrator creates GitHub issues labelled `backlog` from the open B-items of this spec, adds
-  `scripts/gen-backlog.sh` that regenerates `BACKLOG.md` from the issues at every integration, and
-  writes the decision file. Items the spec closed (B-005, B-007, B-010, B-014, B-017) are marked
-  done with this spec as the reason. **Rule 14 wording** proposed for owner approval with this
-  spec (RULES.md is the owner's): "everything else goes to the backlog (GitHub issues labelled
-  `backlog`, indexed in `BACKLOG.md`) with its reason". Until approved, `BACKLOG.md` stays the
-  source and no issue is created.
+  superseding the private repo (M4), backlog is `BACKLOG.md` only (S, D-015; the hybrid backlog was
+  withdrawn), any model or effort change (rule 19; D-018: models are invariant), and the M1 go/no-go
+  outcome. Written at the S integration: D-012 session schema, D-013 keyring variant B, D-014
+  read-only token, D-015 backlog, D-016 coverage, D-017 machete, D-018 invariant models.
+- **BACKLOG.md** (the only backlog; owner comment on the mission proposal, 2026-10-22, D-015):
+  deferred items are `B-NNN` rows with a reason and an earliest milestone, written by the
+  integration feature from the workers' handoffs. No GitHub issues, no `backlog` label and no
+  `scripts/gen-backlog.sh` exist. *As built:* the hybrid backlog of the first version of this
+  section (issues labelled `backlog`, regenerated `BACKLOG.md`) is withdrawn. Items the spec closed
+  (B-005, B-007, B-010, B-014, B-017) are marked done with this spec as the reason. The wording of
+  rule 14 in `ai/RULES.md` (the owner's file) still names the issues; the proposed wording is
+  "everything else goes to `BACKLOG.md` with its reason", waiting for the owner.
 - **build-log/**: one JSON line per tool call per session, written by the PostToolUse hook,
   committed with each integration (exempt from the 200 KB limit).
 - **ai/session/**: one entry per interaction with transcript links; the mission appends to
@@ -650,7 +661,7 @@ Written by the orchestrator on the mission branch, never in a worktree.
 |---|---|---|---|---|
 | F-001 | 2026-10-22 | Orchestrator model id is `claude-fable-5.1`, not `claude-fable-5-1` (fell back to GPT-6 Sol) | §2, D-006, settings, README, config, price table | done (spec PR) |
 | F-002 | 2026-10-22 | M4 is tested on a demo branch pair in this repository, not a private repo (B-007) | §3 M4, §7 | in spec |
-| F-003 | 2026-10-22 | Hybrid backlog is fine, the mission drives it | §8 | in spec, rule 14 wording awaiting approval |
+| F-003 | 2026-10-22 | Hybrid backlog is fine, the mission drives it | §8 | withdrawn by F-014 (4): `BACKLOG.md` only, D-015; rule 14 wording awaiting the owner |
 | F-004 | 2026-10-22 | Telemetry contract (D-010): labels, instruments, under 200 series | §5.7 | in spec (182 worst case) |
 | F-005 | 2026-10-22 | Reasoning effort high/high/high | §2 | done (spec PR) |
 | F-006 | 2026-10-22 | Automatic merge out of scope, observing a policy merge in scope | §1, §3 M4 | done (spec PR) |
@@ -660,6 +671,9 @@ Written by the orchestrator on the mission branch, never in a worktree.
 | F-010 | 2026-10-22 | Budget caps 630 accepted; re-cap proposed at the M0 boundary | §2 | done (spec PR) |
 | F-011 | 2026-10-22 | claude-sonnet-5-5 confirmed available | §2 | done (spec PR) |
 | F-012 | 2026-10-22 | SPEC.md v0.1 approved; mission plans from it | all | approved |
+| F-013 | 2026-10-22 | Owner answers before the mission (entry 26): "Schema: agreed. Record droid --version in the fixture header as the mapping-version signal, read the sibling .settings.json for usage and child links, decision file at S integration, and amend the SPEC as-built at that integration (rule 8), not now."; keyring-core + apple-native-keyring-store accepted with a decision file; DMG only in the CI bundle job; Tauri evidence is the validators' smoke check plus one owner screenshot per integration; concurrency limits accepted; GitHub token read-only, check results from Actions runs and commit statuses | §3 M0, §5.2, §5.8, D-012, D-013, D-014 | done (as-built at the S integration) |
+| F-014 | 2026-10-22 | Owner approval of the mission proposal (entry 27), with four comments: (1) "Budget vs plan: 630 USD-eq total against a Max month (and the 5-hour/7-day limits) will likely hit throttling mid-M1 or M4. State what happens at a throttle (pause at the boundary, no silent model downgrade) and keep the M0 re-cap step."; (2) "M4 acceptance contradicts my decision: it reads \"merge from the app → badge updates\". Make the M4 exit: Merge button visible when policy allows, the app surfaces the 403 cleanly with the read-only token, and the merge happens by me(UI or API); the badge updates from the poll. Write-token question stays at the M3→M4 boundary."; (3) "Reasoning effort: §8 says \"all high\"; the spec sets workers to medium. One or the other."; (4) "Backlog: \"hybrid backlog (gh issues labelled backlog)\" reopens the Issues question you closed yesterday; AGENTS.md says deferred work goes to BACKLOG.md, not Issues. Pick BACKLOG.md only, unless you want Issues back on purpose." | §2, §3 M4, §8, D-014, D-015 | (1) in mission files, M0 re-cap kept; (2) done, §3 M4 amended; (3) checked, all `high`, no change; (4) done, §8 amended, F-003 withdrawn |
+| F-015 | 2026-10-23 | Owner decision at the S to M0 boundary: the models and reasoning efforts defined at mission approval never change for the lifetime of the mission; at a usage limit the mission stops, never continues on a fallback model | §2, D-018, `ai/RULES.md` rule 20 | done (as-built at the S integration) |
 
 ## 10. Evolution log
 
@@ -668,4 +682,4 @@ reports.
 
 | Milestone | Integrated | What landed | Tests green | Usage spent | Deviations | Unknown events left |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
+| S | 2026-10-23 | Cargo workspace (`observatory-core`, `observatory-cli`, `observatory-app`), `Cargo.lock`; canonical `Event` with 61 PRD kinds plus `Unknown`; `JsonlSource`, capture header and the Unknown-only `mapping::v1`; `observatory-cli replay` (`unknown events: 2027` on the S fixture); Leptos UI and Tauri window with nine empty lanes; S fixture (orchestrator session plus 25 children, gitleaks clean); `machete` and `coverage` jobs, tag check in `release.yml`, pinned bundle tools; D-011 | `cargo test --workspace --all-features`: 41 passed, 0 failed; `make check` exit 0 on the merge commit `38e5617`; coverage 94.48 % lines on `observatory-core` (reported, not enforced); 20 of 20 VAL-SKEL assertions passed; **`mission-checks` red on the first run** (run 39919592562, `rust` job: the Linux runner lacks `glib-2.0`, which the Tauri shell needs), see `reports/ci/2026-10-23-s.md` | 13.21 USD-eq of the 40 cap on workers and validators (`reports/usage/s.md`); orchestrator share not exposed | §3 M0 and §5.2 amended (mapping version from the fixture header, D-012); §3 M4 acceptance amended (owner merges, app surfaces 403, D-014); §8 hybrid backlog withdrawn (D-015); D-011 (deny exceptions) awaits owner confirmation; kimi-k3 episode at the boundary (D-018) | 2027 on the S fixture (expected: the S mapper knows no kind); 0 required from the M0 fixture |

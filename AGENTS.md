@@ -9,9 +9,9 @@ droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that shows a Factory Mi
 through nine lanes, with validation, gate, agent attribution, waste and cost per sub-droid.
 PRD: `ai/prd/droid-observatory-prd.md`. Spec: `SPEC.md` (approved 2026-10-22; the mission plans from it).
 
-Current state: no application code. The walking skeleton (core crate, canonical `Event`,
-`observatory replay` over one captured session, an empty board that starts) is the first
-thing the mission lands, before any milestone deepens its area.
+Current state: the walking skeleton (core crate, canonical `Event`, `observatory-cli replay` over
+one captured session, an empty board that starts) is integrated on `mission/observatory-v1`
+(2026-10-23). Each later milestone deepens one area from it.
 
 ## Setup, build, test
 
@@ -53,7 +53,9 @@ Once the skeleton lands, the path the validators follow is:
 
 1. `make doctor` reports no missing required tools.
 2. `cargo run -p observatory-cli -- replay fixtures/streams/<capture>.jsonl` prints lane
-   events and ends with `unknown events: 0`.
+   events and ends with `unknown events: N`: `2027` on the S fixture
+   (`2026-10-22-observatory-v1-s.jsonl`, the mapper knows no kind yet), `0` from the M0 fixture
+   onward.
 3. `make app-dev` opens the window; open the same fixture (Replay); the nine lanes render
    and a card opens its Details view.
 4. With the window open, start `droid exec --mission ...` in a terminal; the new session

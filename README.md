@@ -5,10 +5,11 @@ what, whether each milestone is validated, where time and tokens go, and the one
 ships it. Lanes are the mission's orchestrated states; cards are milestones; the last lane is
 the pull request into `main`.
 
-**Status:** pre-mission. The repository holds the PRD, the rules, the CI gate and the
-configuration contract. No application code yet: the walking skeleton is the mission's first
-integration (ai/RULES.md rule 2). Rust targets in the `Makefile` activate the moment a
-`Cargo.toml` lands.
+**Status:** mission in progress. The walking skeleton (milestone S, ai/RULES.md rule 2) is
+integrated on `mission/observatory-v1`: a Cargo workspace, the canonical `Event`,
+`observatory-cli replay` over a captured session (every line is still an unknown event), and a
+window with nine empty lanes. Mapping, board, host, intervention, gate and metrics follow in
+M0-M5 (SPEC §3).
 
 ## What it will show
 
@@ -38,6 +39,8 @@ cd droid-observatory
 make doctor      # which tools are missing and how to install them
 make hooks       # enable the git hooks (once)
 make check       # every light check the mission-branch CI runs
+cargo run -p observatory-cli -- replay fixtures/streams/2026-10-22-observatory-v1-s.jsonl
+                 # one line per event; ends with `unknown events: 2027` (S fixture, mapper not written yet)
 ```
 
 `make help` lists all targets. The same targets run in CI, so a documented command is a
@@ -55,9 +58,10 @@ command the gate runs.
 | `make check-todos` | debt markers must cite `#issue` or `B-nnn` | mission branch, gate |
 | `make check-decisions-index` | `docs/decisions/README.md` is generated and current | mission branch, gate |
 | `make check-secrets` | gitleaks over the repository | mission branch, gate |
-| `make fmt-check` / `make lint` / `make test` / `make deny` | rustfmt, clippy `-D warnings`, tests, cargo-deny | once `Cargo.toml` exists |
-| `make replay-fixtures` | every `fixtures/streams/*.jsonl` through `observatory-cli replay` | once fixtures exist |
-| `make app-dev` / `make app-build` | Tauri dev window / macOS bundle | once the app exists |
+| `make fmt-check` / `make lint` / `make test` / `make deny` / `make machete` | rustfmt, clippy `-D warnings`, tests, cargo-deny, unused dependencies | mission branch, gate |
+| `make replay-fixtures` | every `fixtures/streams/*.jsonl` through `observatory-cli replay` | mission branch, gate |
+| `make coverage` | line coverage of `observatory-core` (run alone); floor 80 % from M0 | mission branch (job `coverage`) |
+| `make app-dev` / `make app-build` | Tauri dev window / macOS `.app` bundle | local |
 
 ## Configuration
 
@@ -136,9 +140,10 @@ Rule 10: real time and usage per milestone, stated here as the work lands.
 |---|---|---|---|
 | Ideation → PRD v0.2 | ~1 h 40 m | 1 Droid session | two review rounds; log in `ai/session/2026-10-22-session.md` |
 | Repo readiness | ~2 h | same session | readiness Level 1 (5/65) → Level 3 (31/65); see `reports/readiness/` |
+| S walking skeleton | 63.9 min of assistant time in 8 parent sessions (first worker 2026-10-22 16:49Z, scrutiny done 17:39Z, user testing finished 2026-10-23 06:40Z after an overnight usage limit) | 6 workers, scrutiny and user-testing validators with their 10 children | 13.21 USD-eq of the 40 cap on workers and validators; the orchestrator's share is not exposed (`reports/usage/s.md`) |
 
-Token usage for these sessions is recorded by Factory, not by this repository yet; the
-observatory's first job is to make that number visible.
+Token usage is pasted from the session sidecars into `reports/usage/<milestone>.md` at each
+integration; the observatory's first job is to make that number visible.
 
 ## Licence
 
