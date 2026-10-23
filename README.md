@@ -2,28 +2,39 @@
 
 A Rust desktop app that watches a Factory Mission build a business feature: which agent is on
 what, whether each milestone is validated, where time and tokens go, and the one gate that
-ships it. Lanes are the mission's orchestrated states; cards are milestones; the last lane is
-the pull request into `main`.
+ships it. It is a mission watcher: it measures the waste and effectiveness (cycle time, cost)
+of the engineering cycle from the spec to the pull request's checks going green. Lanes are the
+mission's seven phases; cards are milestones; roles are colour; the human's interventions are
+overlays; time, waste, cost and model drift are the Panel. What happens after the merge
+(release, observe, deploys, flags) belongs to the delivery platform and is out of scope: the
+last event the app records is `handed_to_cd`.
 
 **Status:** mission in progress. The walking skeleton (S) and the stream capture and mapping
 milestone (M0, ai/RULES.md rule 2, SPEC §3) are integrated on `mission/observatory-v1`: a Cargo
 workspace, the canonical `Event`, mapping v1 with its golden file, a SQLite pointer store,
-`observatory-cli replay` and `inspect` over the redacted M0 capture, and a window with nine empty
-lanes. Board, host, intervention, gate and metrics follow in M1-M5 (SPEC §3).
+`observatory-cli replay` and `inspect` over the redacted M0 capture, and a window with empty
+lanes. At the M0 to M1 boundary the owner re-scoped the lanes to the seven mission phases
+(F-028, D-024), set the compile rule (rule 23, D-025) and the autonomy rule (rule 24, D-026) and
+re-capped M1-M5 (SPEC §2, §9); the mapping's lane column and its golden change at the M1
+integration. Board, host, intervention, gate and metrics follow in M1-M5 (SPEC §3).
 
 ## What it will show
 
 | Lane | Holds |
 |---|---|
-| 1 Intent | prompt, spec, acceptance criteria, re-prompts |
-| 2 Orchestrator | plan, milestones, task assignment, replans |
-| 3 Workers | one sub-lane per worker: files, tests, commits |
-| 4 Validators, scrutiny | findings, blocking vs non-blocking, rework |
-| 5 Validators, user testing | QA scenarios against the built thing |
-| 6 Integration | worktree landings on `mission/<name>`, fast checks |
-| 7 Human | approvals, answers, the review, the merge |
-| 8 Outside | the PR, CI, attestations, deploys |
-| 9 Time, waste, cost, models | tokens per role, waste by cause, budget |
+| 1 Plan | prompt, plan, milestones, task assignment, replans, the human's answers |
+| 2 Contract | the validation contract and the spec versions |
+| 3 Build | one sub-lane per worker: files, tests, commits |
+| 4 Scrutiny | findings, blocking vs non-blocking, rework |
+| 5 User testing | QA scenarios against the built thing |
+| 6 Integrate | worktree landings on `mission/<name>`, gate commands, the PR opened |
+| 7 Gate | the PR's checks and attestations, the review, `handed_to_cd` |
+| Panel (above the lanes, not a lane) | engineering cycle time, waste (8 causes, shown as 5 groups), cost per role, drift against the declared models |
+
+Human interventions (and, later, a commander's actions) are overlay markers on these lanes. Two
+clocks are named and never confused: the engineering cycle time (`feature.defined` to
+`handed_to_cd`) is the app's; the lead time to production is the delivery platform's, starting at
+the same merge sha.
 
 Full definition: [ai/prd/droid-observatory-prd.md](ai/prd/droid-observatory-prd.md).
 Spec: [SPEC.md](SPEC.md) (approved 2026-10-22; the mission plans from it).
@@ -107,12 +118,13 @@ Two workflows, one required check:
   (`.github/release.yml`, D-009). Runbook: `docs/runbooks/release.md`.
 
 Branch rules on `main`: pull request required, `gate` required, no force pushes, no admin
-bypass, zero required approvals (the human in lane 7 merges by hand, the gate is the review).
+bypass, zero required approvals (the human merges by hand, the gate is the review; the merge is
+the app's last event, `handed_to_cd`).
 
 ## Observability
 
 Grafana Cloud over OTLP is the telemetry backend (D-004): the app's own traces and metrics,
-and the lane-9 mission series (`observatory.*`). Off by default; the app works fully offline.
+and the Panel's mission series (`observatory.*`). Off by default; the app works fully offline.
 Endpoint and credentials come from `OTEL_EXPORTER_OTLP_*` or the keychain, never from the
 repository.
 

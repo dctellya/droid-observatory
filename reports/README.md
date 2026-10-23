@@ -10,10 +10,16 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
 - `readiness/<date>-<label>.md`: pre-mission readiness findings from the worker sessions.
   `2026-10-22-dependency-readiness.md`: toolchain, crates, OTLP, GitHub token, session schema.
   `2026-10-22-validation-readiness.md`: browser and Tauri validation path, concurrency limits.
+  `2026-10-23-build-times.md`: measured warm build times (`make check` 30.383 s, `cargo check -p`
+  1.268 s, `cargo test -p` 11.631 s, `cargo llvm-cov` alone 54.911 s) and the M0 per-feature
+  compile cost (F-029, rule 23).
 - `usage/<milestone>.md`: tokens per role and model, waste by cause, wall time, per
   integrated milestone (written by the orchestrator at integration).
   `usage/s.md`: milestone S, 13.21 USD-eq of the 40 cap on workers and validators.
-  `usage/m0.md`: milestone M0, 49.05 USD-eq of the 60 cap priced so far; orchestrator delta 66.87 against 32.
+  `usage/m0.md`: milestone M0, 49.05 USD-eq of the 60 cap priced so far; orchestrator delta 66.87 against 32;
+  from F-029 a "Compile share" section.
+  `usage/m1.md`: milestone M1, opened at the M0 to M1 boundary with the orchestrator baseline and model
+  episode 3 (filled in at the M1 integration).
 - `ci/<date>-<milestone>.md`: the `mission-checks` runs on the integration pushes: run ids, wall
   times, per-job durations, verdict against the 3-minute budget. `ci/2026-10-23-s.md`: S, red.
   `ci/2026-10-23-m0.md`: M0, green, 1 min 45 s.

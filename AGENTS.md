@@ -5,9 +5,15 @@ anything here; this file is the operational summary.
 
 ## What this is
 
-droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that shows a Factory Mission moving
-through nine lanes, with validation, gate, agent attribution, waste and cost per sub-droid.
-PRD: `ai/prd/droid-observatory-prd.md`. Spec: `SPEC.md` (approved 2026-10-22; the mission plans from it).
+droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that watches a Factory Mission and
+measures the waste and effectiveness (cycle time, cost) of the engineering cycle from the spec to
+the PR's checks going green. The lanes are the seven mission phases (1 Plan, 2 Contract, 3 Build,
+4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate); roles are colour and attribution; human and
+commander actions are overlays, not lanes; time, waste, cost and model drift are the Panel. Anything
+after the merge (release, observe, deploys, flags) is out of scope: the last event is `handed_to_cd`
+(F-028, D-024).
+PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by F-028 where noted).
+Spec: `SPEC.md` (approved 2026-10-22, amended v0.4 at the M0 to M1 boundary; the mission plans from it).
 
 Current state: the walking skeleton (S) and the stream capture and mapping milestone (M0) are
 integrated on `mission/observatory-v1` (2026-10-23): core crate, canonical `Event`, mapping v1 with
@@ -30,6 +36,13 @@ make app-dev         # Tauri dev window (after the app exists)
 
 Toolchain: `rust-toolchain.toml` (1.99.1, rustfmt, clippy, wasm32 target). Do not change it
 without a decision file.
+
+The build is paid in series (rule 23, D-025). Inner loop, per feature: `cargo check -p <crate>` and
+`cargo test -p <crate>` for the crates you touch, plus `cargo fmt --all -- --check` and
+`cargo clippy -p <crate> --all-targets -- -D warnings` once before handoff. `make check` (the full
+`cargo test --workspace`) and `cargo llvm-cov -p observatory-core --all-features --fail-under-lines 80
+--summary-only` run once per milestone, by the integrator, the coverage run alone. Paste every cargo
+or trunk wall time into the handoff. `cargo-nextest` is not installed; do not install it.
 
 ## Runtime limits (measured)
 
@@ -59,8 +72,8 @@ Once the skeleton lands, the path the validators follow is:
    over 8735 records. `replay --root-only <root.jsonl>` reads the root file alone: S 364 events
    over 2027 records, M0 474 events over 2820 records. `make replay-fixtures` replays with
    children.
-3. `make app-dev` opens the window; open the same fixture (Replay); the nine lanes render
-   and a card opens its Details view.
+3. `make app-dev` opens the window; open the same fixture (Replay); the seven phase lanes and the
+   Panel render and a card opens its Details view.
 4. With the window open, start `droid exec --mission ...` in a terminal; the new session
    appears on the board (Attach) and each event shows within 1 s.
 
@@ -88,7 +101,7 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Rust 2024 edition, `rustfmt.toml` and `clippy.toml` as committed. Warnings are errors.
 - Naming: standard Rust (`snake_case` items and modules, `CamelCase` types, `SCREAMING_SNAKE`
   consts). Event kinds mirror the PRD §7 names in `snake_case`
-  (`finding.blocking` → `FindingBlocking`). Lane and role enums use the PRD's words.
+  (`finding.blocking` → `FindingBlocking`). Role enums use the PRD's words; the lane enum is the seven phases of D-024.
 - Tests: unit tests in `#[cfg(test)] mod tests` next to the code; integration tests in
   `crates/<crate>/tests/<topic>.rs`; fixture-driven tests read `fixtures/streams/`. Test
   functions read as sentences: `rework_window_closes_on_resolution()`.
@@ -140,6 +153,9 @@ A model change is a decision file.
 
 The human answers only at milestone boundaries or when the stall flag is up (rule 15).
 Deviations from the spec are proposed with reason and cost, and wait for approval (rule 9).
+When a decision comes with a recommendation and changes neither scope, nor usage caps, nor the
+models per role, the orchestrator takes the recommendation, records it as a SPEC §9 row with the
+alternatives and reports it at the next boundary (rule 24, D-026).
 
 ## Environment and secrets
 

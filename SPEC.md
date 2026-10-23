@@ -1,9 +1,10 @@
 # droid-observatory — Spec for the mission
 
-Owner: David Carbajosa (architect, reviewer, the human in lane 7). Implementers: one Factory
+Owner: David Carbajosa (architect, reviewer, the human who merges). Implementers: one Factory
 Mission (orchestrator, workers, validators) under ai/RULES.md. Status: v0.1 approved by the owner
 (2026-10-22); v0.2: §5.8 concurrency limits added (owner decision 2026-10-22); v0.3: amended
-as-built at the S integration (2026-10-23, rule 8): §3 M0, §3 M4, §5.2, §8, §9, §10. Living document: §9 is the human feedback channel, §10 the as-built history.
+as-built at the S integration (2026-10-23, rule 8): §3 M0, §3 M4, §5.2, §8, §9, §10; v0.4: F-028..F-031
+at the M0 to M1 boundary (2026-10-23): §1, §2, §3 M1/M3/M4/M5, §5.2, §5.3, §5.6, §6, §7, §9, §10. Living document: §9 is the human feedback channel, §10 the as-built history.
 
 Inputs: `ai/prd/droid-observatory-prd.md` (v0.5), `ai/prd/review-2026-10-22.md`, `ai/RULES.md`,
 `ai/SPEC-TEMPLATE.md`, `docs/decisions/D-001..D-010`, `BACKLOG.md`, `config/observatory.example.toml`,
@@ -17,10 +18,18 @@ reason and cost, and wait).
 ## 1. Purpose
 
 **What it is.** A Rust desktop application (Tauri 2 shell, Leptos UI, `observatory-core` library)
-that shows one Factory Mission moving through nine lanes (PRD §7): Intent, Orchestrator, Workers,
-Validators-scrutiny, Validators-user-testing, Integration, Human, Outside, and Time/Waste/Cost/models.
-Cards are milestones with their features inside (PRD §8); every lane entry is a view over the raw
-JSONL line it came from, never a copy (PRD §11.2).
+that watches a Factory Mission. It measures the waste and effectiveness (cycle time, cost) of the
+engineering cycle inside a mission, and across a run, from the spec to the pull request's checks
+going green. Release and observe belong to the delivery platform; the two meet at the merge.
+Lanes are the mission's own phases, one axis: 1 Plan, 2 Contract, 3 Build, 4 Scrutiny, 5 User
+testing, 6 Integrate, 7 Gate. Roles are the colour and the attribution on each event; the human's
+interventions and a commander's actions are overlays (`overlay: human|commander`), not lanes; time,
+waste, cost and model drift are the Panel, an area above the lanes (F-028, D-024). Two clocks are
+named on the board and never confused: the **engineering cycle time** (Roci's clock: `feature.defined`
+to `handed_to_cd`, the one final event that carries the merge sha, the PR number and the attestation
+ids) and the **lead time to production** (the delivery platform's clock, which starts at the same
+sha; a label and a link, never a number in Roci). Cards are milestones with their features inside
+(PRD §8); every lane entry is a view over the raw JSONL line it came from, never a copy (PRD §11.2).
 
 **For whom.** The mission owner who runs missions from a terminal and wants to see flow and cost;
 the reviewer who opens Details and merges; the engineering lead who compares models over time
@@ -31,13 +40,15 @@ the reviewer who opens Details and merges; the engineering lead who compares mod
 1. **Attach.** A mission started from any terminal on this machine appears on the board and every
    event of it shows within 1 s (FR-L1, FR-B6), with no control channel.
 2. **Replay with a frozen mapping.** `observatory-cli replay` over the frozen capture ends with
-   `unknown events: 0`, and the board renders the same capture with correct lane positions
-   (FR-L2, FR-B7, rule 18).
+   `unknown events: 0`, and the board renders the same capture with correct phase positions and
+   the human overlay markers (FR-L2, FR-B7, rule 18).
 3. **Host.** A mission launched from the app shows events within 1 s and the pause, message and
    answer controls reach the orchestrator (FR-L3, FR-H1..H4).
 4. **Gate and fix loop.** Against the demo branch pair in this repository (§3 M4): a red check
-   opens a `fix` cycle on the affected card, a green check with a human policy shows Merge, and
-   merging from the app flips the badge (FR-G3..G8).
+   opens a `fix` cycle on the affected card (counted as rework), a green check with a human policy
+   shows Merge, and the owner's merge is observed as the one final event `handed_to_cd` (merge sha,
+   PR number, attestation ids) that closes the engineering cycle; nothing after the merge is
+   observed (FR-G3..G8, F-028).
 5. **Time, waste, cost.** Metrics recomputed from the frozen capture match the owner's reference
    spreadsheet within rounding (FR-M1..M7, PRD §10); every cost names its price-table date.
 6. **The build is the first dataset.** The sessions of this mission are the capture that M0
@@ -49,7 +60,10 @@ the app, CI systems other than GitHub Actions. Also out: CI telemetry to Grafana
 dedicated error tracker (B-003), Linux and Windows bundles (macOS is the target; the devcontainer
 is core-only, B-001), the app performing any merge other than the human-confirmed Merge button
 (FR-G5): v1 never merges on its own. Observing a merge performed by a ruleset or a bot stays in
-scope: the gate badge shows `policy-merged` on detection (FR-G6, M4). Also out: a second mapping
+scope: `handed_to_cd` is emitted on detection with the merger attributed by role, human or
+external (FR-G6, M4). Also out (F-028): anything after the merge, namely deploys, flags and fix-forward
+Issues opened by the delivery platform (future work toward autonomy; Roci's last event is
+`handed_to_cd`). Also out: a second mapping
 version for Droid releases newer than the one captured. Guard: the mapper is versioned from day
 one, every `Event` carries `mapping_version`, and the unknown-event count is always visible (tray,
 CLI summary, exported series), so the first Droid upgrade shows as a rising count, never as a
@@ -82,7 +96,7 @@ droid exec --mission --auto high \
 | `--model` | `claude-fable-5.1` | Orchestrator (D-006, corrected 2026-10-22 from the misspelt `claude-fable-5-1`, which fell back to GPT-6 Sol). Factory catalog id, 4× multiplier. |
 | `--reasoning-effort` | `high` | Fable's default; planning and integration are where judgment is bought. `xhigh`/`max` on a 4× model is not justified before a measured need. |
 | `--worker-model` | `claude-sonnet-5-5` | Workers (D-006). 0.8× multiplier. Catalog id per docs.factory.com/models; `droid exec --help` on this machine lists `claude-sonnet-5` but not `claude-sonnet-5-5`; owner confirmed available on 2026-10-22. |
-| `--worker-reasoning-effort` | `high` | Owner decision 2026-10-22: the model default; Rust compile errors and Leptos (little training data, PRD §12) need the reasoning. The cost/quality split lane 9 measures is between models, not efforts. |
+| `--worker-reasoning-effort` | `high` | Owner decision 2026-10-22: the model default; Rust compile errors and Leptos (little training data, PRD §12) need the reasoning. The cost/quality split the Panel measures is between models, not efforts. |
 | `--validator-model` | `claude-opus-5-5` | Validators, scrutiny and user testing (D-006). 1.6× multiplier. |
 | `--validator-reasoning-effort` | `high` | Above Opus's default `medium`: validation is where correctness is bought (D-006 alternatives). |
 | `--output-format` | `text` | The terminal is for the human; the dataset is the session JSONL under `~/.factory/sessions/`, which attach and replay read. |
@@ -109,7 +123,11 @@ into `mission/observatory-v1` by the orchestrator, then `make check` locally, th
 removed after integration; its branch stays (history).
 
 **Gate command.** `make check` is the only local gate: it is exactly what `mission-branch.yml`
-runs (rule 5). A worker hands off only with `make check` green in its worktree; the orchestrator
+runs (rule 5). The build is paid in series (F-029, rule 23, D-025): a worker's inner loop is `cargo
+check -p <crate>` and `cargo test -p <crate>` for the crates it touches, plus one `cargo fmt --all --
+--check` and `cargo clippy -p <crate> --all-targets -- -D warnings` before handoff; `make check` with
+the full `cargo test --workspace` and `cargo llvm-cov` run once per milestone, by the integrator,
+alone (an infra feature may run the one Makefile or CI target it changed). The orchestrator
 integrates only with `make check` green on the mission branch.
 
 **Hooks that must be active.** `.factory/hooks.json`: `guard-git.sh` (PreToolUse on `Execute`,
@@ -125,29 +143,33 @@ from the token counts Factory reports for the mission's sessions (the usage page
 `usage.reported`), pasted into `reports/usage/<milestone>.md` at integration (rule 7). Factory
 Standard Credits are recorded next to it when visible. The caps below are the owner's planning
 numbers, not measurements; this is the first mission and there is no prior run to calibrate on.
-At the M0 boundary the orchestrator proposes re-caps for M1–M5 from the measured S and M0 usage
-(owner decision 2026-10-22); until then the table stands.
+At the M0 boundary the orchestrator proposed re-caps for M1–M5 from the measured S and M0 usage
+(owner decision 2026-10-22); the owner accepted the table below on 2026-10-23 (F-031). Measured
+inputs, pasted from `reports/usage/s.md` and `reports/usage/m0.md`: S 13.21 USD-eq of 40 (15.90 with
+round 2); M0 workers, validators and orchestrator subagents 49.05 of 60 (33.28 without the three
+subagents); orchestrator own delta 18.94 at the S to M0 boundary and 66.87 in M0 against its cap of 32.
 
-| Milestone | Cap (USD-eq) | Reason for the size |
-|---|---|---|
-| S  walking skeleton | 40 | Thin slice, few files, mostly scaffolding and one fixture. |
-| M0 capture and mapping | 60 | Mapper plus golden tests; the capture already exists (§3 M0). |
-| M1 board, replay, attach | 150 | Largest UI milestone and the Leptos go/no-go; rework budget inside. |
-| M2 host | 80 | RPC adapter plus launch screen; the control channel is new ground. |
-| M3 intervention | 60 | Lane-7 semantics over M2 controls; small surface. |
-| M4 branch, gate, fix loop | 120 | Two adapters (git, GitHub), the demo branch pair, a live PR loop. |
-| M5 time, waste, cost | 120 | The metric engine and its oracle test; export; charts. |
-| Total | 630 | Hard stop for the mission; the final PR and fixes come out of the unspent remainder. |
+| Milestone | Cap (USD-eq) | Orchestrator (20 %) | Was at approval | Reason for the size |
+|---|---|---|---|---|
+| S  walking skeleton | 40 | n/a | 40 | Thin slice, few files, mostly scaffolding and one fixture. |
+| M0 capture and mapping | 60 | 32 | 60 | Mapper plus golden tests; the capture already exists (§3 M0). |
+| M1 board, replay, attach | 110 | 22 | 150 | Largest UI milestone and the Leptos go/no-go; gains the lane table, the golden regeneration and D-023/D-024 (F-028); loses the derived human timeline and the lane-8 UI (the overlay is a field, Gate is one placeholder card). |
+| M2 host | 50 | 10 | 80 | RPC adapter plus launch screen; scope unchanged, lower priority. |
+| M3 intervention | 35 | 7 | 60 | Human-overlay semantics over M2 controls; wording only. |
+| M4 branch, gate, fix loop | 75 | 15 | 120 | Two adapters (git, GitHub), the demo branch pair, a live PR loop; drops branch-deletion detection, `deploy.completed` and two merge kinds (F-028). |
+| M5 time, waste, cost | 105 | 21 | 120 | Priority: engineering cycle time redefined, stage times per phase, waste measured as 8 and displayed as 5, both clocks, the Panel. |
+| Total | 630 | 75 (M1–M5) | 630 | M1–M5 sum 375 (planning numbers, not measurements); 630 stays the hard stop for the mission, and the final PR and fixes come out of the unspent remainder. |
 
-**Orchestrator cap (owner decision 2026-10-23, F-018).** The orchestrator is capped per milestone at
-20 % of that milestone's cap, measured as the delta of its own session's `tokenUsage` (session
-`e194b9e3`, not `inclusiveTokenUsage`) from the baseline recorded in `reports/usage/s.md`
-(input 629 245, output 499 465, cache read 32 674 587, cache write 3 520 336; 83.44 USD-eq
-mission-to-date), priced at the `claude-fable-5.1` row: M0 32 (raised from 12 by the owner on
-2026-10-23 after the second pass, F-024: the baseline stays and the 18.94 USD-eq spent on the S to M0
-boundary counts against M0), M1 30, M2 16, M3 12, M4 24, M5 24 USD-eq. The shares are re-set at the
-M0 boundary together with the milestone caps. Each
-`reports/usage/<m>.md` shows the delta and records the new absolute `tokenUsage` as the next baseline.
+**Orchestrator cap (owner decision 2026-10-23, F-018, re-set by F-031).** The orchestrator is capped
+per milestone at 20 % of that milestone's cap, measured as the delta of its own session's
+`tokenUsage` (session `e194b9e3`, not `inclusiveTokenUsage`) priced at the `claude-fable-5.1` row.
+M0 was measured from the baseline in `reports/usage/s.md` (input 629 245, output 499 465, cache read
+32 674 587, cache write 3 520 336; 83.44 USD-eq mission-to-date): cap 32 (raised from 12 by the
+owner on 2026-10-23 after the second pass, F-024). The M0 overrun, 66.87 USD-eq against 32 (209 %),
+is accepted as recorded (F-031); there is no retroactive cap change. M1 to M5: 22, 10, 7, 15, 21
+USD-eq (were 30, 16, 12, 24, 24). The M1 baseline is the absolute `tokenUsage` recorded in
+`reports/usage/m0.md`. Each `reports/usage/<m>.md` shows the delta and records the new absolute
+`tokenUsage` as the next baseline.
 
 At a cap the orchestrator stops dispatching, writes the usage so far to `reports/usage/`, raises
 the stall flag and waits for the human (rule 15). Spending beyond a cap is a deviation (rule 9).
@@ -240,7 +262,10 @@ from this mission's own files.
 
 ### M1 — Board in replay and attach
 
-- **Outcome.** Board with nine lanes and milestone cards positioned by current lane (FR-B1), worker
+- **Outcome.** Board with the seven phase lanes (Plan, Contract, Build, Scrutiny, User testing,
+  Integrate, Gate), the Panel area and the human overlay markers; mapping v1's lane table re-opened
+  for the phases (§5.2, D-024), the golden regenerated and its hash refrozen at this integration
+  (§10). Milestone cards positioned by current phase (FR-B1), worker
   sub-lanes with the per-worker/per-feature toggle (FR-B2), filters (FR-B5), replay scrubber
   (FR-B6), unmapped tray (FR-B7); Details with the Timeline tab (FR-D1) opening raw lines;
   agent panel (FR-A1..A4) with `model.changed` and `context.compacted` markers. Attach: `notify`
@@ -254,12 +279,19 @@ from this mission's own files.
   `unmapped_tray_count_equals_unknown_events()`, `watcher_sees_a_new_session_file_within_poll_interval()`,
   `tail_renders_appended_lines_in_order()`, `attach_latency_under_one_second_on_fixture_replayed_live()`
   (a test harness appends the fixture line by line with timestamps), `name_prefers_tag_over_session_id()`,
-  `scrub_masks_known_token_shapes_without_altering_the_store()`.
+  `scrub_masks_known_token_shapes_without_altering_the_store()`,
+  `lanes_are_the_seven_phases_in_order()`, `gate_command_lands_in_integrate_for_every_role()`,
+  `human_facing_kinds_carry_the_human_overlay()`.
 - **Acceptance commands.** `make check`; `trunk serve --port 3141` (browser host of the UI for the
-  validators, §6); `make app-dev`; a mission started in a terminal appears on the board, each event
-  within 1 s, measured by the attach-latency test and by the validator's timestamps.
+  validators, §6); `make app-dev`; the seven phase lanes render with the M0 fixture, with per-lane
+  counts equal to the CLI replay and to the regenerated golden (expected at the M1 golden, from `jq`
+  over the M0 events: Plan 443, Contract 69, Build 424, Scrutiny 87, User testing 122, Integrate 134,
+  Gate 0, and 70 human overlays; the committed golden is authoritative); a mission started in a
+  terminal appears on the board, each event within 1 s, measured by the attach-latency test and by
+  the validator's timestamps.
 - **Gate.** Common gate plus the **Leptos go/no-go** (PRD §12): the board renders the M0 capture
-  (nine lanes, cards positioned correctly, Details timeline open) with at most 3 worker sessions
+  (seven phase lanes and the Panel, phase counts equal to the CLI, cards positioned correctly,
+  Details timeline open) with at most 3 worker sessions
   of rework after the first scrutiny pass, and the Trunk/WASM build succeeds from a clean checkout
   with the README command. Fail → switch the UI to Tauri + TypeScript for M2 onward, core and the
   Tauri command boundary unchanged, decision file, owner approval.
@@ -281,18 +313,18 @@ from this mission's own files.
   its reaction appears; the same mission attached from its JSONL shows the same lane events.
 - **Gate.** Common gate; zero `unknown.event` on the hosted capture (new source, rule 18).
 - **Exit criterion.** PRD §13 M2 validation satisfied with the pasted event counts.
-- **Must not touch.** Lane-7 semantics beyond logging the three controls (M3), GitHub.
+- **Must not touch.** Human-overlay semantics beyond logging the three controls (M3), GitHub.
 
 ### M3 — Intervention
 
-- **Outcome.** Every control is a lane-7 event with the human as actor (FR-H1..H4: pause/resume,
-  message, answer and approve/deny, mark complete/skipped); stall flag at
+- **Outcome.** Every control is a human-overlay event (`overlay = human`) with the human as actor
+  (FR-H1..H4: pause/resume, message, answer and approve/deny, mark complete/skipped); stall flag at
   `[intervention].stall_threshold_min` with the matching runbook prompt (FR-H5, `docs/runbooks/`);
   no nudging under threshold (FR-H6).
-- **Tests green.** `each_control_emits_one_lane7_event_with_actor_human()`,
+- **Tests green.** `each_control_emits_one_human_overlay_event_with_actor_human()`,
   `stall_flag_raises_after_threshold_of_no_active_time()`, `stall_flag_suggests_the_matching_runbook()`,
   `no_alert_for_waits_under_threshold()`, `mark_skipped_relays_as_an_instruction_to_the_orchestrator()`.
-- **Acceptance commands.** `make check`; each action against a hosted mission produces the lane-7
+- **Acceptance commands.** `make check`; each action against a hosted mission produces the human-overlay
   event and the orchestrator reacts (pasted event ids).
 - **Gate.** Common gate.
 - **Exit criterion.** `docs/runbooks/stalled-mission.md` app steps replace the CLI steps (B-012
@@ -302,13 +334,16 @@ from this mission's own files.
 ### M4 — Mission branch, gate, and fix loop
 
 - **Outcome.** `GitSource`: mission branch, milestone worktrees, integration commits, fast-check
-  runs → lane 6 (FR-G1, FR-G2). `GitHubSource` behind the `Forge` trait: PR detection for
+  runs → Integrate (6; FR-G1, FR-G2). `GitHubSource` behind the `Forge` trait: PR detection for
   `<mission branch>` → `<target branch>` (target parameterised, not hard-coded `main`), check runs,
   required checks, reviews, rulesets, attestations (FR-G3); merge policy with rule attribution and
-  the `[github].merge_policy` override (FR-G4); gate group and badge in lane 8 (FR-B3); Merge
-  button with confirmation naming PR and target (FR-G5); `policy-merged` on detection (FR-G6);
-  CI red → `fix` cycle on the affected card(s), same PR, return arc (FR-B4, FR-G7); completion on
-  merge and branch-deletion detection (FR-G8).
+  the `[github].merge_policy` override (FR-G4); gate group and badge in the Gate lane (7; FR-B3);
+  Merge button with confirmation naming PR and target (FR-G5); `handed_to_cd { merge_sha, pr_number,
+  attestation_ids }` on detection, role human or external by the merger's login (FR-G6); CI red →
+  `fix` cycle on the affected card(s), same PR, return arc, counted as rework (FR-B4, FR-G7);
+  completion at `handed_to_cd`, the cycle's last event (FR-G8 narrowed: nothing after the merge is
+  observed). Cut by F-028 (owner answer 1c): `deploy.completed` and branch-deletion detection; the
+  `demo/*` cleanup stays a `gh` step of the run, not an observed event.
 - **Test target (B-007 decided, entry 19).** A demo branch pair in this repository: long-lived
   `demo/base` created by the orchestrator from the mission branch; a ruleset `demo-gate` on
   `refs/heads/demo/base` (PR required, required check `demo-gate`, no force push); PRs from
@@ -321,13 +356,17 @@ from this mission's own files.
 - **Tests green.** `pr_for_mission_branch_is_detected_within_poll_interval()`,
   `red_required_check_opens_a_fix_cycle_on_the_affected_card()`, `fix_cycle_keeps_the_same_pr()`,
   `merge_button_shows_only_when_policy_is_human_and_checks_are_green()`, `rule_attribution_names_the_ruleset()`,
-  `policy_merged_detected_without_human_action()`, `gate_command_runs_are_lane6_events_attributed_to_the_milestone()`,
+  `policy_merged_detected_without_human_action()` (asserts `handed_to_cd.role == External`),
+  `handed_to_cd_is_emitted_once_with_merge_sha_pr_and_attestations()`,
+  `gate_command_runs_are_lane6_events_attributed_to_the_milestone()`,
   `target_branch_is_read_from_config_not_hardcoded()`.
 - **Acceptance commands.** `make check`; `demo/red-1` PR with `demo:red` → check fails → card
-  loops to lane 3 with cycle count 1; label removed → check passes → Merge visible when policy
+  loops from Gate (7) to Build (3) with cycle count 1; label removed → check passes → Merge visible when policy
   allows → with the read-only token (D-014) the app surfaces the `403` cleanly (message naming the
   PR, the target and the missing permission; no crash, no retry storm) → the owner merges (UI or
-  API) → badge updates from the poll → `demo/red-1` deleted. All run ids and PR numbers pasted.
+  API) → badge `handed to CD` from the poll, naming the merge sha, the PR number, the attestation
+  ids and the merger (human or policy), with the Gate header naming both clocks → `demo/red-1` is
+  then deleted by `gh` as cleanup, not observed. All run ids and PR numbers pasted.
   The question of a write-capable token for the Merge button stays at the M3→M4 boundary.
 - **Gate.** Common gate; zero `unknown.event` from the git and GitHub sources (rule 18).
 - **Exit criterion.** PRD §13 M4 validation satisfied on the demo pair; the decision file for the
@@ -338,11 +377,16 @@ from this mission's own files.
 ### M5 — Time, waste, cost
 
 - **Outcome.** Time-state engine (PRD §10.1), rework windows (§10.2), mission overhead (§10.3),
-  cycle, waste, bottleneck, fix loops (§10.4), tokens and cost with the dated price table and
-  credits when exposed (§10.5), budget meter (FR-M6), model comparison (FR-M7), CSV/JSON export,
-  Details tabs Cost and waste (FR-D6), Review notes (FR-D2), Validation criteria (FR-D3), Commits
-  and integration (FR-D4), Gate (FR-D5); lane 9 panel with SVG charts (stacked bars, timeline,
-  sparkline); Grafana export of the §5.7 series behind `[telemetry].enabled`.
+  engineering cycle time (`feature.defined` → `handed_to_cd`, else the feature's first
+  `task.started` with the fallback count reported; stage times per phase 1–7), waste measured by the
+  eight §5.6 causes and displayed as the owner's five groups, bottleneck, fix loops (§10.4), tokens
+  and cost with the dated price table and credits when exposed (§10.5), budget meter (FR-M6), model
+  comparison (FR-M7), CSV/JSON export, Details tabs Cost and waste (FR-D6), Review notes (FR-D2),
+  Validation criteria (FR-D3), Commits and integration (FR-D4), Gate (FR-D5); the Panel (above the
+  seven lanes, not a lane) with SVG charts (stacked bars by the five groups, timeline, sparkline),
+  the cycle time, the cost per role and the drift against the declared `[mission]` models; both
+  clocks named (engineering cycle time; lead time to production, the delivery platform's, not
+  computed); Grafana export of the §5.7 series behind `[telemetry].enabled`.
 - **Oracle (B-008).** `reports/reference/2026-10-22-observatory-v1-m0.csv`, produced by the owner
   by hand from the M0 capture before M5 starts: per feature and per milestone, cycle seconds,
   first-pass active seconds, waste seconds by cause, rework windows, tokens by class, cost at
@@ -362,7 +406,7 @@ from this mission's own files.
 - **Gate.** Common gate; oracle test green (hard).
 - **Exit criterion.** All six "must prove" items of §1 hold; the orchestrator opens the single PR
   `mission/observatory-v1` → `main`, the `gate` runs, the human merges, the branch dies.
-- **Must not touch.** Anything that changes the frozen mapping or the M0 fixture.
+- **Must not touch.** Anything that changes the mapping frozen at the M1 integration (F-028) or the M0 fixture.
 
 ## 4. Versions
 
@@ -419,8 +463,9 @@ the 1 s requirement, avoids one render per line).
 
 ### 5.2 Canonical event and lane mapping
 
-`Event`, `ReworkWindow`, `Lane`, `Role`, `EventKind` as in PRD appendix A; `EventKind` has one
-variant per PRD §7 kind in `CamelCase` plus `Unknown { raw_type }`. `source: SourcePtr::Jsonl {
+`Event`, `ReworkWindow`, `Lane`, `Role`, `EventKind` as in PRD appendix A, except `Lane` (the seven
+phases below), the added `Event.overlay` and the kind set (`HandedToCd` replaces three PRD kinds;
+F-028, D-024); `EventKind` has one variant per PRD §7 kind in `CamelCase` plus `Unknown { raw_type }`. `source: SourcePtr::Jsonl {
 path, byte_offset, byte_len }` (appendix A has `path, byte_offset`; `byte_len` is added so a line
 can be read without scanning for the newline) is the only thing the store keeps of a raw line
 (PRD §11.2: the lane is a view). `mapping_version: MappingVersion` is a second addition to
@@ -433,9 +478,121 @@ the session files carry no Droid version (D-012). Usage (`tokenUsage`, `inclusiv
 `childInclusiveTokenUsageBySessionId`), model, reasoning effort, tags (objects `{name, metadata}`)
 and child links are read from the sibling `<id>.settings.json`. Unknown Droid versions use the
 latest mapping and raise a one-line warning (reason: an old capture must keep replaying, rule 18
-covers the rest). A mapping version is frozen at M0 and never edited; a later Droid release gets
-`mapping::v2` and its own fixture. The golden file `fixtures/streams/<capture>.events.json` is the
-contract of a version.
+covers the rest). A mapping version is frozen at M0 and never edited, with one exception: its lane
+column was re-opened once, before any consumer existed, at the M0 to M1 boundary (F-028, D-024,
+below). A later Droid release gets `mapping::v2` and its own fixture. The golden file
+`fixtures/streams/<capture>.events.json` is the contract of a version.
+
+**Lane table (F-028, D-024).** Lane assignment is part of the mapping. v1's kinds, pointers, role
+resolution and sidecar are as frozen at M0 (D-023); only its lane column changes, at the M1
+integration, to the seven mission phases, one axis: 1 Plan, 2 Contract, 3 Build, 4 Scrutiny,
+5 User testing, 6 Integrate, 7 Gate (serde `plan`, `contract`, `build`, `scrutiny`, `user_testing`,
+`integrate`, `gate`). Roles are colour and attribution. Human and commander events carry
+`overlay: Option<Overlay>` (`human`, `commander`), never a lane. The old lane 9 is the Panel (time,
+waste, cost, drift: an area, not a lane); the old lane 8 folds into Gate. `handed_to_cd { merge_sha,
+pr_number, attestation_ids }` replaces `pr.merged_by_human`, `pr.merged_by_policy` and
+`deploy.completed` (59 kinds). The rule in evaluation order and the authoritative v1 lane table
+(copied from `architecture.md` §5 and D-024):
+
+**Lane rule in evaluation order (D-024, `mapping::v1::Rec::push`):** lane is a function of `(kind, role, session
+facts the mapper already parses)`; nothing new is read.
+
+1. Fixed-phase kinds (independent of role): the rows marked `fixed` in the table below. `gate_command.*` is
+   Integrate for every role; `pr.opened` is Integrate (owner: "hand-over; PR opened"); the PR's checks and
+   attestations are Gate.
+2. `commit.created` by the Orchestrator → Integrate (its `file.touched` stays Plan).
+3. Integration session → Integrate for every role-neutral kind: a session whose `feature_id` matches
+   `^(m[0-9]+|final)-integrate-` (already parsed by `mapping/v1/ids.rs`). M0: `m0-integrate-s`, 3 sessions, 49 events.
+4. Contract session → Contract for every role-neutral kind: a child whose spawning `Task.description` (the same
+   `tool_use` part `roles.rs` reads for `subagent_type`) matches `^Contract\b|[Vv]alidation contract`
+   (`SessionMeta.contract: bool`, set by `roles.rs`; role stays Worker). Owner answer 1a (2026-10-23): accepted as
+   the v1 heuristic, recorded in the mapping decision. M0: 9 Task calls, 9 sessions, 69 events; without it Contract is
+   empty on M0 (Build 493).
+5. Role home for everything else: `Lane::home(role)`.
+
+Human-overlay events take a fixed lane by kind in v1 (owner answer 1d): `intent.*`, `question.*`, `approval.*`,
+`mission.paused/resumed` → Plan; `permission.*` → the requesting session's home; `review.outcome` → Gate;
+`approval.given` with `human_actions.kind = merge` → Gate. Placing a human event in "the feature's phase at that
+timestamp" needs cross-session state the stateless `map_record` cannot see; it is a v2 note in D-024, not work.
+
+**Authoritative v1 lane table (D-024).** Columns: PRD lane before F-028; phase; overlay; count on the
+M0 golden expected at the M1 regeneration (`jq` over `fixtures/streams/2026-10-22-observatory-v1-m0.events.json`,
+1279 events; the committed M1 golden is authoritative); reason. `R` = role home (rule 5, subject to rules 3–4).
+
+| Kind | PRD lane | Phase | Overlay | M0 | Reason |
+|---|---|---|---|---|---|
+| intent.created | 1 Intent | 1 Plan fixed | Human | 1 | the mission prompt; role stays Orchestrator (D-023) |
+| intent.amended | 1 Intent | 1 Plan fixed | Human | 44 | typed root prompt |
+| question.asked | 1 Intent | 1 Plan fixed | Human | 13 | pulls the human in; starts waiting-on-human |
+| intent.answered | 1 Intent | 1 Plan fixed | Human | 12 | the human's answer |
+| spec.versioned | 1 Intent | 2 Contract fixed | none | 0 | a spec version is the contract's artefact |
+| plan.created | 2 Orch | 1 Plan fixed | none | 1 | decomposition |
+| feature.defined | 2 Orch | 1 Plan fixed | none | 6 | cycle start; all 6 on M0 come from the scrutiny validator session `6eb88099` at 17:35:44Z, none for `m0-*` (see the clocks in §1) |
+| milestone.defined | 2 Orch | 1 Plan fixed | none | 7 | decomposition |
+| task.assigned | 2 Orch | R | none | 40 | orchestrator 27 → Plan; validators' own spawns 6 + 7 → Scrutiny / User testing |
+| task.skipped | 2 Orch | R | none | 18 | child outcome `cancelled`; child's role decides (10 Build, 1 Scrutiny, 4 UT, 3 Integrate) |
+| plan.revised | 2 Orch | 1 Plan fixed | none | 44 | replans |
+| escalation.raised | 2 Orch | 1 Plan fixed | none | 14 | root error / usage exhausted; a stall signal, not a human act |
+| milestone.completed | 2 Orch | 1 Plan fixed | none | 0 | not observed |
+| mission.paused | 2 Orch | 1 Plan fixed | Human | 0 | root turn cancelled = the human; M3 Pause too |
+| mission.resumed | 2 Orch | 1 Plan fixed | Human | 0 | M3 Resume |
+| mission.completed | 2 Orch | 1 Plan fixed | none | 0 | not observed |
+| context.compacted | 2 Orch | R | none | 11 | orchestrator 10 → Plan, worker 1 → Contract (rule 4) |
+| subagent.spawned | 3 Workers | R | none | 55 | child's role: 30 Build, 9 Contract, 7 Scrutiny, 9 UT |
+| task.started | 3 Workers | R | none | 55 | same split as spawned (3 Integrate) |
+| file.touched | 3 Workers | R | none | 452 | orchestrator 235 → Plan; worker 187 → 152 Build, 23 Contract, 12 Integrate; validators 12 / 18 |
+| tests.run | 3 Workers | R | none | 83 | worker 60 → 54 Build + 6 Integrate; orchestrator 6 → Plan; scrutiny 4; UT 13 |
+| commit.created | 3 Workers | R, rule 2 | none | 73 | worker 48 → 43 Build + 5 Integrate; orchestrator 25 → Integrate |
+| task.done | 3 Workers | R | none | 47 | child's role |
+| subagent.finished | 3 Workers | R | none | 55 | child's role |
+| tool.error | 3 Workers | R | none | 59 | orchestrator 16 → Plan; worker 38 → 34 Build + 4 Integrate; validators 1 / 4 |
+| permission.requested | 3 Workers | R | Human | 0 | asks the human (attached: terminal; hosted: M3 Approve/Deny) |
+| permission.granted | 3 Workers | R | Human | 0 | the human's decision |
+| permission.denied | 3 Workers | R | Human | 0 | the human's decision |
+| hook.blocked | 3 Workers | R | none | 2 | orchestrator 2 → Plan; counted under retry |
+| usage.reported | 3 Workers | R | none | 56 | lane = session's home; the Panel reads them from every lane |
+| model.changed | 3 Workers | R | none | 4 | orchestrator 4 → Plan; drift input for the Panel |
+| finding.blocking | 4 Scrutiny | 4 Scrutiny fixed | none | 0 | |
+| finding.non_blocking | 4 Scrutiny | 4 Scrutiny fixed | none | 24 | |
+| rework.requested | 4 Scrutiny | 4 Scrutiny fixed | none | 0 | |
+| rework.resolved | 4 Scrutiny | 4 Scrutiny fixed | none | 0 | |
+| scrutiny.passed | 4 Scrutiny | 4 Scrutiny fixed | none | 5 | |
+| qa.scenario.passed | 5 UT | 5 User testing fixed | none | 26 | |
+| qa.scenario.failed | 5 UT | 5 User testing fixed | none | 0 | |
+| qa.evidence | 5 UT | 5 User testing fixed | none | 2 | |
+| integration.merged | 6 Integration | 6 Integrate fixed | none | 0 | `GitSource`, M4 |
+| integration.conflict | 6 Integration | 6 Integrate fixed | none | 0 | |
+| integration.conflict_resolved | 6 Integration | 6 Integrate fixed | none | 0 | |
+| gate_command.run | 6 Integration | 6 Integrate fixed | none | 35 | every role (owner: "gate command") |
+| gate_command.passed | 6 Integration | 6 Integrate fixed | none | 34 | |
+| gate_command.failed | 6 Integration | 6 Integrate fixed | none | 1 | |
+| approval.requested | 7 Human | 1 Plan fixed | Human | 0 | M3 controls address the mission |
+| approval.given | 7 Human | 1 Plan fixed (7 Gate when `human_actions.kind = merge`) | Human | 0 | M3 controls; the M4 Merge press is `approval.given` + `human_actions.kind = 'merge'` (replaces `pr.merged_by_human` as the I8 intent row) |
+| question.answered | 7 Human | 1 Plan fixed | Human | 0 | M3 Answer |
+| review.outcome | 7 Human | 7 Gate fixed | Human | 0 | review of the outcome at the PR |
+| ~~pr.merged_by_human~~ | 7 Human | **removed** | | 0 | replaced by `handed_to_cd` with `role = Human` |
+| pr.opened | 8 Outside | 6 Integrate fixed | none | 0 | owner: "hand-over; PR opened" |
+| pr.review_requested | 8 Outside | 7 Gate fixed | none | 0 | |
+| check.started | 8 Outside | 7 Gate fixed | none | 0 | PR checks (`gate` workflow); mission-branch fast checks stay `gate_command.*` in Integrate |
+| check.passed | 8 Outside | 7 Gate fixed | none | 0 | closes a `gate` rework window |
+| check.failed | 8 Outside | 7 Gate fixed | none | 0 | opens the fix cycle (rework) |
+| check.required_missing | 8 Outside | 7 Gate fixed | none | 0 | |
+| ruleset.blocked | 8 Outside | 7 Gate fixed | none | 0 | |
+| attestation.recorded | 8 Outside | 7 Gate fixed | none | 0 | its id joins `handed_to_cd.attestation_ids` |
+| attestation.verified | 8 Outside | 7 Gate fixed | none | 0 | |
+| ~~pr.merged_by_policy~~ | 8 Outside | **removed** (owner answer 1b) | | 0 | replaced by `handed_to_cd` with `role = External`: one final event, merger attributed by role |
+| ~~deploy.completed~~ | 8 Outside | **removed** (owner answer 1c) | | 0 | after the merge; the delivery platform's record |
+| **handed_to_cd** (new) | — | 7 Gate fixed | none (role Human or External) | 0 | the cycle's last event: `merge_sha`, `pr_number`, `attestation_ids`; emitted once per PR when the required checks are green and `state = merged` is observed |
+
+Expected phase counts on the M0 golden after the change (state as "at the M1 golden"; `jq` of the committed
+golden is authoritative): Plan 443 / Contract 69 / Build 424 / Scrutiny 87 / User testing 122 / Integrate 134 /
+Gate 0 (sum 1279); 70 human overlays (1 created + 44 amended + 12 answered + 13 asked), all in Plan. Serde
+names `scrutiny` and `user_testing` are unchanged, so 57 golden events keep a byte-identical `lane`; the other
+1222 change string; 70 gain `"overlay":"human"`; ids, offsets, `at` and order are untouched. 7 Gate holds nothing on
+M0 and cannot from a session capture (PRD §13); until M4 the Gate lane header card shows `gate: pending (no PR)`,
+the mission branch, the last `gate_command.*` verdict from Integrate (M0: `gate_command.passed` after 35 runs,
+1 failed) and the two clock labels of §1 with no value. Kind count: 59 (30 observed on M0, 29 defined-not-observed;
+D-023 amended by D-024).
 
 ### 5.3 Store schema
 
@@ -446,14 +603,18 @@ File: `~/.droid-observatory/observatory.sqlite` (schema version table, migration
 | Table | Columns (keys) | Note |
 |---|---|---|
 | `sessions` | `id`, `path`, `droid_version`, `tag`, `role`, `parent_id`, `mission_id`, `started_at`, `ended_at` | One row per JSONL file; `tag` confirmed in M0 |
-| `events` | `id`, `session_id`, `mission_id`, `milestone_id`, `feature_id`, `lane`, `kind`, `raw_type`, `mapping_version`, `role`, `model`, `at`, `duration_ms`, `path`, `byte_offset`, `byte_len` | Pointer, never payload |
+| `events` | `id`, `session_id`, `mission_id`, `milestone_id`, `feature_id`, `lane` (1..7), `overlay` (nullable: `human`, `commander`), `kind`, `raw_type`, `mapping_version`, `role`, `model`, `at`, `duration_ms`, `path`, `byte_offset`, `byte_len` | Pointer, never payload |
 | `usage` | `event_id`, `input`, `output`, `cache_read`, `cache_write`, `credits` | From `usage.reported` |
 | `missions`, `milestones`, `features` | ids, names, `defined_at`, `completed_at`, `state` | Board model |
 | `rework_windows` | `feature_id`, `opened_by`, `closed_by`, `cause` | PRD §10.2 |
-| `prs`, `checks`, `attestations`, `reviews` | GitHub ids, state, `observed_at`, `url` | Lane 8 |
-| `human_actions` | `id`, `kind`, `target`, `at`, `payload_ptr` | Lane 7 |
+| `prs`, `checks`, `attestations`, `reviews` | GitHub ids, state, `observed_at`, `url` | Gate (7); `handed_to_cd` rows store `sha` = merge sha and `url` = the PR URL |
+| `human_actions` | `id`, `kind`, `target`, `at`, `payload_ptr` | Human overlay |
 | `prices` | `effective`, `model`, `class`, `per_m`, `source` | Loaded from the dated TOML |
 | `mapping_versions` | `version`, `droid_version_range`, `frozen_at` | §5.2 |
+
+`0001_init.sql` is amended in place for F-028 (lane `CHECK (lane BETWEEN 1 AND 7)`, nullable `overlay`
+after `lane`; 23 columns), because no persistent store exists yet; forward-only migrations start with
+the first shipped store (the M1 integration).
 
 Raw lines are read on demand from `path`+`byte_offset`; if the file moved, the UI says so and
 shows the pointer (reason: never copy raw lines, PRD §11.2).
@@ -497,7 +658,13 @@ By reference, not restated: time states PRD §10.1, rework windows §10.2, missi
 cycle/waste/bottleneck/fix loops §10.4, cost §10.5. Closed cause lists used by the engine and the
 exporter: **waste causes** `waiting_human_question`, `waiting_human_permission`, `waiting_merge`,
 `waiting_validation`, `rework`, `retry_failure`, `idle_queued`, `idle_unscheduled` (8);
-**rework causes** `scrutiny`, `user_testing`, `integration`, `gate` (4). Mission overhead is a
+**rework causes** `scrutiny`, `user_testing`, `integration`, `gate` (4). Waste is measured by the
+eight and displayed grouped as five (F-028): waiting on human (`waiting_human_question`,
+`waiting_human_permission`, `waiting_merge`), waiting on validation (`waiting_validation`), rework
+(`rework`), retry (`retry_failure`), idle (`idle_queued`, `idle_unscheduled`). The engine, the CSV
+and the D-010 series keep the eight; the Panel's stacked bars show the five and the Details Cost and
+waste tab the eight. A red PR check opens a `gate` rework window and reopens the mission as a `fix`
+cycle; time inside it is `rework`, waiting for the re-run is `waiting_validation`. Mission overhead is a
 separate line in the app and is not exported (reason: it belongs to no card and D-010 has no label
 for it). The CSV export has one row per feature with every §10.4 measure and the price-table date.
 
@@ -586,6 +753,19 @@ Fixtures are captured streams, named and dated (§3). Local = `make check` in a 
 | Interactive QA (validators) | board, Details, tray, filters, scrubber in the **browser host** `trunk serve --port 3141` with the fixture opened through the file picker; attach, host, controls and gate in the **Tauri window** (`make app-dev`) with screenshots and the CLI as oracle | per milestone, by the user-testing validator | `make app-dev`; `trunk serve --port 3141` |
 | Coverage (B-005) | `observatory-core` lines | S: reported; **M0 onward: fail under 80 %**; MB and PR | `cargo llvm-cov -p observatory-core --fail-under-lines 80` |
 
+**Where each command runs (F-029, rule 23, D-025).** The build is paid in series: a mission runs
+features one after another, so every compile a worker triggers is wall clock nobody shares. A
+worker's inner loop is `cargo check -p <crate>` and `cargo test -p <crate>` for the crates it
+touches, with `cargo fmt --all -- --check` and `cargo clippy -p <crate> --all-targets -- -D
+warnings` once before handoff; `cargo-nextest` is not installed (`cargo nextest --version` → "no such
+command") and is not to be installed. The full suite (`cargo test --workspace` inside `make check`)
+runs once per milestone at integration, by the integrator; `cargo llvm-cov` runs only there, alone
+(the scrutiny validator's programmatic gate counts as milestone-level). Every cargo or trunk
+invocation goes into the handoff `verification.commandsRun` with its wall time pasted. The readiness
+report states the measured build times and the per-feature compile cost
+(`reports/readiness/2026-10-23-build-times.md`); each milestone's usage report records the compile
+share of its wall clock.
+
 **As-built (D-022).** On the Linux runner the unit and fixture suites run for `observatory-core` and
 `observatory-cli` only (`cargo test -p observatory-core -p observatory-cli --all-features`); the
 Tauri shell crate is linted and tested by `make check` locally and compiled by the macOS bundle job
@@ -626,8 +806,17 @@ commit, wall time 2 min 56 s (`reports/ci/2026-10-23-s.md`).
 run 39942226174 took 3 min 58 s (`rust` 220 s was the critical path, `coverage` 59 s ran in parallel), so
 the fallback above (coverage on the final PR only) would not have shortened the wall time. The first
 `mission-checks` run on the mission branch after the M0 merge (run 39953923391) took 1 min 45 s (`rust`
-87 s, `coverage` 77 s). Per-job tables: `reports/ci/2026-10-23-m0.md`. The budget stays 3 min until the
-owner answers the boundary question (raise to 5 min, or shrink the `rust` job).
+87 s, `coverage` 77 s). Per-job tables: `reports/ci/2026-10-23-m0.md`. **Decided at the M0 to M1
+boundary (F-031):** the budget stays 3 min, qualified "warm cache": the warm mission-branch runs took
+1 min 45 s and 1 min 43 s (`reports/ci/`), and the cold `wt/m0` run 39942226174 (3 min 58 s) does not
+count against it. A cold run is reported as cold, never as a budget breach.
+
+**Compile cost evidence (F-029, D-025).** Measured warm on the mission branch on 2026-10-23, pasted
+from `reports/readiness/2026-10-23-build-times.md`: `make check` real 30.383 s (128 tests passed);
+`cargo check -p observatory-core` real 1.268 s; `cargo test -p observatory-core` real 11.631 s (112
+passed); `cargo llvm-cov -p observatory-core --all-features --fail-under-lines 80 --summary-only`
+alone, real 54.911 s (lines 94.21 %). The inner loop costs a few seconds against 30 to 55 s for the
+milestone commands, which is why only the integrator runs the latter.
 
 **B-014 settled: `cargo-machete`, not `cargo-udeps`.** Reason: machete runs on the stable toolchain
 in seconds; udeps needs nightly, which is a second toolchain to pin and cache for a check that
@@ -717,6 +906,10 @@ Written by the orchestrator on the mission branch, never in a worktree.
 | F-025 | 2026-10-23 | Owner decision: orchestrator subagents run at the highest effort (`Task` `complexity: heavy`); sessions `180b4a60` and `4162070f` ran at `medium` before the rule | `reports/usage/m0.md` (episode) | done (listed as an episode) |
 | F-026 | 2026-10-23 | Owner decision: the PII rule covers the hyphenated session-directory form, `-Users-dct` becomes `-home-user` (third rule of `scripts/redact-fixture.sh`); S fixture re-redacted, M0 capture redacted with all three rules | D-020 addendum, `ai/RULES.md` rule 22 | done (S `fcfbc32`, M0 `c623365`); closes the open point of F-017 |
 | F-027 | 2026-10-23 | Owner restates the communication rule and adds: "Decision requests carry no background paragraph; the owner asks for context when needed. Instructions are acknowledged in one line." | D-019 addendum, `ai/RULES.md` rule 21, `.factory/output-styles/mission-terse.md` | done (M0 integration) |
+| F-028 | 2026-10-23 | Owner re-scopes Roci as a mission watcher that measures waste and effectiveness (cycle time, cost) of the engineering cycle from the spec to the PR's checks going green; post-merge (release, observe, deploys, flags) belongs to the delivery platform and is out of scope. Lanes are the seven mission phases, one axis: 1 Plan, 2 Contract, 3 Build, 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate; roles are colour and attribution; human interventions and commander actions are overlays (`overlay: human\|commander`), not lanes; the old lane 9 is the Panel (cycle time, waste measured as 8 and shown as 5 groups, cost per role, drift against the declared models), the old lane 8 folds into Gate; one `handed_to_cd { merge_sha, pr_number, attestation_ids }` replaces `pr.merged_by_human`, `pr.merged_by_policy` and `deploy.completed` (59 kinds: 30 observed, 29 defined-not-observed). Applied inside `mapping::v1` (kinds, `SourcePtr`, roles and sidecar unchanged). **Owner answers:** 1a contract sessions are children spawned by a `Task` whose description matches `^Contract\b\|validation contract` (v1 heuristic); 1b the merger is attributed by role (human / external) on one `handed_to_cd`; 1c M4 cuts `deploy.completed` and branch-deletion detection (`demo/*` cleanup stays a `gh` step); 1d human-overlay kinds take a fixed lane by kind in v1 (`intent.*`, `question.*`, `approval.*` → Plan; `permission.*` → the asking session's phase; `review.outcome` → Gate; `approval.given` with `human_actions.kind = merge` → Gate), placement by the feature's phase is a v2 note; 1e engineering cycle time = `feature.defined` → `handed_to_cd`, else the feature's first `task.started` with the fallback count reported, and "lead time to production" is named on the board, never computed. **Alternatives considered:** a `mapping::v2` for the phases (rejected: no consumer of lanes exists yet, a version bump is for a new Droid release, and v2 would need its own fixture and golden); Contract left empty on M0 until a capture has a contract-writer role (1a); `pr.merged_by_policy` kept as a second Gate kind (1b); branch-deletion detection kept as closing housekeeping (1c); human events placed in the phase their feature is in at that instant, which needs cross-session state in the stateless `map_record` (1d); a `feature.defined` ids rule amended before the reference CSV (1e). | §1, §2, §3 M1/M3/M4/M5, §5.2, §5.3, §5.6, §10, D-024, D-023 amendment (at `m1-view-models-core`), PRD notes, README, AGENTS.md, BACKLOG, mission files, features, validation contract | done in the shared files (`m1-f028-spec-pass`); mapping change, golden regeneration and hash refreeze at M1 |
+| F-029 | 2026-10-23 | Owner rule on compile cost: "The build is paid in series: check in the inner loop, test at integration, coverage at the milestone." Workers run `cargo check -p` and `cargo test -p` for the crates they touch; the full suite runs once per milestone by the integrator; coverage runs only there, alone; the readiness report states measured build times and the per-feature compile cost; each usage report records the compile share of the wall clock. The owner wrote the rule as number "20"; 20 is the models invariant (F-015), so it landed as rule 23, no renumbering. Evidence: warm `make check` 30.383 s, `cargo check -p observatory-core` 1.268 s, `cargo test -p observatory-core` 11.631 s, `cargo llvm-cov` alone 54.911 s (`reports/readiness/2026-10-23-build-times.md`). `cargo-nextest` is not installed and is not to be installed | §2, §6, §7, `ai/RULES.md` rule 23, D-025, AGENTS.md, `reports/usage/m0.md` (Compile share), `reports/readiness/2026-10-23-build-times.md` | done (`m1-f028-spec-pass`) |
+| F-030 | 2026-10-23 | Owner autonomy rule: when a decision comes with a recommendation and changes neither scope, nor usage caps, nor the models per role, the orchestrator takes the recommendation, records it as a §9 row with the alternatives, and reports it at the next boundary; the owner is asked only for scope, money or model changes and for rule 9 deviations | `ai/RULES.md` rule 24, D-026, AGENTS.md "Mission setup" | done (`m1-f028-spec-pass`) |
+| F-031 | 2026-10-23 | Owner answers at the M0 to M1 boundary: (a) re-caps in USD-eq with the orchestrator inside: M1 110 / M2 50 / M3 35 / M4 75 / M5 105 (were 150 / 80 / 60 / 120 / 120), orchestrator 20 % = 22 / 10 / 7 / 15 / 21 (were 30 / 16 / 12 / 24 / 24), sum 375, 630 stays the hard stop; M5 gains priority, M4 shrinks with the post-merge cut; (b) the M0 orchestrator overrun, 66.87 against 32 (209 %), is accepted as recorded, no retroactive cap change; the M1 orchestrator baseline is the absolute `tokenUsage` in `reports/usage/m0.md`; (c) CI budget stays 3 min, qualified "warm cache" (warm runs 1 min 45 s and 1 min 43 s; the cold `wt/m0` run 39942226174, 3 min 58 s, does not count); (d) no PII extension for the owner's author name, the login `dctellya` or `dalimaray.io` (public identifiers, rule 22 unchanged); the unredacted S fixture blobs in history before `92d2208` stay (forward-only, rule 12), recorded in BACKLOG; (e) D-023's defined-not-observed kinds (31 at the freeze, 29 after D-024) and the `Task` input fields for roles and ids (`subagent_type`, `description`) are frozen; (f) owner actions requested: overage preference "stop", the screenshot `reports/screenshots/2026-10-23-m0.png`, optional removal of the `kimi-k3` session `82a61cf6` (the frozen fixture is unaffected either way). Alternatives for (c): raise the budget to 5 min, or shrink the `rust` job | §2, §7, §10, BACKLOG, `reports/usage/m0.md`, `reports/usage/m1.md`, D-023 | done (`m1-f028-spec-pass`); owner actions pending |
 
 ## 10. Evolution log
 
@@ -741,6 +934,14 @@ bytes at the merge commit `f66a9f5`); a change needs a decision file:
 | `fixtures/streams/2026-10-22-observatory-v1-s.jsonl` | `e9746b0979596003373d584abb273a921c476ff6f43d2c47d76284d81f370b25` |
 | `fixtures/streams/2026-10-22-observatory-v1-s.settings.json` | `42f6b820dc6c797cf408994df08f19dd5954a16610e923ed358b1f986f0113d9` |
 | `fixtures/streams/2026-10-22-observatory-v1-s.capture.json` | `3658c14010bc9b4dfb472ce8481c13af0e4bc41273b929187297bc82ba558262` |
+
+**Amended by F-028 (D-024).** The golden hash `f055657a46af2713f50d1963dab684495d5f3770225f942adfcbb28e8331f3e1`
+above is superseded at the M1 integration: `2026-10-22-observatory-v1-m0.events.json` is regenerated
+once, at Step 0 of `m1-view-models-core`, for the seven phase lanes and the `overlay` field, and the
+new SHA-256 is recorded in the M1 row. The fixture `.jsonl`, `.capture.json` and `.settings.json`
+hashes of both fixtures and the `.children/` hashes stay as frozen. Expected phase counts on the
+regenerated M0 golden (the committed golden is authoritative): Plan 443, Contract 69, Build 424,
+Scrutiny 87, User testing 122, Integrate 134, Gate 0; 70 human overlays.
 
 The per-file hashes of the `.children/` directories are `redaction.files[]` in each `.capture.json`
 and the pairs are in the D-020 addendum. Mapping v1 golden counts: M0 1279 events (root only 474), S 661
