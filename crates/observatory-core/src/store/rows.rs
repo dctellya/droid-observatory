@@ -151,3 +151,66 @@ pub(super) fn sub_of(event: &Event) -> i64 {
         .and_then(|sub| sub.parse().ok())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pointers() -> Vec<SourcePtr> {
+        vec![
+            SourcePtr::Jsonl {
+                path: "/s/a.jsonl".into(),
+                byte_offset: 42,
+                byte_len: 7,
+            },
+            SourcePtr::Rpc {
+                path: "/s/spool.jsonl".into(),
+                byte_offset: 0,
+                byte_len: 1,
+            },
+            SourcePtr::Git {
+                repo: "/r".into(),
+                sha: "abc123".into(),
+            },
+            SourcePtr::GitHub {
+                url: "https://api.github.com/repos/o/r/pulls/1".into(),
+            },
+            SourcePtr::App { action_id: 9 },
+        ]
+    }
+
+    #[test]
+    fn every_pointer_kind_survives_the_columns_round_trip() {
+        for ptr in pointers() {
+            let columns = PointerColumns::of(&ptr, "id").unwrap();
+            assert_eq!(columns.into_ptr("id").unwrap(), ptr);
+        }
+    }
+
+    #[test]
+    fn a_row_missing_its_pointer_columns_is_a_bad_row_not_a_panic() {
+        let columns = PointerColumns {
+            source: "jsonl".into(),
+            ..PointerColumns::default()
+        };
+        let err = columns.into_ptr("e:1:0").unwrap_err();
+        assert!(matches!(err, StoreError::BadRow { .. }), "{err}");
+        assert!(err.to_string().contains("e:1:0"), "{err}");
+
+        let unknown = PointerColumns {
+            source: "carrier-pigeon".into(),
+            ..PointerColumns::default()
+        };
+        assert!(unknown.into_ptr("e:1:0").is_err());
+    }
+
+    #[test]
+    fn an_offset_beyond_a_sqlite_integer_is_rejected() {
+        let ptr = SourcePtr::Jsonl {
+            path: "/s/a.jsonl".into(),
+            byte_offset: u64::MAX,
+            byte_len: 1,
+        };
+        assert!(PointerColumns::of(&ptr, "id").is_err());
+    }
+}
