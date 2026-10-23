@@ -288,7 +288,18 @@
     }
   ],
   "captured_with": "droid --version",
-  "gitleaks": "clean 2026-10-23 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 64.14 MB scanned across fixtures/streams, no leaks found; run on the redacted files)",
+  "gitleaks": "clean 2026-10-24 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 67.47 MB scanned across fixtures/streams, no leaks found; run on the redacted files, usage-log extract included)",
+  "usage_log": {
+    "file": "2026-10-22-observatory-v1-m0.usage-log.jsonl",
+    "sha256": "c9b5e2747b23aba4a8cf09f2e0e85cf1b85ef0cdd8f39c671b230deade91637d",
+    "first_ts": "2026-10-22T10:18:19.200Z",
+    "last_ts": "2026-10-23T09:21:59.213Z",
+    "lines": 2230,
+    "turns": 1115,
+    "source": "droid-log-single.log.2026-10-22 and droid-log-single.log.2026-10-23 of ~/.factory/logs, up to captured_at",
+    "script": "scripts/extract-usage-log.py",
+    "extra_redaction": "droidInstallationId, hostId and factory.process.instance_id replaced by 00000000-0000-4000-8000-000000000000 (same length); scripts/redact-fixture.sh found nothing to change"
+  },
   "reviewed_by": "factory-droid[bot]",
   "redaction": {
     "script": "scripts/redact-fixture.sh",
