@@ -189,8 +189,9 @@ fn replay(path: &Path) -> (Vec<RawRecord>, Vec<Event>) {
     (records, events)
 }
 
+/// Same number as `wc -l`, the one recorded in the capture header.
 fn line_count(bytes: &[u8]) -> usize {
-    bytes.split_inclusive(|b| *b == b'\n').count()
+    bytes.iter().filter(|b| **b == b'\n').count()
 }
 
 #[test]
