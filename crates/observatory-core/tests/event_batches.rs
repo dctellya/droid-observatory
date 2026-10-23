@@ -237,6 +237,72 @@ mod live {
         );
     }
 
+    /// Droid keeps its session file open while it writes; the notifier does not report every write
+    /// of a long-lived handle, so the tail cannot rely on it alone.
+    #[test]
+    fn lines_written_through_one_open_handle_flush_within_half_a_poll_and_a_batch() {
+        use std::io::Write;
+
+        let dir = TempDir::new().unwrap();
+        let store_dir = TempDir::new().unwrap();
+        let path = session_path(dir.path(), SESSION);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"").unwrap();
+        let mut live = live(&dir, &store_dir);
+        let mut lines = m0_lines(LINES);
+        lines[0] = session_start(SESSION, None);
+
+        let writer = thread::spawn(move || {
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            let mut appended = Vec::with_capacity(lines.len());
+            let mut offset = 0_u64;
+            for line in &lines {
+                appended.push((offset, Instant::now()));
+                file.write_all(line).unwrap();
+                file.flush().unwrap();
+                offset += line.len() as u64;
+                thread::sleep(APPEND_GAP);
+            }
+            appended
+        });
+
+        let mut flushed_at: BTreeMap<u64, Instant> = BTreeMap::new();
+        let started = Instant::now();
+        let mut quiet = 0;
+        while quiet < 12 && started.elapsed() < Duration::from_secs(60) {
+            let step = live.step();
+            let now = Instant::now();
+            quiet = if step.batches.is_empty() && writer.is_finished() {
+                quiet + 1
+            } else {
+                0
+            };
+            for event in step.batches.into_iter().flat_map(|batch| batch.events) {
+                flushed_at.entry(byte_offset(&event)).or_insert(now);
+            }
+        }
+        let appended = writer.join().unwrap();
+        let mut deltas: Vec<Duration> = appended
+            .iter()
+            .filter_map(|(offset, at)| Some(flushed_at.get(offset)?.duration_since(*at)))
+            .collect();
+        deltas.sort();
+        let max = *deltas.last().unwrap();
+        println!(
+            "open handle, {} events: p50={:?} p95={:?} max={max:?}",
+            deltas.len(),
+            percentile(&deltas, 50),
+            percentile(&deltas, 95),
+        );
+        assert!(
+            max < Duration::from_millis(450),
+            "slowest line took {max:?}"
+        );
+    }
+
     #[test]
     fn what_the_ui_receives_equals_a_replay_of_the_same_file() {
         let dir = TempDir::new().unwrap();
