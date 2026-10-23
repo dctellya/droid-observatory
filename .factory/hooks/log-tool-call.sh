@@ -1,6 +1,6 @@
 #!/bin/sh
 # Factory Pre/PostToolUse hook: append one compact JSON line per tool event to build-log/
-# (ai/RULES.md rule 17, D-021, D-027). Records what was called, never the tool response, so the
+# (ai/RULES.md rule 17, D-021, D-025). Records what was called, never the tool response, so the
 # log stays small and cannot leak tool output.
 #
 # The payload has no tool_use_id (Droid 0.247.x: cwd, hook_event_name, permission_mode, session_id,
