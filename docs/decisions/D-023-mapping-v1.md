@@ -18,36 +18,47 @@ and a changed rule is a new mapping version, not an edit of v1.
 
 ### 1. The v1 rule table
 
-Raw shape of a Droid 0.247 session file, the PRD §7 kind it becomes, and the lane and role. An
+**Amended 2026-10-23 by [D-024](D-024-phase-lanes.md) (F-028, `m1-view-models-core`):** the lane
+column below is the phase column of the seven mission phases (1 Plan, 2 Contract, 3 Build,
+4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate). Kinds, pointers, roles and the sidecar are
+unchanged. "Home phase" is `Lane::home(role)` (Orchestrator and Human: Plan; Worker and
+Unresolved: Build; scrutiny validator: Scrutiny; user-testing validator: User testing; External:
+Gate), except that a role-neutral kind of an integration session (feature id
+`^(m[0-9]+|final)-integrate-`) is Integrate and one of a contract session (spawned by a `Task`
+whose description matches `^Contract\b|[Vv]alidation contract`) is Contract. The full kind table
+with the M0 counts is in D-024 §3. The rows below were written for the nine PRD lanes; where a
+row says "home phase", the amended rule applies.
+
+Raw shape of a Droid 0.247 session file, the PRD §7 kind it becomes, and the phase and role. An
 event's `role` is always the role of its session (the capture header's role is the oracle); a
 person's words are told apart by the kind, not by a `Human` role.
 
-| Raw shape | Kind | Lane / role |
+| Raw shape | Kind | Phase (D-024) / role |
 |---|---|---|
-| `session_start`, no `callingSessionId` | `intent.created` | 1, session role |
-| `session_start` with `callingSessionId` | `subagent.spawned` | 3, child's role |
-| root user text typed by the person (`userMessageSource: cli_tui`) | `intent.amended` | 1, session role |
-| child user text that is a `Task` or runner assignment (first only) | `task.started` | 3 |
-| assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | 2 |
-| assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | 2 |
-| assistant `tool_use` `AskUser` | `question.asked` | 1 |
-| `tool_result` of an `AskUser` | `intent.answered` | 1, session role |
-| `Execute` command that runs `git commit` (whole command words) | `commit.created` | 3 |
-| `Execute` command that runs `cargo test`, `make test` or `make check` | `tests.run` | 3 |
-| `Execute` command that runs `make check` | `gate_command.run`; its result `gate_command.passed` / `gate_command.failed` by the exit status in the result text (`is_error` is a second failure signal) | 6 |
-| assistant `tool_use` `Edit`, `Create`, `ApplyPatch` | `file.touched` | 3 |
-| `tool_result` with `is_error` | `tool.error`; `hook.blocked` when the text names a hook | 3 |
-| assistant `modelId` differs from the session's previous one | `model.changed` | 3 |
-| `compaction_state` | `context.compacted` | 2 |
-| `todo_state` whose todos differ from the previous one | `plan.revised` | 2 |
-| `agent_turn_outcome` in a child: completed / cancelled / error or usage exhausted | `task.done` / `task.skipped` / `tool.error` | 3 / 2 / 3 |
-| `agent_turn_outcome` in the root: cancelled / error or usage exhausted | `mission.paused` / `escalation.raised`; completed is quiet | 2 |
-| child end of file | `subagent.finished` | 3 |
-| sidecar `tokenUsage`, at end of file | `usage.reported` | 3 |
-| scrutiny validator report text | `finding.blocking`, `finding.non_blocking`, `scrutiny.passed` | 4 |
-| user-testing validator report text | `qa.scenario.passed`, `qa.scenario.failed`, `qa.evidence` | 5 |
+| `session_start`, no `callingSessionId` | `intent.created` | Plan, overlay human, session role |
+| `session_start` with `callingSessionId` | `subagent.spawned` | child's home phase (Build, Scrutiny, User testing; Contract or Integrate by rules 3 and 4) |
+| root user text typed by the person (`userMessageSource: cli_tui`) | `intent.amended` | Plan, overlay human, session role |
+| child user text that is a `Task` or runner assignment (first only) | `task.started` | home phase |
+| assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan |
+| assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | Plan |
+| assistant `tool_use` `AskUser` | `question.asked` | Plan, overlay human |
+| `tool_result` of an `AskUser` | `intent.answered` | Plan, overlay human, session role |
+| `Execute` command that runs `git commit` (whole command words) | `commit.created` | home phase; the orchestrator's commits: Integrate |
+| `Execute` command that runs `cargo test`, `make test` or `make check` | `tests.run` | home phase |
+| `Execute` command that runs `make check` | `gate_command.run`; its result `gate_command.passed` / `gate_command.failed` by the exit status in the result text (`is_error` is a second failure signal) | Integrate for every role |
+| assistant `tool_use` `Edit`, `Create`, `ApplyPatch` | `file.touched` | home phase |
+| `tool_result` with `is_error` | `tool.error`; `hook.blocked` when the text names a hook | home phase |
+| assistant `modelId` differs from the session's previous one | `model.changed` | home phase |
+| `compaction_state` | `context.compacted` | home phase |
+| `todo_state` whose todos differ from the previous one | `plan.revised` | Plan |
+| `agent_turn_outcome` in a child: completed / cancelled / error or usage exhausted | `task.done` / `task.skipped` / `tool.error` | home phase |
+| `agent_turn_outcome` in the root: cancelled / error or usage exhausted | `mission.paused` / `escalation.raised`; completed is quiet | Plan (`escalation.raised`; `mission.paused` also carries the human overlay) |
+| child end of file | `subagent.finished` | home phase |
+| sidecar `tokenUsage`, at end of file | `usage.reported` | home phase |
+| scrutiny validator report text | `finding.blocking`, `finding.non_blocking`, `scrutiny.passed` | Scrutiny |
+| user-testing validator report text | `qa.scenario.passed`, `qa.scenario.failed`, `qa.evidence` | User testing |
 | thinking, plain text, empty user messages, `Script` (its inner `Execute` calls are their own records), other tool calls and their results | no event | none |
-| any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | role's lane |
+| any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | `Lane::home(role)` |
 
 The droid-version range is `0.247.*`. The store row for v1 is `mapping_versions(version = 'v1',
 droid_version_range = '0.247.*', frozen_at = '2026-10-23')`: the day commit 86df619 froze v1.
@@ -110,8 +121,9 @@ These readings are not in the PRD and are frozen with v1:
 
 - The root `session_start` is the single `intent.created`; every typed root prompt afterwards is
   `intent.amended`. The architecture's two rows conflicted; v1 reads them in that order.
-- Events keep the session's role. Human prompts are lane 1 with the orchestrator role, not
-  `Human`; lane 7 is reserved for the app's own human-action rows.
+- Events keep the session's role. Human prompts are Plan with the orchestrator role, not
+  `Human`, and carry the human overlay; the app's own human-action rows are overlay events on a
+  phase, never a lane of their own.
 - `usage.reported` and `subagent.finished` come from the sidecar and end of file through
   `Mapper::finish` / `TreeMapper::finish`. A live source (M1 attach) must call `finish` when a file
   will not grow again and keep one `Mapper` per session; the stateless `mapping::map_record` sees
@@ -158,32 +170,33 @@ These readings are not in the PRD and are frozen with v1:
 
 ### 3. Defined, not observed
 
-PRD §7 defines 61 kinds (lanes 1 to 8: 5 + 12 + 14 + 5 + 3 + 6 + 5 + 11), the length of
-`EventKind::KNOWN`. The M0 capture shows 30 of them: `commit.created`, `context.compacted`,
-`escalation.raised`, `feature.defined`, `file.touched`, `finding.non_blocking`,
-`gate_command.failed`, `gate_command.passed`, `gate_command.run`, `hook.blocked`,
-`intent.amended`, `intent.answered`, `intent.created`, `milestone.defined`, `model.changed`,
-`plan.created`, `plan.revised`, `qa.evidence`, `qa.scenario.passed`, `question.asked`,
-`scrutiny.passed`, `subagent.finished`, `subagent.spawned`, `task.assigned`, `task.done`,
-`task.skipped`, `task.started`, `tests.run`, `tool.error`, `usage.reported`.
+PRD §7 defined 61 kinds (5 + 12 + 14 + 5 + 3 + 6 + 5 + 11). D-024 removes `deploy.completed`,
+`pr.merged_by_human` and `pr.merged_by_policy` and adds `handed_to_cd { merge_sha, pr_number,
+attestation_ids }`, so `EventKind::KNOWN` has 59 entries. The M0 capture shows 30 of them:
+`commit.created`, `context.compacted`, `escalation.raised`, `feature.defined`, `file.touched`,
+`finding.non_blocking`, `gate_command.failed`, `gate_command.passed`, `gate_command.run`,
+`hook.blocked`, `intent.amended`, `intent.answered`, `intent.created`, `milestone.defined`,
+`model.changed`, `plan.created`, `plan.revised`, `qa.evidence`, `qa.scenario.passed`,
+`question.asked`, `scrutiny.passed`, `subagent.finished`, `subagent.spawned`, `task.assigned`,
+`task.done`, `task.skipped`, `task.started`, `tests.run`, `tool.error`, `usage.reported`.
 
-The other 31 are defined by the PRD and the model, and v1 has no rule for them because no raw shape
-in the capture carries them (several come from Git, GitHub or the app, not from session files).
-`every_prd_kind_present_in_capture_is_mapped` asserts that the observed set is exactly the 30 above
-and that none is `Unknown`. The 31:
+The other 29 (31 at the M0 freeze) are defined by the PRD and the model, and v1 has no rule for
+them because no raw shape in the capture carries them (several come from Git, GitHub or the app,
+not from session files). `every_prd_kind_present_in_capture_is_mapped` asserts that the observed
+set is exactly the 30 above and that none is `Unknown`. The 29:
 
 `approval.given`, `approval.requested`, `attestation.recorded`, `attestation.verified`,
-`check.failed`, `check.passed`, `check.required_missing`, `check.started`, `deploy.completed`,
-`finding.blocking`, `integration.conflict`, `integration.conflict_resolved`, `integration.merged`,
+`check.failed`, `check.passed`, `check.required_missing`, `check.started`, `finding.blocking`,
+`handed_to_cd`, `integration.conflict`, `integration.conflict_resolved`, `integration.merged`,
 `milestone.completed`, `mission.completed`, `mission.paused`, `mission.resumed`,
-`permission.denied`, `permission.granted`, `permission.requested`, `pr.merged_by_human`,
-`pr.merged_by_policy`, `pr.opened`, `pr.review_requested`, `qa.scenario.failed`,
-`question.answered`, `review.outcome`, `rework.requested`, `rework.resolved`, `ruleset.blocked`,
-`spec.versioned`.
+`permission.denied`, `permission.granted`, `permission.requested`, `pr.opened`,
+`pr.review_requested`, `qa.scenario.failed`, `question.answered`, `review.outcome`,
+`rework.requested`, `rework.resolved`, `ruleset.blocked`, `spec.versioned`.
 
-`mission.paused` and `finding.blocking` and `qa.scenario.failed` do have v1 rules (see the table)
-that the capture does not trigger. A new observation of any of the 31 is added in a later mapping
-version, with a fixture, and removed from this list in the same change.
+`Overlay::Commander` is likewise declared with no producer. `mission.paused` and `finding.blocking`
+and `qa.scenario.failed` do have v1 rules (see the table) that the capture does not trigger. A new
+observation of any of the 29 is added in a later mapping version, with a fixture, and removed from
+this list in the same change.
 
 ### 4. Droid version to mapping version
 
@@ -238,7 +251,7 @@ version, with a fixture, and removed from this list in the same change.
   that gate and the test that pins the 30 observed kinds, so the change is a deliberate new version.
 - The S-era wording "event count equals line count" no longer holds; checks compare with the
   golden or the record count instead.
-- The 31 unobserved kinds are not testable from session files; later milestones produce them from
+- The 29 unobserved kinds are not testable from session files; later milestones produce them from
   Git, GitHub, the host channel or the app.
 - Validator report parsing depends on habitual Markdown; a change of validator style is a new
   mapping version.

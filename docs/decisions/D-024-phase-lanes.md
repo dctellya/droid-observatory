@@ -1,7 +1,7 @@
 # D-024: Lanes are the seven mission phases; human and commander actions are overlays; the cycle ends at `handed_to_cd`
 
 **Date:** 2026-10-23
-**Status:** new (owner decision F-028 at the M0 to M1 boundary, answers 1a to 1e given 2026-10-23; the mapping change, the golden regeneration and the hash refreeze land with `m1-view-models-core` and the M1 integration)
+**Status:** accepted and implemented in `m1-view-models-core` (mapping::v1 lane rules, `Lane`, `Overlay`, `HandedToCd`, store 0001 amended, golden regenerated; M0 golden SHA-256 `c10b27ae67be62c6ace2d38d445a035d5c219a13b9ed38812cc0f27cffce635d`, refrozen in SPEC §10 at the M1 integration)
 
 ## Context
 
@@ -166,6 +166,20 @@ D-023 amended by D-024).
 | 1c | What does M4 cut? | `deploy.completed` and branch-deletion detection. The `demo/*` cleanup stays a `gh` step of the run, not an observed event. |
 | 1d | Where do human-overlay events land? | In a fixed lane by kind in v1: `intent.*`, `question.*`, `approval.*` → Plan; `permission.*` → the asking session's phase; `review.outcome` → Gate; `approval.given` with `human_actions.kind = merge` → Gate. Placing them by the feature's phase at that instant is a v2 note (BACKLOG). |
 | 1e | When does the engineering cycle start? | `feature.defined`, else the feature's first `task.started`, with the count of fallbacks reported. On the M0 capture only 6 of 13 features have a `feature.defined`, all emitted at 17:35:44Z by the scrutiny validator session `6eb88099`; none of the runner-started `m0-*` features has one. |
+
+### 5. Implementation note (`m1-view-models-core`, 2026-10-23)
+
+- `EventKind::fixed_lane()` is the phase a kind has whoever emits it (`None` for the role-neutral
+  kinds); `EventKind::lane(role)` adds rule 2 (orchestrator `commit.created` → Integrate) and rule 5;
+  `EventKind::overlay()` is `Some(Human)` for the 13 human-facing kinds. The mapping applies rules 3
+  and 4 on top (`mapping::v1::lane_of`), never to fixed kinds and never to `Unknown`.
+- The integration session is told by the session's own feature id, which is known only after its
+  first prompt; the held `session_start` event (`subagent.spawned`) is placed when it is released.
+- `SessionMeta.contract` is set by `SessionTree` from the parent's `Task` `description`
+  (`mapping::is_contract_task`).
+- Result on the M0 golden (`jq` over the committed file): Plan 443, Contract 69, Build 424,
+  Scrutiny 87, User testing 122, Integrate 134, Gate 0 (sum 1279); 70 `overlay: human`; 57 lane strings
+  unchanged; event count, kinds, ids, offsets, `at` and order unchanged.
 
 ## Alternatives considered
 
