@@ -316,3 +316,22 @@ fn the_agent_stream_stops_at_the_scrubbed_instant() {
     assert_eq!(stream.markers.len(), 1);
     assert_eq!(stream.markers[0].at, at(3));
 }
+
+#[test]
+fn the_board_view_carries_the_agents_at_the_scrubbed_instant() {
+    use observatory_core::view::BoardView;
+    let events = golden();
+    let cfg = |second: Option<Timestamp>| ViewConfig {
+        filter: Filter::default(),
+        grouping: WorkerGrouping::PerWorker,
+        at: second,
+    };
+
+    let full = BoardView::build(&events, &cfg(None), &declared(), "mission/x");
+    let first = events[0].at;
+    let early = BoardView::build(&events, &cfg(Some(first)), &declared(), "mission/x");
+
+    assert_eq!(full.agents.len(), 56);
+    assert!(early.agents.len() < full.agents.len());
+    assert_eq!(early.agents.len(), 1, "only the orchestrator has started");
+}

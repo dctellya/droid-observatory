@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::MissionConfig;
 use crate::model::{Event, Lane, MilestoneId, ModelId, Overlay, Role, SourcePtr, Timestamp};
 
+use super::agents::AgentRow;
 use super::card::Card;
 use super::details::TimelineRow;
 use super::filter::{ViewConfig, WorkerGrouping};
@@ -190,6 +191,8 @@ pub struct BoardView {
     pub panel: PanelView,
     pub gate: GateGroup,
     pub overlay_human: OverlayView,
+    /// The sessions at the scrubbed instant; `agent_entries` names them for the agent panel.
+    pub agents: Vec<AgentRow>,
     pub event_count: u64,
     pub tray_unknown: u64,
     pub tray: Vec<TrayEntry>,
@@ -225,6 +228,7 @@ impl BoardView {
                 aria_label: OVERLAY_HUMAN_LABEL.to_owned(),
                 markers: Vec::new(),
             },
+            agents: Vec::new(),
             event_count: 0,
             tray_unknown: 0,
             tray: Vec::new(),
