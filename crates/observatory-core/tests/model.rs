@@ -243,7 +243,7 @@ fn handed_to_cd_carries_merge_sha_pr_number_and_attestation_ids() {
         .iter()
         .map(|kind| kind.prd_name().into_owned())
         .collect();
-    assert_eq!(names.len(), 59);
+    assert_eq!(names.len(), 60);
     assert!(names.contains(&"handed_to_cd".to_owned()));
     for removed in [
         "pr.merged_by_human",

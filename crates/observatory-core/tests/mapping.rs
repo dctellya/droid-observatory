@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use observatory_core::config::IngestConfig;
+use observatory_core::ingest::usage_log::UsageLogSource;
 use observatory_core::ingest::{
     JsonlSource, RawRecord, SessionTree, Source, mapping_version_of, read_capture,
 };
@@ -40,6 +41,15 @@ fn fixture(extension: &str) -> PathBuf {
 /// The tree replay of the M0 capture as the CLI runs it, sorted by
 /// `(at, session_id, byte_offset, sub)` with paths relative to the repository root.
 fn map_m0() -> (usize, Vec<Event>) {
+    map_m0_with(false)
+}
+
+/// `map_m0` plus the `turn.usage` events of the extract the capture header names.
+fn map_m0_with_usage_log() -> (usize, Vec<Event>) {
+    map_m0_with(true)
+}
+
+fn map_m0_with(usage_log: bool) -> (usize, Vec<Event>) {
     let path = fixture("jsonl");
     let cfg = IngestConfig::default();
     let tree = SessionTree::discover(&path, &cfg).expect("the M0 capture opens");
@@ -64,10 +74,24 @@ fn map_m0() -> (usize, Vec<Event>) {
         }
     }
     events.extend(mapper.finish());
+    if usage_log {
+        let header = read_capture(&path)
+            .expect("capture header is readable")
+            .expect("the M0 capture has a header");
+        let info = header
+            .usage_log
+            .expect("the header names the usage-log extract");
+        let extract = path.with_file_name(info.file);
+        let mut usage = UsageLogSource::open_files(&[extract], &cfg).expect("the extract opens");
+        for turn in usage.read_all().expect("the extract reads") {
+            events.extend(mapper.map_usage(&turn));
+        }
+    }
 
     let root = repo_root();
     for event in &mut events {
-        if let SourcePtr::Jsonl { path, .. } = &mut event.source {
+        if let SourcePtr::Jsonl { path, .. } | SourcePtr::UsageLog { path, .. } = &mut event.source
+        {
             *path = path
                 .canonicalize()
                 .expect("the pointer names a fixture file")
@@ -95,7 +119,9 @@ fn sort_key(event: &Event) -> (observatory_core::model::Timestamp, String, u64, 
 }
 
 fn offset_and_sub(event: &Event) -> (u64, u32) {
-    let SourcePtr::Jsonl { byte_offset, .. } = &event.source else {
+    let (SourcePtr::Jsonl { byte_offset, .. } | SourcePtr::UsageLog { byte_offset, .. }) =
+        &event.source
+    else {
         panic!("the M0 capture holds only file pointers");
     };
     let sub = event
@@ -129,7 +155,7 @@ fn write_golden(events: &[Event]) {
 
 #[test]
 fn mapping_v1_matches_golden_lane_events() {
-    let (_, events) = map_m0();
+    let (_, events) = map_m0_with_usage_log();
     if std::env::var_os(UPDATE_GOLDEN).is_some() {
         write_golden(&events);
     }
@@ -184,11 +210,12 @@ const OBSERVED_IN_M0: &[&str] = &[
     "gate_command.run",
     "gate_command.passed",
     "gate_command.failed",
+    "turn.usage",
 ];
 
 #[test]
 fn every_prd_kind_present_in_capture_is_mapped() {
-    let (_, events) = map_m0();
+    let (_, events) = map_m0_with_usage_log();
 
     let observed: BTreeSet<String> = events
         .iter()

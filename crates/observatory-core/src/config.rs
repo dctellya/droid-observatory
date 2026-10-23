@@ -389,6 +389,7 @@ mod tests {
         ("mission", "validator_model"),
         ("mission", "branch_pattern"),
         ("ingest", "factory_sessions_dir"),
+        ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),
         ("ingest", "jsonl_poll_ms"),
         ("ingest", "max_watched_sessions"),
