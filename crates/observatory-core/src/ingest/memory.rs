@@ -25,6 +25,8 @@ pub struct SessionInfo {
     pub model: Option<ModelId>,
     /// Name of the first sidecar tag.
     pub tag: Option<String>,
+    /// Sidecar `reasoningEffort`.
+    pub effort: Option<String>,
 }
 
 /// The events of an opened selection, in `(at, session, byte offset, sub)` order, and the bytes
@@ -184,6 +186,10 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
             role: session.role,
             model: session.model().map(|model| ModelId(model.to_owned())),
             tag: session.first_tag().map(str::to_owned),
+            effort: session
+                .sidecar
+                .as_ref()
+                .and_then(|sidecar| sidecar.reasoning_effort.clone()),
         })
         .collect();
     Ok(MemoryReplay {

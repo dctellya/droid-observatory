@@ -20,6 +20,8 @@ pub struct TimelineRow {
     pub overlay: Option<Overlay>,
     pub role: Role,
     pub session_id: Option<SessionId>,
+    /// The milestone whose Details this row belongs to.
+    pub milestone: Option<MilestoneId>,
     pub feature: Option<FeatureId>,
     pub model: Option<ModelId>,
     pub at: Timestamp,
@@ -51,6 +53,7 @@ impl TimelineRow {
             overlay: event.overlay,
             role: event.role,
             session_id: event.session_id.clone(),
+            milestone: event.milestone_id.clone(),
             feature: event.feature_id.clone(),
             model: event.model.clone(),
             at: event.at,

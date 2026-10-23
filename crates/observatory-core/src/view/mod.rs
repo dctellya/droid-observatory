@@ -1,5 +1,6 @@
 //! View-models the UI renders as they are; no component computes anything itself (architecture I2).
 
+mod agent_panel;
 mod agents;
 mod board;
 mod card;
@@ -12,12 +13,13 @@ mod scrubber;
 mod state;
 mod summary;
 
+pub use agent_panel::{AgentEntry, AgentStream, agent_entries, agent_stream, session_name};
 pub use agents::{AgentRow, AgentStatus, Marker, MarkerKind, agent_markers};
 pub use board::{
     BoardView, DeclaredModels, IntegrateGroup, LaneView, ObservedModel, OverlayView, PanelRole,
     PanelView, RoleTokens, RowGroup, branch_of, integrate_timeline, pointer_text,
 };
-pub use card::{Card, CardNow, ValidationBadge, card_lane};
+pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
