@@ -269,6 +269,7 @@ impl BoardView {
             .collect();
         board.panel = PanelView::of(&state, &kept, declared);
         board.gate = state.gate.clone();
+        board.agents = state.agents;
         board.event_count = state.event_count;
         board.tray_unknown = state.tray_unknown;
         board.tray = state.tray;
