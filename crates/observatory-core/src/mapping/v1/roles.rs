@@ -59,6 +59,30 @@ pub(in crate::mapping) fn resolve_role(evidence: &RoleEvidence<'_>) -> Role {
     Role::Unresolved
 }
 
+/// `Task.description` of the session that writes the validation contract: it starts with the
+/// word `Contract`, or names the `validation contract` anywhere.
+pub(in crate::mapping) fn is_contract_task(description: &str) -> bool {
+    let starts = description.strip_prefix("Contract").is_some_and(|rest| {
+        !rest
+            .chars()
+            .next()
+            .is_some_and(|next| next.is_alphanumeric() || next == '_')
+    });
+    starts || description.contains("alidation contract")
+}
+
+/// A feature id of the integration session of a milestone or of the mission:
+/// `m<digits>-integrate-...` or `final-integrate-...`.
+pub(super) fn is_integration_feature(feature: &str) -> bool {
+    let Some((head, _)) = feature.split_once("-integrate-") else {
+        return false;
+    };
+    head == "final"
+        || head
+            .strip_prefix('m')
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn lookup(table: &[(&str, Role)], seen: &str) -> Option<Role> {
     table
         .iter()
@@ -73,6 +97,36 @@ mod tests {
         RoleEvidence {
             calling_session_id: Some("root"),
             ..RoleEvidence::default()
+        }
+    }
+
+    #[test]
+    fn contract_tasks_and_integration_features_are_told_by_their_words() {
+        for yes in [
+            "Contract: draft the assertions",
+            "Contract",
+            "Write the validation contract for M1",
+            "Review Validation contract",
+        ] {
+            assert!(is_contract_task(yes), "{yes}");
+        }
+        for no in ["Contractor review", "Subcontract", "Draft the notes", ""] {
+            assert!(!is_contract_task(no), "{no}");
+        }
+        for yes in [
+            "m0-integrate-s",
+            "m12-integrate-m1",
+            "final-integrate-mission",
+        ] {
+            assert!(is_integration_feature(yes), "{yes}");
+        }
+        for no in [
+            "s-integrate-x",
+            "m-integrate-s",
+            "m0-integrated",
+            "m0-mapping-v1",
+        ] {
+            assert!(!is_integration_feature(no), "{no}");
         }
     }
 

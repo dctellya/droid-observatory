@@ -24,6 +24,9 @@ pub struct SessionMeta {
     pub usage: Option<TokenUsage>,
     /// Milestone ids of the mission's plan, to tell a feature id from any other word.
     pub milestones: Vec<MilestoneId>,
+    /// The session was spawned by a `Task` whose description names the validation contract
+    /// (`is_contract_task`); its role-neutral events land in the Contract phase.
+    pub contract: bool,
 }
 
 impl SessionMeta {
@@ -36,6 +39,7 @@ impl SessionMeta {
             model: None,
             usage: None,
             milestones: Vec::new(),
+            contract: false,
         }
     }
 }
@@ -51,6 +55,14 @@ pub struct MapContext<'a> {
 pub fn resolve_role(version: MappingVersion, evidence: &RoleEvidence<'_>) -> Role {
     match version {
         MappingVersion::V1 => v1::resolve_role(evidence),
+    }
+}
+
+/// Whether the description of the `Task` that spawned a session says it writes the validation
+/// contract. A heuristic of the mapping version, so the version decides.
+pub fn is_contract_task(version: MappingVersion, description: &str) -> bool {
+    match version {
+        MappingVersion::V1 => v1::is_contract_task(description),
     }
 }
 
@@ -73,7 +85,7 @@ pub fn map_record(record: &RawRecord, ctx: &MapContext<'_>) -> Vec<Event> {
             let mut state = v1::State::new(ctx.session);
             state.set_last_at(ctx.fallback_at);
             let mut events = v1::map_record(record, ctx.session, ctx.version, &mut state);
-            events.extend(v1::flush(&mut state));
+            events.extend(v1::flush(&mut state, ctx.session));
             events
         }
     }

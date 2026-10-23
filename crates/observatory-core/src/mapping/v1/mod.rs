@@ -12,6 +12,7 @@ use serde_json::Value;
 
 pub(crate) use ids::proposal_milestones;
 pub use roles::RoleEvidence;
+pub(in crate::mapping) use roles::is_contract_task;
 pub(in crate::mapping) use roles::resolve_role;
 
 use super::{MappingVersion, SessionMeta};
@@ -112,15 +113,15 @@ struct Rec<'a> {
 impl Rec<'_> {
     fn push(&mut self, kind: EventKind) -> &mut Event {
         let sub = self.sub_base + u32::try_from(self.events.len()).unwrap_or(u32::MAX);
-        let lane = kind
-            .lane()
-            .unwrap_or_else(|| Lane::for_role(self.session.role));
+        let lane = lane_of(&kind, self.session, self.feature.as_ref());
+        let overlay = kind.overlay();
         self.events.push(Event {
             id: EventId(format!("{}:{}:{sub}", self.session.id, self.offset)),
             mission_id: self.session.mission_id.clone(),
             milestone_id: self.milestone.clone(),
             feature_id: self.feature.clone(),
             lane,
+            overlay,
             kind,
             role: self.session.role,
             session_id: Some(self.session.id.clone()),
@@ -146,6 +147,22 @@ impl Rec<'_> {
         event.feature_id = feature.map(|id| FeatureId(id.to_owned()));
         event.milestone_id = milestone;
     }
+}
+
+/// The phase of an event (D-024). The kind's own phase wins; role-neutral kinds of an
+/// integration or contract session take that session's phase; the rest take the role's.
+/// `feature` is the session's feature, not the one a `Task` call names.
+fn lane_of(kind: &EventKind, session: &SessionMeta, feature: Option<&FeatureId>) -> Lane {
+    if kind.fixed_lane().is_some() || matches!(kind, EventKind::Unknown { .. }) {
+        return kind.lane(session.role);
+    }
+    if feature.is_some_and(|feature| roles::is_integration_feature(&feature.0)) {
+        return Lane::Integrate;
+    }
+    if session.contract {
+        return Lane::Contract;
+    }
+    kind.lane(session.role)
 }
 
 pub(super) fn map_record(
@@ -213,7 +230,7 @@ pub(super) fn map_record(
     }
     match stamp {
         Some(stamp) if !state.pending.is_empty() => {
-            let mut released = release_pending(state, stamp);
+            let mut released = release_pending(state, session, stamp);
             released.append(&mut events);
             released
         }
@@ -222,10 +239,12 @@ pub(super) fn map_record(
 }
 
 /// The events of the lines that had no time, now timed by the line that followed them.
-fn release_pending(state: &mut State, at: Timestamp) -> Vec<Event> {
+fn release_pending(state: &mut State, session: &SessionMeta, at: Timestamp) -> Vec<Event> {
     let (feature, milestone) = (state.feature.clone(), state.milestone());
     let mut events = std::mem::take(&mut state.pending);
     for event in &mut events {
+        // The feature is only known once the session's first prompt has been read.
+        event.lane = lane_of(&event.kind, session, feature.as_ref());
         event.at = at;
         event.feature_id = feature.clone();
         event.milestone_id = milestone.clone();
@@ -234,11 +253,11 @@ fn release_pending(state: &mut State, at: Timestamp) -> Vec<Event> {
 }
 
 /// Events still waiting for a time, timed by the last time seen (the epoch when none).
-pub(super) fn flush(state: &mut State) -> Vec<Event> {
+pub(super) fn flush(state: &mut State, session: &SessionMeta) -> Vec<Event> {
     let at = state
         .last_at
         .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));
-    release_pending(state, at)
+    release_pending(state, session, at)
 }
 
 /// The events that belong to the end of a session file: lines still waiting for a time, the
@@ -248,7 +267,7 @@ pub(super) fn finish(
     version: MappingVersion,
     state: &mut State,
 ) -> Vec<Event> {
-    let mut events = flush(state);
+    let mut events = flush(state, session);
     let at = state
         .last_at
         .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));

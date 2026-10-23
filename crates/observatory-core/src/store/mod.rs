@@ -3,6 +3,7 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod read;
 mod record;
 mod rows;
 mod schema;
@@ -12,11 +13,12 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
+pub use read::{EventScope, TimeRange};
 pub use record::CaptureInfo;
 
 use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
-use crate::model::{Event, EventId, EventKind, MissionId, SourcePtr, Timestamp};
+use crate::model::{Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp};
 
 pub struct Store {
     conn: Connection,
@@ -68,11 +70,11 @@ impl Store {
         let mut added = 0;
         {
             let mut insert = tx.prepare_cached(
-                "INSERT INTO events (id, mission_id, session_id, milestone_id, feature_id, lane, kind, \
+                "INSERT INTO events (id, mission_id, session_id, milestone_id, feature_id, lane, overlay, kind, \
                  raw_type, mapping_version, role, model, at, duration_ms, source, path, byte_offset, \
                  byte_len, sub, repo, sha, url, action_id) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-                 ?18, ?19, ?20, ?21, ?22) ON CONFLICT (id) DO NOTHING",
+                 ?18, ?19, ?20, ?21, ?22, ?23) ON CONFLICT (id) DO NOTHING",
             )?;
             let mut insert_usage = tx.prepare_cached(
                 "INSERT INTO usage (event_id, input, output, cache_read, cache_write, credits) \
@@ -91,6 +93,7 @@ impl Store {
                     event.milestone_id.as_ref().map(ToString::to_string),
                     event.feature_id.as_ref().map(ToString::to_string),
                     event.lane.number(),
+                    event.overlay.map(Overlay::as_str),
                     event.kind.prd_name(),
                     raw_type(&event.kind),
                     event.mapping_version.to_string(),

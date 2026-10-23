@@ -10,10 +10,18 @@ pub struct LaneView {
     pub card_count: usize,
 }
 
-/// The board: the nine lanes in PRD §7 order.
+/// The Panel (time, waste, cost, model drift): drawn beside the lanes, never one of them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PanelView {
+    /// Stable accessible name, `panel`.
+    pub aria_label: String,
+}
+
+/// The board: the seven phase lanes in order, and the Panel.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoardView {
     pub lanes: Vec<LaneView>,
+    pub panel: PanelView,
 }
 
 impl BoardView {
@@ -27,7 +35,12 @@ impl BoardView {
                 card_count: 0,
             })
             .collect();
-        Self { lanes }
+        Self {
+            lanes,
+            panel: PanelView {
+                aria_label: "panel".to_owned(),
+            },
+        }
     }
 
     pub fn card_count(&self) -> usize {

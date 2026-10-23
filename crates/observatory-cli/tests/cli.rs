@@ -132,7 +132,7 @@ fn replay_names_the_kind_of_each_event_by_its_prd_name() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     let first = stdout.lines().next().unwrap();
-    assert!(first.contains("\t1 Intent\tintent.created\t"), "{first}");
+    assert!(first.contains("\t1 Plan\tintent.created\t"), "{first}");
     assert!(stdout.contains("\tsubagent.spawned\t"));
     assert!(stdout.contains("\tfile.touched\t"));
 }

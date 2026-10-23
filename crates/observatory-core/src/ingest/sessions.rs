@@ -13,7 +13,7 @@ use super::capture::mapping_version_of;
 use super::sidecar::{Sidecar, SidecarTag, read_sidecar};
 use crate::config::IngestConfig;
 use crate::mapping::{
-    MappingVersion, RoleEvidence, SessionMeta, proposal_milestones, resolve_role,
+    MappingVersion, RoleEvidence, SessionMeta, is_contract_task, proposal_milestones, resolve_role,
 };
 use crate::model::{MilestoneId, MissionId, ModelId, Role, SessionId, TokenUsage};
 
@@ -31,6 +31,8 @@ pub struct Session {
     pub parent: Option<SessionId>,
     pub calling_tool_use_id: Option<String>,
     pub role: Role,
+    /// Spawned by a `Task` whose description names the validation contract.
+    pub contract: bool,
     /// `None` when the sibling `settings.json` is absent.
     pub sidecar: Option<Sidecar>,
 }
@@ -161,6 +163,7 @@ impl SessionTree {
                 parent,
                 calling_tool_use_id: entry.calling_tool_use_id.clone(),
                 role,
+                contract: is_contract(version, entry, &attached[..], &mut transcripts)?,
                 sidecar,
             });
         }
@@ -204,6 +207,7 @@ impl SessionTree {
             model: session.model().map(|model| ModelId(model.to_owned())),
             usage: session.usage(),
             milestones: self.milestones.clone(),
+            contract: session.contract,
         }
     }
 }
@@ -251,6 +255,26 @@ fn resolve(
             skills: &skills,
         },
     ))
+}
+
+fn is_contract(
+    version: MappingVersion,
+    entry: &Attached,
+    all: &[Attached],
+    transcripts: &mut Transcripts,
+) -> Result<bool, IngestError> {
+    let parent_path = all
+        .iter()
+        .find(|other| other.id == entry.parent && other.id != entry.id)
+        .map(|other| other.path.as_path());
+    let (Some(tool_use_id), Some(path)) = (&entry.calling_tool_use_id, parent_path) else {
+        return Ok(false);
+    };
+    Ok(transcripts
+        .get(path)?
+        .task_descriptions
+        .get(tool_use_id)
+        .is_some_and(|description| is_contract_task(version, description)))
 }
 
 /// First line of a session file.
@@ -329,6 +353,8 @@ fn io_error(path: &Path, source: std::io::Error) -> IngestError {
 struct Transcript {
     /// `Task` tool_use id to its `input.subagent_type`.
     subagent_types: HashMap<String, String>,
+    /// `Task` tool_use id to its `input.description`.
+    task_descriptions: HashMap<String, String>,
     /// `input.skill` of every `Skill` tool_use, in order.
     skills: Vec<String>,
     /// `input.proposal` of every `ProposeMission` tool_use, in order.
@@ -381,6 +407,13 @@ fn scan(path: &Path) -> Result<Transcript, IngestError> {
         for part in parts.filter(|part| part["type"] == "tool_use") {
             match part["name"].as_str() {
                 Some("Task") => {
+                    if let (Some(id), Some(description)) =
+                        (part["id"].as_str(), part["input"]["description"].as_str())
+                    {
+                        transcript
+                            .task_descriptions
+                            .insert(id.to_owned(), description.to_owned());
+                    }
                     if let (Some(id), Some(kind)) =
                         (part["id"].as_str(), part["input"]["subagent_type"].as_str())
                     {
