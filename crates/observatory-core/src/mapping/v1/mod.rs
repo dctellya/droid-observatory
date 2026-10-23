@@ -407,11 +407,7 @@ fn tool_use(rec: &mut Rec<'_>, state: &mut State, id: &str, name: &str, input: &
             rec.push(EventKind::QuestionAsked);
         }
         Tool::Command => {
-            let text = input["command"]
-                .as_str()
-                .or_else(|| input["script"].as_str())
-                .unwrap_or_default();
-            let kinds = kinds::classify_command(text);
+            let kinds = kinds::classify_command(input["command"].as_str().unwrap_or_default());
             if kinds.commit {
                 rec.push(EventKind::CommitCreated);
             }
@@ -438,9 +434,12 @@ fn tool_use(rec: &mut Rec<'_>, state: &mut State, id: &str, name: &str, input: &
 fn tool_result(rec: &mut Rec<'_>, state: &mut State, id: &str, content: &Value, is_error: bool) {
     let call = state.calls.remove(id);
     let elapsed = call.and_then(|call| between(call.at, rec.at));
+    let text = flatten(content);
+    let gate_failed = call.map(|call| call.tool) == Some(CallKind::Gate)
+        && (is_error || kinds::exit_code(&text).is_some_and(|code| code != 0));
     match (is_error, call.map(|call| call.tool)) {
         (true, tool) => {
-            let kind = if kinds::names_a_hook(&flatten(content)) {
+            let kind = if kinds::names_a_hook(&text) {
                 EventKind::HookBlocked
             } else if tool == Some(CallKind::Gate) {
                 EventKind::GateCommandFailed
@@ -451,6 +450,9 @@ fn tool_result(rec: &mut Rec<'_>, state: &mut State, id: &str, content: &Value, 
         }
         (false, Some(CallKind::AskUser)) => {
             rec.push(EventKind::IntentAnswered);
+        }
+        (false, Some(CallKind::Gate)) if gate_failed => {
+            rec.push(EventKind::GateCommandFailed).duration = elapsed;
         }
         (false, Some(CallKind::Gate)) => {
             rec.push(EventKind::GateCommandPassed).duration = elapsed;

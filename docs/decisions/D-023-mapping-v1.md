@@ -9,7 +9,7 @@ PRD §11.1 left open how worker child sessions, feature ids, milestone ids and v
 identified in Droid's session files, and where `--tag` is recorded. M0 captured this mission's own
 session directory (Droid 0.247.0; `fixtures/streams/2026-10-22-observatory-v1-m0.*`: 1 root and 55
 children, 8735 records) and wrote `mapping::v1` against it. The result is pinned by the golden
-`fixtures/streams/2026-10-22-observatory-v1-m0.events.json` (1735 events, 56 sessions) and by the
+`fixtures/streams/2026-10-22-observatory-v1-m0.events.json` (1279 events, 56 sessions) and by the
 hard gate `unknown events: 0`. The rule table lives in
 `crates/observatory-core/src/mapping/v1/kinds.rs`; this file reproduces it. Change both together,
 and a changed rule is a new mapping version, not an edit of v1.
@@ -32,9 +32,9 @@ person's words are told apart by the kind, not by a `Human` role.
 | assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | 2 |
 | assistant `tool_use` `AskUser` | `question.asked` | 1 |
 | `tool_result` of an `AskUser` | `intent.answered` | 1, session role |
-| `Execute`/`Script` command with `git commit` | `commit.created` | 3 |
-| `Execute`/`Script` command with `cargo test`, `make test` or `make check` | `tests.run` | 3 |
-| `Execute`/`Script` command with `make check` | `gate_command.run`; its result `gate_command.passed` / `gate_command.failed` | 6 |
+| `Execute` command that runs `git commit` (whole command words) | `commit.created` | 3 |
+| `Execute` command that runs `cargo test`, `make test` or `make check` | `tests.run` | 3 |
+| `Execute` command that runs `make check` | `gate_command.run`; its result `gate_command.passed` / `gate_command.failed` by the exit status in the result text (`is_error` is a second failure signal) | 6 |
 | assistant `tool_use` `Edit`, `Create`, `ApplyPatch` | `file.touched` | 3 |
 | `tool_result` with `is_error` | `tool.error`; `hook.blocked` when the text names a hook | 3 |
 | assistant `modelId` differs from the session's previous one | `model.changed` | 3 |
@@ -46,7 +46,7 @@ person's words are told apart by the kind, not by a `Human` role.
 | sidecar `tokenUsage`, at end of file | `usage.reported` | 3 |
 | scrutiny validator report text | `finding.blocking`, `finding.non_blocking`, `scrutiny.passed` | 4 |
 | user-testing validator report text | `qa.scenario.passed`, `qa.scenario.failed`, `qa.evidence` | 5 |
-| thinking, plain text, empty user messages, other tool calls and their results | no event | none |
+| thinking, plain text, empty user messages, `Script` (its inner `Execute` calls are their own records), other tool calls and their results | no event | none |
 | any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | role's lane |
 
 The droid-version range is `0.247.*`. The store row for v1 is `mapping_versions(version = 'v1',
@@ -60,7 +60,7 @@ and their results are everywhere. The table therefore names every quiet shape, a
 for what v1 has not seen: an unseen record `type`, content part type, tool name or outcome reason,
 and unparseable lines. They are counted and listed by `replay`, never dropped (rule 18). A line can
 give several events and most give none, so the event count is smaller than the record count (M0:
-1735 events over 8735 records; 643 over 2820 root-only; S fixture: 957).
+1279 events over 8735 records; 474 for the root session; S fixture: 661).
 
 #### Judgement calls
 
@@ -71,7 +71,21 @@ These readings are not in the PRD and are frozen with v1:
   `completed` becomes `task.done` (with the turn duration), `cancelled` becomes `task.skipped`, and
   `error` or `model_usage_exhausted` becomes `tool.error`.
 - A `make check` command emits `tests.run` and `gate_command.run` at the call and
-  `gate_command.passed` or `gate_command.failed` at its result (`is_error`).
+  `gate_command.passed` or `gate_command.failed` at its result. The verdict is the exit status in
+  the result text: Droid 0.247 leaves `is_error` null on a non-zero exit and writes only
+  `Command failed (exit code: N)` and/or a closing `[Process exited with code N]`. Non-zero is
+  failed, zero is passed, and without a status in the text `is_error: true` is failed (it is also
+  failed beside a zero status). Only the closing marker line and an opening `Command failed` line
+  count, so a log that quotes `exit code: 2` in its middle does not fail a passing run. A failing
+  gate result stays `gate_command.failed` (not `tool.error`) unless the text names a hook.
+- Command matching is by whole command words in the `Execute` `command` text, never in a `Script`
+  body or prose. A small shell lexer splits the line into simple commands at `;`, `&`, `|`,
+  parentheses and newlines, keeps quoted text as one word, drops heredoc bodies and comments, and
+  skips leading `NAME=value`, `time`, `{` and `!` words. A command counts when it starts with the
+  phrase's words: `make check` is not `make check-todos`, `xmake check`, `echo "make check"`, or a
+  line inside a commit-message heredoc. `make -C dir check` is not recognised. The same rule applies
+  to `git commit`, `cargo test` and `make test`. `Script` is a quiet tool: the `Execute` calls it
+  makes are separate records in the session file and map on their own.
 - A feature id is the quoted id in the runner prompt `execute feature "<id>"`, or the first word of
   a `Task` description that starts with a milestone id from the root's `ProposeMission` table
   (rows `| **M0** ...`, lower-cased). A milestone is the first word of the feature id
@@ -80,6 +94,10 @@ These readings are not in the PRD and are frozen with v1:
 - The tool names `tests`, `discoveredIssues` and `skillFeedback` are not tools. They are keys of an
   `EndFeatureRun` call whose JSON arguments failed to parse (the capture holds one each), so they
   are quiet.
+- Counts of the corrected rules on the M0 capture: `gate_command.run` 35 (`passed` 34, `failed` 1;
+  before: 173, 167, 6), `tests.run` 83 (242), `commit.created` 73 (100), `tool.error` 59 (53).
+  The 6 old `failed` were `Script` tool errors, now `tool.error`; the one new `failed` is the
+  `make check` that exited 2 with `is_error` null (child `6eb88099`, line 41).
 - A failed tool result is a hook block when its text contains `guard-git.sh` or `.factory/hooks`.
 - Scrutiny findings are the numbered or bulleted items under a bold or `#` heading containing
   "Non-blocking" or "Blocking"; `scrutiny.passed` is emitted when a report holds no blocking item
