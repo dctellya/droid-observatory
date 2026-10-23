@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use observatory_core::config::Config;
 use observatory_core::ingest::AttachStatus;
 use observatory_core::store::Store;
+use tauri::Manager;
 
 /// What the commands share: the configuration in effect, a store connection of their own (the
 /// ingest thread holds another) and the attach status the thread publishes.
@@ -52,7 +53,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(shell)
         .setup(move |app| {
-            ingest::spawn(app.handle().clone(), cfg, store_path, status);
+            app.manage(ingest::spawn(app.handle().clone(), cfg, store_path, status));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,6 +66,11 @@ pub fn run() {
             commands::board,
             commands::event_raw,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<ingest::Ingest>().stop();
+            }
+        });
 }

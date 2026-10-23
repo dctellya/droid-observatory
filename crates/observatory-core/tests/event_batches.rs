@@ -132,6 +132,9 @@ mod live {
     use tempfile::TempDir;
 
     const SESSION: &str = "live-session";
+
+    /// The latency tests measure wall time; run side by side they would measure each other.
+    static LATENCY: std::sync::Mutex<()> = std::sync::Mutex::new(());
     const APPEND_GAP: Duration = Duration::from_millis(20);
     const LINES: usize = 200;
 
@@ -166,6 +169,9 @@ mod live {
 
     #[test]
     fn appended_lines_reach_the_ui_in_batches_within_one_second() {
+        let _alone = LATENCY
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = TempDir::new().unwrap();
         let store_dir = TempDir::new().unwrap();
         let mut live = live(&dir, &store_dir);
@@ -243,6 +249,9 @@ mod live {
     fn lines_written_through_one_open_handle_flush_within_half_a_poll_and_a_batch() {
         use std::io::Write;
 
+        let _alone = LATENCY
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = TempDir::new().unwrap();
         let store_dir = TempDir::new().unwrap();
         let path = session_path(dir.path(), SESSION);
@@ -285,8 +294,10 @@ mod live {
             }
         }
         let appended = writer.join().unwrap();
+        // The first lines wait for the session to be found, which takes up to one poll interval.
         let mut deltas: Vec<Duration> = appended
             .iter()
+            .filter(|(_, at)| at.duration_since(started) > Duration::from_secs(1))
             .filter_map(|(offset, at)| Some(flushed_at.get(offset)?.duration_since(*at)))
             .collect();
         deltas.sort();

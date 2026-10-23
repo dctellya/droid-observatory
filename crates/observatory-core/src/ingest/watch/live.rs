@@ -32,6 +32,11 @@ pub struct LiveIngest {
     store: Store,
     batcher: EventBatcher,
     poll: Duration,
+    /// The poll while a watched file is growing: the notifier does not report every write of a
+    /// handle the writer keeps open, so for one poll interval after a line was read the files are read
+    /// as often as batches leave.
+    hot_poll: Duration,
+    hot_until: Instant,
     announced: HashMap<SessionId, String>,
     warnings: Vec<String>,
     unwatched: usize,
@@ -48,6 +53,8 @@ impl LiveIngest {
             store,
             batcher: EventBatcher::new(Duration::from_millis(cfg.ui.event_batch_ms)),
             poll: Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1)),
+            hot_poll: Duration::from_millis(cfg.ui.event_batch_ms.max(1)),
+            hot_until: Instant::now(),
             announced: HashMap::new(),
             warnings: Vec::new(),
             unwatched: 0,
@@ -59,12 +66,20 @@ impl LiveIngest {
     /// Waits for a file change, a poll interval or the next batch deadline, whichever is
     /// first, then reads what the watched files gained.
     pub fn step(&mut self) -> LiveStep {
+        let idle_wait = if Instant::now() < self.hot_until {
+            self.hot_poll
+        } else {
+            self.poll
+        };
         let wait = self
             .batcher
             .due_in(Instant::now())
-            .map_or(self.poll, |due| due.min(self.poll));
+            .map_or(idle_wait, |due| due.min(idle_wait));
         self.attach.wait_up_to(wait);
         let batch = self.attach.poll();
+        if batch.records > 0 {
+            self.hot_until = Instant::now() + self.poll;
+        }
 
         let mut step = LiveStep::default();
         for tree in &batch.trees {

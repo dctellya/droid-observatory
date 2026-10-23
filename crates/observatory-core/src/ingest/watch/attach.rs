@@ -21,6 +21,9 @@ const MAX_ANCESTORS: usize = 32;
 #[derive(Default)]
 pub struct AttachBatch {
     pub events: Vec<Event>,
+    /// Lines read from the watched files in this poll, whether or not they map to events: a
+    /// file that is growing.
+    pub records: usize,
     /// Trees that gained a session in this poll. Record them in the store before `events`:
     /// an event names its session and mission.
     pub trees: Vec<SessionTree>,
@@ -70,6 +73,7 @@ impl Tail {
                         .and_then(|meta| meta.modified())
                         .unwrap_or(self.modified);
                 }
+                batch.records += records.len();
                 for record in &records {
                     batch.events.extend(self.mapper.map(record));
                 }
