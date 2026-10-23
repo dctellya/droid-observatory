@@ -135,7 +135,9 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   (rule 14; owner decision 2026-10-22 at mission approval).
 - Every session is logged under `ai/session/` with transcript links; every tool call is
   logged to `build-log/` by the PostToolUse hook. Do not disable the hooks.
-- Usage and waste per milestone go to `reports/` pasted from the tool that produced them.
+- Usage and waste per milestone go to `reports/` pasted from the tool that produced them; usage reports carry the
+  per-role input, output and cache-read token table from `~/.factory/logs/droid-log-single.log`, extracted with
+  `scripts/usage-from-log.sh` (rule 7, D-029).
 
 ## Mission setup
 
@@ -156,6 +158,10 @@ Deviations from the spec are proposed with reason and cost, and wait for approva
 When a decision comes with a recommendation and changes neither scope, nor usage caps, nor the
 models per role, the orchestrator takes the recommendation, records it as a SPEC §9 row with the
 alternatives and reports it at the next boundary (rule 24, D-026).
+
+The orchestrator never polls (rule 25, D-027): it waits in one blocking call sized to the feature's remaining
+cap, and a cancelled worker call or a run that does not return is re-dispatched or failed in the same turn, with
+a SPEC §9 row for the cause. While the mission is paused it does nothing until the owner resumes it.
 
 ## Environment and secrets
 

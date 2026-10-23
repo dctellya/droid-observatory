@@ -218,6 +218,7 @@ Each feature, at every instant, is in exactly one time state:
 | **Retry and failure** | Time in tool errors, `hook.blocked`, re-runs of the same command, and conflict resolution. |
 | **Idle, queued** | Feature is planned and ready but blocked behind another feature (WIP limit, dependency, no free worker). A bottleneck signal. |
 | **Idle, unscheduled** | Feature exists but nothing is scheduled and nothing is blocking it. Not a bottleneck signal. |
+| **Throttled** *(Added by F-033 (2026-10-23))* | The platform stopped the work: a usage window was exhausted or the platform paused the mission. Measured from `mission_paused` to `mission_resumed`, with the reason recorded. Not idle and not waiting on a human; reported per milestone and per run, separately from the other causes (SPEC §5.6, D-028). |
 
 Rework is not a separate time state. It is a window (10.2) that overlays active, retry, and waiting time.
 
