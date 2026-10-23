@@ -1,10 +1,11 @@
 #!/bin/sh
 # The aggregate job `mission-checks` is the single name other tooling depends on, so a Rust
 # job that is not in its `needs` list can fail without failing the gate. Assert the Rust jobs
-# added with the walking skeleton are listed. Two more facts are pinned here because a miss is
-# invisible until a run fails: the rust job must install the Tauri 2 Linux libraries (clippy
-# compiles apps/observatory-app/src-tauri, whose glib-sys needs them), and worktree pushes
-# (`wt/**`) must trigger the same checks.
+# added with the walking skeleton are listed. Two more facts are pinned because a miss is
+# invisible until a run fails or the budget (3 min warm, SPEC section 6) is blown: the Linux rust
+# job leaves the Tauri shell (apps/observatory-app/src-tauri, which needs the Tauri 2 Linux
+# libraries: apt install and a larger cache) to the macOS bundle job, and worktree
+# pushes (`wt/**`) trigger the same checks.
 set -eu
 wf="${1:-.github/workflows/mission-branch.yml}"
 required="machete coverage"
@@ -30,9 +31,21 @@ done
 rust_job=$(awk '
   /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { in_job = ($1 == "rust:") }
   in_job { print }
-' "$wf")
-if ! printf '%s\n' "$rust_job" | grep -v '^[[:space:]]*#' | grep -q 'libwebkit2gtk-4.1-dev'; then
-  echo "check-ci-jobs: the rust job has no step that installs libwebkit2gtk-4.1-dev"
+' "$wf" | grep -v '^[[:space:]]*#')
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo clippy --workspace --exclude observatory-app'; then
+  echo "check-ci-jobs: the rust job does not run clippy with --exclude observatory-app"
+  status=1
+fi
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo clippy -p observatory-ui --target wasm32-unknown-unknown'; then
+  echo "check-ci-jobs: the rust job does not run the wasm32 clippy of observatory-ui"
+  status=1
+fi
+if ! printf '%s\n' "$rust_job" | grep -q 'cargo test -p observatory-core -p observatory-cli'; then
+  echo "check-ci-jobs: the rust job does not test observatory-core and observatory-cli"
+  status=1
+fi
+if printf '%s\n' "$rust_job" | grep -q 'apt-get'; then
+  echo "check-ci-jobs: the rust job installs apt packages; the Tauri shell belongs to the bundle job"
   status=1
 fi
 
