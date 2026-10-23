@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use observatory_core::config::IngestConfig;
-use observatory_core::ingest::IngestError;
 use observatory_core::ingest::SessionTree;
 use observatory_core::ingest::watch::{Attach, AttachBatch};
-use observatory_core::model::{Event, SourcePtr};
+use observatory_core::ingest::{IngestError, JsonlSource, Source};
+use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
+use observatory_core::model::{Event, SessionId, SourcePtr};
 
 const M0_ROOT: &str = "2026-10-22-observatory-v1-m0.jsonl";
 
@@ -109,4 +110,22 @@ pub fn pump(
             return;
         }
     }
+}
+
+/// What a replay of the finished file maps to: the oracle for what attach must produce.
+pub fn replayed_ids(path: &Path, session: &str) -> Vec<String> {
+    let cfg = IngestConfig::default();
+    let mut source = JsonlSource::open(path, &cfg).unwrap();
+    let mut mapper = Mapper::new(
+        SessionMeta::root(SessionId(session.to_owned())),
+        MappingVersion::LATEST,
+    );
+    let mut ids = Vec::new();
+    while !source.at_eof() {
+        for record in source.next_batch().unwrap() {
+            ids.extend(mapper.map(&record).into_iter().map(|e| e.id.to_string()));
+        }
+    }
+    ids.extend(mapper.finish().into_iter().map(|e| e.id.to_string()));
+    ids
 }

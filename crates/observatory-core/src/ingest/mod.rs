@@ -5,6 +5,8 @@ mod jsonl;
 mod sessions;
 mod sidecar;
 mod source;
+#[cfg(feature = "watch")]
+pub mod watch;
 
 pub use capture::{
     CaptureHeader, capture_path, mapping_version_of, read_capture, select_mapping_of,

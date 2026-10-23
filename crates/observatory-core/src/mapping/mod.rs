@@ -124,6 +124,12 @@ impl Mapper {
         }
     }
 
+    /// Replaces the usage reported by `finish`: a live session's sidecar is only final once the
+    /// session has ended, long after the mapper was created.
+    pub fn set_usage(&mut self, usage: Option<TokenUsage>) {
+        self.session.usage = usage;
+    }
+
     /// The events of the end of the session file: lines still waiting for a time, the child's
     /// `SubagentFinished` and its sidecar usage. Call it once, when the file will not grow.
     pub fn finish(&mut self) -> Vec<Event> {

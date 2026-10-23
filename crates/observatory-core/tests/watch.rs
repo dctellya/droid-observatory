@@ -10,11 +10,10 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
-use common::{Collected, append, byte_offset, config, m0_lines, pump, session_start};
+use common::{Collected, append, byte_offset, config, m0_lines, pump, replayed_ids, session_start};
 use observatory_core::config::IngestConfig;
+use observatory_core::ingest::IngestError;
 use observatory_core::ingest::watch::{Attach, SessionWatcher};
-use observatory_core::ingest::{IngestError, JsonlSource, Source};
-use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
 use observatory_core::model::{EventKind, SessionId};
 use tempfile::TempDir;
 
@@ -47,21 +46,6 @@ fn set_age(path: &Path, age: Duration) {
         .unwrap()
         .set_modified(SystemTime::now() - age)
         .unwrap();
-}
-
-/// What a replay of the finished file maps to: the oracle for what attach must produce.
-fn replayed_ids(path: &Path, session: &str) -> Vec<String> {
-    let cfg = IngestConfig::default();
-    let mut source = JsonlSource::open(path, &cfg).unwrap();
-    let mut mapper = Mapper::new(SessionMeta::root(id(session)), MappingVersion::LATEST);
-    let mut ids = Vec::new();
-    while !source.at_eof() {
-        for record in source.next_batch().unwrap() {
-            ids.extend(mapper.map(&record).into_iter().map(|e| e.id.to_string()));
-        }
-    }
-    ids.extend(mapper.finish().into_iter().map(|e| e.id.to_string()));
-    ids
 }
 
 fn event_ids(collected: &Collected) -> Vec<String> {
@@ -157,9 +141,8 @@ fn tail_renders_appended_lines_in_order() {
             "half a line is held back until its newline arrives"
         );
         append(&path, rest);
-        let want = before + 1;
-        pump(&mut attach, &mut collected, LIMIT, |_, c| {
-            c.events.len() >= want
+        pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+            attach.at_eof()
         });
     }
 

@@ -121,6 +121,16 @@ pub struct IngestConfig {
     pub startup_scan_hours: u64,
 }
 
+impl IngestConfig {
+    /// `factory_sessions_dir` with a leading `~/` replaced by `$HOME`.
+    pub fn resolved_sessions_dir(&self) -> PathBuf {
+        expand_home(
+            &self.factory_sessions_dir,
+            std::env::var_os("HOME").as_deref(),
+        )
+    }
+}
+
 impl Default for IngestConfig {
     fn default() -> Self {
         Self {
@@ -480,6 +490,15 @@ mod tests {
         assert_eq!(expand("/tmp/~/x.sqlite"), Path::new("/tmp/~/x.sqlite"));
         assert_eq!(expand("~other/x"), Path::new("~other/x"));
         assert_eq!(expand_home("~/x", None), Path::new("~/x"));
+    }
+
+    #[test]
+    fn sessions_dir_resolves_like_the_store_path() {
+        let cfg = IngestConfig {
+            factory_sessions_dir: "/var/sessions".into(),
+            ..IngestConfig::default()
+        };
+        assert_eq!(cfg.resolved_sessions_dir(), Path::new("/var/sessions"));
     }
 
     #[test]

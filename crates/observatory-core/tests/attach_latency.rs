@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use common::{append, byte_offset, config, m0_lines, session_start};
+use common::{append, byte_offset, config, m0_lines, replayed_ids, session_start};
 use observatory_core::ingest::watch::Attach;
 use observatory_core::model::SessionId;
 use observatory_core::store::{CaptureInfo, EventScope, Store, TimeRange};
@@ -102,14 +102,11 @@ fn attach_latency_under_one_second_on_fixture_replayed_live() {
     }
     let appended = writer.join().unwrap();
 
+    // A line that maps to no event (a repeated todo list, say) has nothing to see in the store;
+    // the comparison with a replay below proves none was lost.
     let mut deltas: Vec<Duration> = appended
         .iter()
-        .map(|(offset, at)| {
-            visible
-                .get(offset)
-                .unwrap_or_else(|| panic!("the line at byte {offset} never reached the store"))
-                .duration_since(*at)
-        })
+        .filter_map(|(offset, at)| Some(visible.get(offset)?.duration_since(*at)))
         .collect();
     deltas.sort();
     let (p50, p95, max) = (
@@ -134,6 +131,14 @@ fn attach_latency_under_one_second_on_fixture_replayed_live() {
         in_store.len(),
         produced,
         "the store holds what attach mapped"
+    );
+    let mut stored_ids: Vec<String> = in_store.iter().map(|e| e.id.to_string()).collect();
+    let mut replayed = replayed_ids(&path, SESSION);
+    stored_ids.sort();
+    replayed.sort();
+    assert_eq!(
+        stored_ids, replayed,
+        "attach and replay map the same events"
     );
     assert!(max < BUDGET, "slowest line took {max:?}, budget {BUDGET:?}");
 }
