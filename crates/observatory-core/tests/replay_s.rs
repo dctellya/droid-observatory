@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use observatory_core::config::IngestConfig;
-use observatory_core::ingest::{JsonlSource, RawRecord, Source, mapping_version_of};
-use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
+use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, mapping_version_of};
+use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta, TreeMapper};
 use observatory_core::model::{Event, EventKind, Lane, Role, SessionId, SourcePtr};
 
 const SLUG: &str = "2026-10-22-observatory-v1-s";
@@ -158,4 +158,42 @@ fn the_mapping_version_comes_from_the_capture_header_else_latest() {
     )
     .unwrap();
     assert_eq!(mapping_version_of(&bare).unwrap(), MappingVersion::LATEST);
+}
+
+fn lines_of(path: &Path) -> usize {
+    std::fs::read(path)
+        .unwrap()
+        .split_inclusive(|b| *b == b'\n')
+        .count()
+}
+
+#[test]
+fn a_tree_replay_maps_every_session_under_its_own_role_and_lane() {
+    let path = fixture("jsonl");
+    let cfg = IngestConfig::default();
+    let tree = SessionTree::discover(&path, &cfg).expect("the S capture opens");
+    let mut source = JsonlSource::open_tree(&tree, &cfg).expect("every session file opens");
+    let mut mapper = TreeMapper::new(&tree, mapping_version_of(&path).unwrap());
+
+    let records = read_all(&mut source);
+    let events: Vec<Event> = records
+        .iter()
+        .flat_map(|record| mapper.map(record))
+        .collect();
+
+    let expected: usize = tree.sessions().iter().map(|s| lines_of(&s.path)).sum();
+    assert_eq!(records.len(), expected);
+    assert_eq!(events.len(), expected);
+    assert!(
+        expected > lines_of(&path),
+        "the children add lines to the root file"
+    );
+    for event in &events {
+        let session = tree.get(event.session_id.as_ref().unwrap()).unwrap();
+        assert_eq!(event.role, session.role);
+        assert_eq!(event.lane, Lane::for_role(session.role));
+        assert_eq!(event.mission_id, *tree.mission_id());
+    }
+    assert!(events.iter().any(|e| e.role == Role::Worker));
+    assert!(events.iter().all(|e| e.role != Role::Unresolved));
 }

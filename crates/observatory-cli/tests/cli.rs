@@ -23,6 +23,23 @@ fn replay(home: &Path, file: &Path) -> Output {
     cli(home, &[Path::new("replay"), file])
 }
 
+fn root_only_replay(home: &Path, file: &Path) -> Output {
+    cli(home, &[Path::new("replay"), Path::new("--root-only"), file])
+}
+
+/// The root file plus every child file in `<slug>.children/`.
+fn lines_with_children(root: &Path) -> usize {
+    let children = root.with_extension("children");
+    let mut total = line_count(root);
+    for entry in std::fs::read_dir(children).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "jsonl") {
+            total += line_count(&path);
+        }
+    }
+    total
+}
+
 fn line_count(file: &Path) -> usize {
     std::fs::read(file)
         .unwrap()
@@ -57,7 +74,7 @@ fn replay_without_a_file_exits_nonzero() {
 #[test]
 fn replay_prints_one_line_per_event_and_ends_with_the_unknown_count() {
     let home = tempfile::tempdir().unwrap();
-    let lines = line_count(&s_fixture());
+    let lines = lines_with_children(&s_fixture());
 
     let output = replay(home.path(), &s_fixture());
 
@@ -73,10 +90,52 @@ fn replay_prints_one_line_per_event_and_ends_with_the_unknown_count() {
         let fields: Vec<&str> = event.split('\t').collect();
         assert_eq!(fields.len(), 4, "{event}");
         assert!(fields[0].ends_with('Z'), "{event}");
-        assert_eq!(fields[1], "2 Orchestrator", "{event}");
+        assert!(
+            fields[1].starts_with(|c: char| c.is_ascii_digit()),
+            "{event}"
+        );
         assert!(fields[2].starts_with("unknown.event("), "{event}");
-        assert_eq!(fields[3], SESSION, "{event}");
+        assert!(!fields[3].is_empty(), "{event}");
     }
+}
+
+#[test]
+fn replay_includes_the_child_sessions_under_their_own_lanes() {
+    let home = tempfile::tempdir().unwrap();
+
+    let output = replay(home.path(), &s_fixture());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let sessions: std::collections::BTreeSet<&str> = stdout
+        .lines()
+        .filter_map(|line| line.split('\t').nth(3))
+        .collect();
+    assert!(sessions.len() > 1, "{sessions:?}");
+    assert!(sessions.contains(SESSION));
+    let lanes: std::collections::BTreeSet<&str> = stdout
+        .lines()
+        .filter_map(|line| line.split('\t').nth(1))
+        .collect();
+    assert!(lanes.contains("2 Orchestrator"), "{lanes:?}");
+    assert!(lanes.contains("3 Workers"), "{lanes:?}");
+}
+
+#[test]
+fn replay_root_only_prints_one_line_per_line_of_the_root_file() {
+    let home = tempfile::tempdir().unwrap();
+    let lines = line_count(&s_fixture());
+
+    let output = root_only_replay(home.path(), &s_fixture());
+
+    assert!(output.status.success(), "{:?}", output.status);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let printed: Vec<&str> = stdout.lines().collect();
+    assert_eq!(printed.len(), lines + 1);
+    assert_eq!(
+        printed.last().copied(),
+        Some(format!("unknown events: {lines}").as_str())
+    );
+    assert!(printed[..lines].iter().all(|line| line.ends_with(SESSION)));
 }
 
 #[test]
