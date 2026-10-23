@@ -2,7 +2,7 @@
   "schema": 1,
   "droid_version": "0.247.0",
   "captured_at": "2026-10-22T17:03:03Z",
-  "source_dir": "~/.factory/sessions/-\u0055sers-dct-code-EllyaOrg-projects-dalimaray-droid-observatory",
+  "source_dir": "~/.factory/sessions/-home-user-code-EllyaOrg-projects-dalimaray-droid-observatory",
   "mission_name": "observatory-v1",
   "mapping_version": "v1",
   "sessions": [
@@ -53,7 +53,7 @@
     },
     {
       "id": "59ee8736-e49e-4091-9ade-536696563973",
-      "role": "explorer",
+      "role": "worker",
       "file": "2026-10-22-observatory-v1-s.children/59ee8736-e49e-4091-9ade-536696563973.jsonl"
     },
     {
@@ -128,7 +128,7 @@
     },
     {
       "id": "e2e3d113-d82b-4548-8809-4ebd269d1629",
-      "role": "explorer",
+      "role": "worker",
       "file": "2026-10-22-observatory-v1-s.children/e2e3d113-d82b-4548-8809-4ebd269d1629.jsonl"
     },
     {
