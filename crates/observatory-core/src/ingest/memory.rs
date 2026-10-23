@@ -5,6 +5,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use super::capture::CaptureHeader;
 use super::sessions::{Files, Head, Transcript, scan};
 use super::sidecar::{Sidecar, sidecar_path};
@@ -17,7 +19,7 @@ const JSONL_EXTENSION: &str = "jsonl";
 const CAPTURE_SUFFIX: &str = ".capture.json";
 
 /// A session of the opened tree, for naming rows.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: SessionId,
     pub parent: Option<SessionId>,
@@ -142,7 +144,7 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
         }
     }
     events.extend(mapper.finish());
-    events.sort_by_key(sort_key);
+    events.sort_by_key(order_key);
 
     let unknown = events
         .iter()
@@ -249,7 +251,9 @@ fn records_of(session: &SessionId, path: &Path, bytes: &[u8]) -> Vec<RawRecord> 
     records
 }
 
-fn sort_key(event: &Event) -> (crate::model::Timestamp, String, u64, u32) {
+/// Where an event stands in a replay: time, then session, then position in the file. Attach
+/// sorts what it receives by this key, so a live board and a replay list the same order.
+pub fn order_key(event: &Event) -> (crate::model::Timestamp, String, u64, u32) {
     let offset = match &event.source {
         SourcePtr::Jsonl { byte_offset, .. } | SourcePtr::Rpc { byte_offset, .. } => *byte_offset,
         _ => 0,

@@ -108,7 +108,13 @@ impl SessionWatcher {
 
     /// Blocks until a session file changes or one poll interval passes, whichever is first.
     pub fn wait(&mut self) {
-        if let Ok(path) = self.changed.recv_timeout(self.poll) {
+        self.wait_up_to(self.poll);
+    }
+
+    /// `wait`, but for at most `limit` when that is shorter than a poll interval: the caller
+    /// has something else due sooner.
+    pub fn wait_up_to(&mut self, limit: Duration) {
+        if let Ok(path) = self.changed.recv_timeout(limit.min(self.poll)) {
             self.hints.insert(path);
         }
     }

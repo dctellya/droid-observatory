@@ -133,6 +133,11 @@ impl Attach {
         self.watcher.wait();
     }
 
+    /// `wait`, returning after `limit` when that is sooner than a poll interval.
+    pub fn wait_up_to(&mut self, limit: std::time::Duration) {
+        self.watcher.wait_up_to(limit);
+    }
+
     /// One step: attaches what the watcher found, reads at most one chunk of every watched
     /// session and maps the lines that ended in it.
     pub fn poll(&mut self) -> AttachBatch {
