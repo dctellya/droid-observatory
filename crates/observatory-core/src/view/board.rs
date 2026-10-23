@@ -281,6 +281,44 @@ impl BoardView {
     pub fn card_count(&self) -> usize {
         self.lanes.iter().map(|lane| lane.card_count).sum()
     }
+
+    /// The figures a replay of the same events must reproduce: what the `board` command sends.
+    pub fn digest(&self) -> BoardDigest {
+        let mut digest = BoardDigest {
+            event_count: self.event_count,
+            tray_unknown: self.tray_unknown,
+            lane_events: [0; Lane::ALL.len()],
+            lane_cards: [0; Lane::ALL.len()],
+            cards: Vec::new(),
+        };
+        for (index, view) in self.lanes.iter().enumerate().take(Lane::ALL.len()) {
+            digest.lane_events[index] = view.event_count;
+            digest.lane_cards[index] = view.card_count;
+            digest.cards.extend(view.cards.iter().map(|card| CardLane {
+                milestone: card.milestone.clone(),
+                lane: card.lane,
+            }));
+        }
+        digest
+    }
+}
+
+/// The milestone cards and the lane each sits in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardLane {
+    pub milestone: MilestoneId,
+    pub lane: Lane,
+}
+
+/// The counts of a board, in lane order (Plan first), for the `board` command and for comparing
+/// a live capture with the replay of the same file.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoardDigest {
+    pub event_count: u64,
+    pub tray_unknown: u64,
+    pub lane_events: [u64; Lane::ALL.len()],
+    pub lane_cards: [usize; Lane::ALL.len()],
+    pub cards: Vec<CardLane>,
 }
 
 /// The branch the Gate placeholder names for a mission called `name`.

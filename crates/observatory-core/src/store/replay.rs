@@ -143,7 +143,8 @@ impl Store {
         Ok(raw_line_view(&event, &raw))
     }
 
-    fn sessions_of(&self, mission: &MissionId) -> Result<Vec<SessionInfo>, StoreError> {
+    /// The session files of `mission` in the order the store learned them.
+    pub fn sessions_of(&self, mission: &MissionId) -> Result<Vec<SessionInfo>, StoreError> {
         let mut statement = self.conn.prepare_cached(
             "SELECT id, parent_id, role, tag, model, path FROM sessions \
              WHERE mission_id = ?1 ORDER BY rowid",

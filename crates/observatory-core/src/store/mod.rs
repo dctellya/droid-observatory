@@ -21,6 +21,10 @@ use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
 use crate::model::{Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp};
 
+/// How long a writer waits for another connection's write (the ingest thread and a command
+/// share the file); an ingest step or an `open_replay` is far shorter.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub struct Store {
     conn: Connection,
 }
@@ -45,6 +49,7 @@ impl Store {
         let mut conn = Connection::open(path).map_err(open)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(open)?;
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(open)?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))
             .map_err(open)?;
         schema::migrate(&mut conn).map_err(open)?;
