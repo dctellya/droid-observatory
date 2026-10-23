@@ -8,7 +8,9 @@
 #   - every email address becomes user@example.invalid; an address of 20 or more bytes is
 #     padded with "_" in the local part to keep its length, a shorter one takes the token
 #     and the line gets longer;
-#   - every /Users/dct becomes /home/user (same length).
+#   - every /Users/dct becomes /home/user (same length);
+#   - every -Users-dct, the session-directory form of the same path, becomes -home-user
+#     (same length).
 # Lines are never added or removed and nothing else changes. Running it on redacted
 # files rewrites nothing (the output is compared first), so it is idempotent. Byte offsets
 # (SourcePtr, goldens) are computed against the redacted bytes, the ones the store indexes.
@@ -36,6 +38,7 @@ redact_stream() {
         : "user\@example.invalid"
     }ge;
     s{/Users/dct}{/home/user}g;
+    s{-Users-dct}{-home-user}g;
   '
 }
 
