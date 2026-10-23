@@ -1166,7 +1166,7 @@ mod render {
         BoardView::build(events, cfg, &declared(), BRANCH)
     }
 
-    fn lane<'a>(board: &'a BoardView, lane: Lane) -> &'a observatory_core::view::LaneView {
+    fn lane(board: &BoardView, lane: Lane) -> &observatory_core::view::LaneView {
         &board.lanes[usize::from(lane.number() - 1)]
     }
 
