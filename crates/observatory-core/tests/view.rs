@@ -1140,3 +1140,390 @@ mod stored {
         PathBuf::from(path)
     }
 }
+
+// --- render models of the board (the UI draws these as they are) ----------------------------
+
+mod render {
+    use std::collections::BTreeMap;
+
+    use observatory_core::config::MissionConfig;
+    use observatory_core::model::{Event, EventKind, Lane, MilestoneId, Overlay, Role, Timestamp};
+    use observatory_core::view::{
+        BoardView, DeclaredModels, Filter, FilterField, FilterOptions, GateBadge, GateVerdict,
+        Scrubber, ValidationBadge, ViewConfig, WorkerGrouping, integrate_timeline,
+        overlay_marker_rows,
+    };
+
+    use super::golden;
+
+    const BRANCH: &str = "mission/observatory-v1";
+
+    fn declared() -> DeclaredModels {
+        DeclaredModels::from_config(&MissionConfig::default())
+    }
+
+    fn build(events: &[Event], cfg: &ViewConfig) -> BoardView {
+        BoardView::build(events, cfg, &declared(), BRANCH)
+    }
+
+    fn lane<'a>(board: &'a BoardView, lane: Lane) -> &'a observatory_core::view::LaneView {
+        &board.lanes[usize::from(lane.number() - 1)]
+    }
+
+    #[test]
+    fn panel_reports_tokens_per_role_and_model_drift_against_declared() {
+        let events = golden();
+
+        let board = build(&events, &ViewConfig::default());
+
+        let panel = &board.panel;
+        assert_eq!(panel.aria_label, "panel");
+        let roles: Vec<Role> = panel.roles.iter().map(|row| row.role).collect();
+        assert_eq!(
+            roles,
+            [
+                Role::Orchestrator,
+                Role::Worker,
+                Role::ScrutinyValidator,
+                Role::UserTestingValidator
+            ]
+        );
+        let sessions: Vec<u64> = panel.roles.iter().map(|row| row.sessions).collect();
+        assert_eq!(sessions, [1, 39, 7, 9], "the capture header's sessions");
+        let declared_models = [
+            "claude-fable-5.1",
+            "claude-sonnet-5-5",
+            "claude-opus-5-5",
+            "claude-opus-5-5",
+        ];
+        for (row, declared) in panel.roles.iter().zip(declared_models) {
+            assert_eq!(row.declared.0, declared);
+            let mine = || events.iter().filter(|e| e.role == row.role);
+            let usage: Vec<_> = mine()
+                .filter(|e| e.kind == EventKind::UsageReported)
+                .filter_map(|e| e.usage)
+                .collect();
+            assert_eq!(row.tokens.input, usage.iter().map(|u| u.input).sum::<u64>());
+            assert_eq!(
+                row.tokens.output,
+                usage.iter().map(|u| u.output).sum::<u64>()
+            );
+            assert_eq!(
+                row.tokens.cache_read,
+                usage.iter().map(|u| u.cache_read).sum::<u64>()
+            );
+            assert_eq!(
+                row.tokens.cache_write,
+                usage.iter().map(|u| u.cache_write).sum::<u64>()
+            );
+            let mut seen: BTreeMap<String, u64> = BTreeMap::new();
+            for model in mine().filter_map(|e| e.model.as_ref()) {
+                *seen.entry(model.0.clone()).or_default() += 1;
+            }
+            let observed: BTreeMap<String, u64> = row
+                .observed
+                .iter()
+                .map(|o| (o.model.0.clone(), o.events))
+                .collect();
+            assert_eq!(observed, seen, "{:?}", row.role);
+            assert_eq!(
+                row.drifted,
+                seen.keys().any(|model| model != declared),
+                "{:?}",
+                row.role
+            );
+        }
+        assert_eq!(panel.roles[1].tokens.input, 288_701);
+        assert!(
+            panel.roles.iter().any(|row| row.drifted),
+            "the capture ran models other than the declared ones"
+        );
+        let (first, last) = (events.first().unwrap().at, events.last().unwrap().at);
+        let elapsed = (last.0 - first.0).whole_milliseconds();
+        assert_eq!(i128::from(panel.elapsed_ms.expect("elapsed")), elapsed);
+    }
+
+    #[test]
+    fn human_overlay_filter_lists_the_human_markers() {
+        let events = golden();
+
+        let markers = overlay_marker_rows(&events, Overlay::Human);
+
+        assert_eq!(markers.len(), 70);
+        assert!(markers.iter().all(|marker| marker.lane == Lane::Plan));
+        let ids: Vec<&str> = markers.iter().map(|m| m.event_id.0.as_str()).collect();
+        let expected: Vec<&str> = events
+            .iter()
+            .filter(|e| e.overlay == Some(Overlay::Human))
+            .map(|e| e.id.0.as_str())
+            .collect();
+        assert_eq!(ids, expected);
+        assert!(overlay_marker_rows(&events, Overlay::Commander).is_empty());
+
+        let board = build(&events, &ViewConfig::default());
+        assert_eq!(board.overlay_human.aria_label, "overlay-human");
+        assert_eq!(board.overlay_human.markers.len(), 70);
+        let plan = lane(&board, Lane::Plan);
+        let marked = plan
+            .groups
+            .iter()
+            .flat_map(|g| &g.rows)
+            .filter(|row| row.overlay == Some(Overlay::Human))
+            .count();
+        assert_eq!(marked, 70, "each marker sits on its phase lane");
+    }
+
+    #[test]
+    fn integrate_timeline_lists_gate_runs_per_milestone() {
+        let events = golden();
+
+        let groups = integrate_timeline(&events);
+
+        let rows: usize = groups.iter().map(|g| g.rows.len()).sum();
+        assert_eq!(rows, 134);
+        let runs: BTreeMap<Option<String>, u64> = groups
+            .iter()
+            .map(|g| (g.milestone.as_ref().map(|m| m.0.clone()), g.gate_runs))
+            .collect();
+        assert_eq!(runs.get(&Some("m0".to_owned())), Some(&18));
+        assert_eq!(runs.get(&Some("s".to_owned())), Some(&26));
+        assert_eq!(runs.get(&None), Some(&26));
+        assert_eq!(runs.values().sum::<u64>(), 70);
+        for group in &groups {
+            assert!(group.rows.windows(2).all(|w| w[0].at <= w[1].at));
+            assert!(group.rows.iter().all(|row| row.lane == Lane::Integrate));
+        }
+    }
+
+    #[test]
+    fn the_gate_placeholder_names_the_pending_state_branch_verdict_and_clocks() {
+        let events = golden();
+        let last_verdict = events
+            .iter()
+            .rev()
+            .find_map(|e| match e.kind.prd_name().as_ref() {
+                "gate_command.passed" => Some(GateVerdict::Passed),
+                "gate_command.failed" => Some(GateVerdict::Failed),
+                _ => None,
+            });
+
+        let board = build(&events, &ViewConfig::default());
+
+        let gate = lane(&board, Lane::Gate);
+        assert_eq!(gate.event_count, 0);
+        let placeholder = gate.placeholder.as_ref().expect("no PR: a placeholder");
+        assert_eq!(placeholder.text, "gate: pending (no PR)");
+        assert_eq!(placeholder.branch, BRANCH);
+        assert_eq!(placeholder.last_gate_command, last_verdict);
+        assert_eq!(placeholder.gate_runs, 35);
+        let clocks: Vec<(&str, Option<&str>)> = placeholder
+            .clocks
+            .iter()
+            .map(|c| (c.label.as_str(), c.value.as_deref()))
+            .collect();
+        assert_eq!(
+            clocks,
+            [
+                ("engineering cycle time", None),
+                ("lead time to production: delivery platform's clock", None)
+            ]
+        );
+        assert_eq!(board.gate.badge, GateBadge::Pending);
+        for other in Lane::ALL.iter().filter(|l| **l != Lane::Gate) {
+            assert!(lane(&board, *other).placeholder.is_none());
+        }
+    }
+
+    #[test]
+    fn the_m0_board_view_has_lane_counts_cards_rows_and_build_groups() {
+        let events = golden();
+
+        let board = build(&events, &ViewConfig::default());
+
+        let counts: Vec<u64> = board.lanes.iter().map(|l| l.event_count).collect();
+        assert_eq!(counts, [443, 69, 424, 87, 122, 134, 0]);
+        for view in &board.lanes {
+            let rows: usize = view.groups.iter().map(|g| g.rows.len()).sum();
+            assert_eq!(rows as u64, view.event_count, "{}", view.name);
+        }
+        assert_eq!(board.event_count, 1279);
+        assert_eq!(board.tray_unknown, 0);
+        let milestones: Vec<&str> = board
+            .lanes
+            .iter()
+            .flat_map(|l| l.cards.iter().map(|c| c.milestone.0.as_str()))
+            .collect();
+        assert_eq!(milestones.len(), 7);
+        for view in &board.lanes {
+            assert!(view.cards.iter().all(|c| c.lane == view.lane));
+            assert_eq!(view.card_count, view.cards.len());
+        }
+
+        let build_lane = lane(&board, Lane::Build);
+        assert!(build_lane.grouped);
+        assert_eq!(
+            build_lane.groups.len(),
+            30,
+            "worker sessions with Build events"
+        );
+        assert!(
+            build_lane
+                .groups
+                .iter()
+                .all(|g| g.role == Some(Role::Worker))
+        );
+        let per_feature = build(
+            &events,
+            &ViewConfig {
+                grouping: WorkerGrouping::PerFeature,
+                ..ViewConfig::default()
+            },
+        );
+        let regrouped = lane(&per_feature, Lane::Build);
+        assert_eq!(regrouped.event_count, build_lane.event_count);
+        let features: std::collections::BTreeSet<_> = events
+            .iter()
+            .filter(|e| e.lane == Lane::Build)
+            .map(|e| e.feature_id.clone())
+            .collect();
+        assert_eq!(regrouped.groups.len(), features.len());
+        assert!(regrouped.groups.iter().all(|g| g.role.is_none()));
+        let integrate = lane(&board, Lane::Integrate);
+        assert_eq!(
+            integrate.groups.len(),
+            integrate_timeline(&events).len(),
+            "Integrate groups its rows per milestone"
+        );
+        assert!(!lane(&board, Lane::Plan).grouped);
+    }
+
+    #[test]
+    fn the_board_view_follows_the_filter_and_the_scrubber_together() {
+        let events = golden();
+        let middle: Timestamp = events[events.len() / 2].at;
+        let cfg = ViewConfig {
+            filter: Filter {
+                role: Some(Role::Worker),
+                ..Filter::default()
+            },
+            at: Some(middle),
+            ..ViewConfig::default()
+        };
+
+        let board = build(&events, &cfg);
+
+        let expected: Vec<&Event> = events
+            .iter()
+            .filter(|e| e.role == Role::Worker && e.at <= middle)
+            .collect();
+        assert_eq!(board.event_count, expected.len() as u64);
+        let rows: usize = board
+            .lanes
+            .iter()
+            .flat_map(|l| &l.groups)
+            .map(|g| g.rows.len())
+            .sum();
+        assert_eq!(rows, expected.len());
+        for empty in [Lane::Plan, Lane::Scrutiny, Lane::UserTesting] {
+            assert_eq!(lane(&board, empty).event_count, 0, "{empty:?}");
+        }
+        assert_eq!(board.overlay_human.markers.len(), 0);
+    }
+
+    #[test]
+    fn filter_options_list_what_the_capture_holds_and_a_choice_parses_back() {
+        let events = golden();
+
+        let options = FilterOptions::of(&events);
+
+        let values = |choices: &[observatory_core::view::Choice]| -> Vec<String> {
+            choices.iter().map(|c| c.value.clone()).collect()
+        };
+        assert_eq!(
+            values(&options.milestones),
+            ["m0", "m1", "m2", "m3", "m4", "m5", "s"]
+        );
+        assert_eq!(options.features.len(), {
+            let mut all: Vec<_> = events.iter().filter_map(|e| e.feature_id.clone()).collect();
+            all.sort();
+            all.dedup();
+            all.len()
+        });
+        let expected_roles: Vec<String> = Role::ALL
+            .iter()
+            .filter(|role| events.iter().any(|e| e.role == **role))
+            .map(|role| role.as_str().to_owned())
+            .collect();
+        assert_eq!(values(&options.roles), expected_roles);
+        assert_eq!(expected_roles[..2], ["orchestrator", "worker"]);
+        assert!(values(&options.models).contains(&"claude-sonnet-5-5".to_owned()));
+        assert_eq!(values(&options.validation), ["red", "grey", "green"]);
+        let labels: Vec<&str> = options
+            .validation
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
+        assert_eq!(labels, ["RED", "GREY", "GREEN"]);
+        assert_eq!(values(&options.gate)[0], "pending");
+
+        let mut filter = Filter::default();
+        filter.set(FilterField::Role, "worker");
+        filter.set(FilterField::Validation, "red");
+        filter.set(FilterField::Gate, "ci_green");
+        filter.set(FilterField::Milestone, "m0");
+        filter.set(FilterField::Model, "claude-sonnet-5-5");
+        filter.set(FilterField::Feature, "some-feature");
+        assert_eq!(filter.role, Some(Role::Worker));
+        assert_eq!(filter.validation, Some(ValidationBadge::Red));
+        assert_eq!(filter.gate, Some(GateBadge::CiGreen));
+        assert_eq!(filter.milestone, Some(MilestoneId("m0".to_owned())));
+        filter.set(FilterField::Role, "");
+        filter.set(FilterField::Validation, "not-a-state");
+        assert_eq!(filter.role, None);
+        assert_eq!(filter.validation, None);
+        let names: Vec<&str> = FilterField::ALL.iter().map(|f| f.aria_label()).collect();
+        assert_eq!(
+            names,
+            [
+                "filter-milestone",
+                "filter-feature",
+                "filter-role",
+                "filter-model",
+                "filter-validation",
+                "filter-gate"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_scrubber_stops_at_each_event_time_and_the_last_stop_is_live() {
+        let events = golden();
+        let scrubber = Scrubber::new(&events);
+
+        let mut times: Vec<Timestamp> = events.iter().map(|e| e.at).collect();
+        times.dedup();
+        assert_eq!(scrubber.stops(), times.len());
+        assert_eq!(scrubber.last_index(), times.len() - 1);
+        assert_eq!(scrubber.at(0), Some(times[0]));
+        assert_eq!(scrubber.at(scrubber.last_index()), None, "the end is live");
+        assert_eq!(scrubber.at(1_000_000), None);
+        assert_eq!(scrubber.index_of(None), scrubber.last_index());
+        let middle = times[times.len() / 2];
+        assert_eq!(scrubber.index_of(Some(middle)), times.len() / 2);
+        let between = Timestamp(middle.0 + time::Duration::milliseconds(1));
+        if between < times[times.len() / 2 + 1] {
+            assert_eq!(scrubber.index_of(Some(between)), times.len() / 2);
+        }
+        assert_eq!(
+            scrubber.index_of(Some(Timestamp(times[0].0 - time::Duration::hours(1)))),
+            0
+        );
+        assert_eq!(scrubber.label(Some(middle)), middle.to_rfc3339_millis());
+        assert_eq!(
+            scrubber.label(None),
+            times.last().unwrap().to_rfc3339_millis()
+        );
+        assert_eq!(Scrubber::new(&[]).stops(), 0);
+        assert_eq!(Scrubber::new(&[]).label(None), "");
+    }
+}
