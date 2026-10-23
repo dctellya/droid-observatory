@@ -78,6 +78,7 @@ fn run(
             return;
         }
     };
+    tracing::info!(dir = %cfg.ingest.factory_sessions_dir, "ingest_started");
     while !stop.load(Ordering::Relaxed) {
         report(app, status, live.step());
     }
