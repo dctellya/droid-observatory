@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn commands_are_classified_by_substring() {
+    fn commands_are_classified_by_whole_command_words() {
         let kinds = classify_command("git commit -m x && make check");
         assert_eq!(
             kinds,
@@ -158,6 +158,42 @@ mod tests {
             }
         );
         assert_eq!(classify_command("ls"), CommandKinds::default());
+        for text in [
+            "make check",
+            "make check;",
+            "make check>log",
+            "make check 2>&1",
+            "make check|tee log",
+            "make check&",
+            "time make check",
+            "A=1 B=2 make check -j4",
+            "(cd x && make check)",
+            "ls\nmake check\n",
+        ] {
+            assert!(classify_command(text).gate, "{text:?}");
+        }
+        for text in [
+            "make check-todos",
+            "make checks",
+            "xmake check",
+            "echo make check",
+            "echo 'a; make check'",
+            "grep \"make check\" Makefile",
+            "git commit-tree x",
+            "cat <<EOF\nmake check\nEOF",
+            "cat <<-'EOF'\n\tmake check\n\tEOF\nls",
+            "make",
+            "make -C x check",
+        ] {
+            assert!(!classify_command(text).gate, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_heredoc_does_not_hide_the_command_after_it() {
+        let kinds = classify_command("git commit -F - <<EOF\nmake check\nEOF\nmake test");
+        assert!(kinds.commit && kinds.tests);
+        assert!(!kinds.gate);
     }
 
     #[test]

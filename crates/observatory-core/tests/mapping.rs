@@ -453,7 +453,10 @@ fn git_commit_and_test_commands_map_to_commit_and_tests_kinds() {
             json!({"script": "await Execute({command: 'make test'})"})
         )]),
     );
-    assert_eq!(kinds(&session.feed(&script)), ["tests.run"]);
+    assert!(
+        session.feed(&script).is_empty(),
+        "a Script body only mentions the command; its inner Execute call is its own record"
+    );
 }
 
 #[test]
@@ -491,6 +494,155 @@ fn make_check_is_a_gate_command_whose_result_decides_passed_or_failed() {
     );
     assert!(events.iter().all(|event| event.lane == Lane::Integration));
     assert_eq!(events[0].duration.unwrap().as_secs(), 3);
+}
+
+/// A result as Droid 0.247 writes it for an `Execute`: no `is_error` key at all.
+fn tool_result_without_flag(id: &str, content: &str) -> Value {
+    json!({"type": "tool_result", "tool_use_id": id, "content": content})
+}
+
+/// Feeds one assistant message holding `Execute` calls and returns the kinds of its events.
+fn run_executes(session: &mut Session, second: u32, commands: &[(&str, &str)]) -> Vec<String> {
+    let calls: Vec<Value> = commands
+        .iter()
+        .map(|(id, command)| tool_use(id, "Execute", json!({ "command": command })))
+        .collect();
+    kinds(&session.feed(&assistant(second, "m1", Value::Array(calls))))
+}
+
+#[test]
+fn a_failing_make_check_with_is_error_null_maps_to_gate_command_failed() {
+    let mut session = Session::new(meta(Role::Worker));
+    run_executes(
+        &mut session,
+        1,
+        &[
+            (
+                "line41",
+                "cd /home/user/code/EllyaOrg/projects/dalimaray/observatory-wt/current && \
+                 make check > /tmp/scrutiny-s-check.log 2>&1",
+            ),
+            ("short", "make check"),
+            ("tail", "make check 2>&1 | tail -5"),
+        ],
+    );
+
+    let results = user(
+        4,
+        json!([
+            tool_result_without_flag(
+                "line41",
+                "Command failed (exit code: 2)\n\n[Process exited with code 2]"
+            ),
+            tool_result_without_flag(
+                "short",
+                "make: *** [check] Error 2\n\n\n[Process exited with code 2]"
+            ),
+            tool_result_without_flag("tail", "Command failed (exit code: 1)"),
+        ]),
+    );
+    let events = session.feed(&results);
+    assert_eq!(
+        kinds(&events),
+        [
+            "gate_command.failed",
+            "gate_command.failed",
+            "gate_command.failed"
+        ]
+    );
+    assert!(events.iter().all(|event| event.lane == Lane::Integration));
+    assert_eq!(events[0].duration.unwrap().as_secs(), 3);
+
+    let mut flagged = Session::new(meta(Role::Worker));
+    run_executes(&mut flagged, 1, &[("e", "make check")]);
+    let events = flagged.feed(&user(2, json!([tool_result("e", "boom", true)])));
+    assert_eq!(
+        kinds(&events),
+        ["gate_command.failed"],
+        "is_error alone, with no exit code in the text, still fails the gate"
+    );
+}
+
+#[test]
+fn make_check_dash_targets_and_script_mentions_are_not_gate_runs() {
+    let mut session = Session::new(meta(Role::Worker));
+    let not_runs = [
+        ("todos", "make check-todos"),
+        ("links", "make check-links 2>&1 | tail -3"),
+        ("docs", "cd wt && make check-docs"),
+        ("echo", "echo \"run make check before git commit\""),
+        ("mine", "xmake check"),
+        ("tests", "make test-all && cargo test-helper"),
+        (
+            "heredoc",
+            "cat > notes.md <<'EOF'\nmake check\ngit commit -m x\nEOF",
+        ),
+    ];
+    assert!(run_executes(&mut session, 1, &not_runs).is_empty());
+
+    let script = assistant(
+        2,
+        "m1",
+        json!([tool_use(
+            "script",
+            "Script",
+            json!({"script": "const r = await Execute({command: 'make check'});\n\
+                // git commit and cargo test and make test stay in the Script's inner calls"})
+        )]),
+    );
+    assert!(session.feed(&script).is_empty());
+
+    let results = user(
+        4,
+        json!([
+            tool_result_without_flag("todos", "ok\n\n[Process exited with code 0]"),
+            tool_result_without_flag("script", "Command failed (exit code: 2)"),
+        ]),
+    );
+    assert!(
+        session.feed(&results).is_empty(),
+        "no gate call is pending, so no verdict"
+    );
+}
+
+#[test]
+fn a_make_check_exit_zero_maps_to_gate_command_passed() {
+    let mut session = Session::new(meta(Role::Worker));
+    let run = run_executes(
+        &mut session,
+        1,
+        &[
+            ("plain", "make check"),
+            ("redirect", "make check>/tmp/log 2>&1"),
+            ("chain", "make fmt; make check && echo done"),
+            ("env", "CI=1 make check"),
+            ("noise", "make check-docs"),
+        ],
+    );
+    assert_eq!(
+        run.iter()
+            .filter(|kind| *kind == "gate_command.run")
+            .count(),
+        4,
+        "make check-docs is not a gate run: {run:?}"
+    );
+
+    let results = user(
+        5,
+        json!([
+            tool_result_without_flag("plain", "all green\n\n\n[Process exited with code 0]"),
+            tool_result("redirect", "", false),
+            tool_result_without_flag(
+                "chain",
+                "log mentions exit code: 2 and Error 1\n\n\n[Process exited with code 0]"
+            ),
+            tool_result_without_flag("env", "test result: ok\n\n[Process exited with code 0]"),
+            tool_result_without_flag("noise", "ok\n\n[Process exited with code 0]"),
+        ]),
+    );
+    let events = session.feed(&results);
+    assert_eq!(kinds(&events), ["gate_command.passed"; 4]);
+    assert_eq!(events[0].duration.unwrap().as_secs(), 4);
 }
 
 #[test]
