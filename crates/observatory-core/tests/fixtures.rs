@@ -10,8 +10,10 @@ use observatory_core::model::{Event, EventKind, SourcePtr};
 use serde_json::Value;
 
 const S_SLUG: &str = "2026-10-22-observatory-v1-s";
+const M0_SLUG: &str = "2026-10-22-observatory-v1-m0";
 const EMAIL_REPLACEMENT_DOMAIN: &[u8] = b"@example.invalid";
 const HOME_PATH: &[u8] = b"/Users/dct";
+const HYPHENATED_HOME_PATH: &[u8] = b"-Users-dct";
 
 fn streams_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/streams")
@@ -68,6 +70,125 @@ fn s_fixture_has_capture_header_with_droid_version() {
             jsonl.display()
         );
     }
+}
+
+fn first_line_json(path: &Path) -> Value {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{} reads: {e}", path.display()));
+    let end = bytes
+        .iter()
+        .position(|b| *b == b'\n')
+        .unwrap_or(bytes.len());
+    serde_json::from_slice(&bytes[..end]).expect("first line is JSON")
+}
+
+#[test]
+fn m0_capture_header_lists_all_four_roles() {
+    let header = read_capture(M0_SLUG);
+
+    assert_eq!(header["schema"], 1);
+    assert_eq!(header["droid_version"], "0.247.0");
+    assert_eq!(header["mapping_version"], "v1");
+    assert_eq!(header["mission_name"], "observatory-v1");
+    assert_eq!(header["captured_with"], "droid --version");
+    assert_eq!(header["reviewed_by"], "factory-droid[bot]");
+    assert!(
+        header["gitleaks"]
+            .as_str()
+            .is_some_and(|g| g.starts_with("clean"))
+    );
+
+    let sessions = header["sessions"].as_array().expect("sessions is an array");
+    let mut roles: Vec<&str> = sessions
+        .iter()
+        .map(|s| s["role"].as_str().expect("role is a string"))
+        .collect();
+    roles.sort_unstable();
+    roles.dedup();
+    assert_eq!(
+        roles,
+        [
+            "orchestrator",
+            "scrutiny_validator",
+            "user_testing_validator",
+            "worker"
+        ]
+    );
+
+    let mut roots = Vec::new();
+    for session in sessions {
+        let file = session["file"].as_str().expect("session file is a string");
+        let jsonl = streams_dir().join(file);
+        assert!(jsonl.is_file(), "{} must exist", jsonl.display());
+        assert!(
+            jsonl.with_extension("settings.json").is_file(),
+            "sidecar beside {} must exist",
+            jsonl.display()
+        );
+        let first = first_line_json(&jsonl);
+        assert_eq!(first["type"], "session_start");
+        assert_eq!(first["id"], session["id"]);
+        if first.get("callingSessionId").is_none() {
+            roots.push(session["role"].as_str().expect("role is a string"));
+        }
+    }
+    assert_eq!(
+        roots,
+        ["orchestrator"],
+        "exactly one root, the orchestrator"
+    );
+}
+
+#[test]
+fn capture_headers_use_four_roles_and_a_redacted_source_dir() {
+    const ROLES: [&str; 4] = [
+        "orchestrator",
+        "worker",
+        "scrutiny_validator",
+        "user_testing_validator",
+    ];
+    let mut headers = 0;
+    for entry in std::fs::read_dir(streams_dir()).expect("fixtures/streams reads") {
+        let path = entry.expect("directory entry reads").path();
+        let is_header = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".capture.json"));
+        if !is_header {
+            continue;
+        }
+        headers += 1;
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} reads: {e}", path.display()));
+        let header: Value = serde_json::from_str(&text).expect("capture header is valid JSON");
+
+        let source_dir = header["source_dir"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{} has a source_dir string", path.display()));
+        assert!(
+            !source_dir.contains("-Users-dct"),
+            "{} source_dir {source_dir:?} holds the unredacted home directory",
+            path.display()
+        );
+        assert!(
+            source_dir.starts_with("~/.factory/sessions/-home-user-"),
+            "{} source_dir {source_dir:?} must be the redacted session directory",
+            path.display()
+        );
+
+        for session in header["sessions"].as_array().expect("sessions is an array") {
+            let role = session["role"].as_str().expect("role is a string");
+            assert!(
+                ROLES.contains(&role),
+                "{} session {} has role {role:?}, not one of the four Role values",
+                path.display(),
+                session["id"]
+            );
+        }
+    }
+    assert!(
+        headers >= 2,
+        "found {headers} capture headers, expected the S and M0 headers"
+    );
 }
 
 fn files_under(dir: &Path) -> Vec<PathBuf> {
@@ -157,6 +278,9 @@ fn fixtures_contain_no_email_or_home_path() {
         if contains(&bytes, HOME_PATH) {
             offences.push(format!("{}: contains /Users/dct", path.display()));
         }
+        if contains(&bytes, HYPHENATED_HOME_PATH) {
+            offences.push(format!("{}: contains -Users-dct", path.display()));
+        }
     }
 
     assert!(scanned > 0, "fixtures/streams must hold files to scan");
@@ -185,7 +309,8 @@ fn replay(path: &Path) -> (Vec<RawRecord>, Vec<Event>) {
             break;
         }
     }
-    let events = records.iter().flat_map(|r| mapper.map(r)).collect();
+    let mut events: Vec<Event> = records.iter().flat_map(|r| mapper.map(r)).collect();
+    events.extend(mapper.finish());
     (records, events)
 }
 
@@ -203,7 +328,7 @@ fn redaction_keeps_line_count_and_event_types() {
 
     assert_eq!(line_count(&bytes), 2027);
     assert_eq!(records.len(), 2027);
-    assert_eq!(events.len(), 2027);
+    assert!(!events.is_empty());
     for event in &events {
         let SourcePtr::Jsonl {
             byte_offset,
@@ -216,10 +341,9 @@ fn redaction_keeps_line_count_and_event_types() {
         let start = *byte_offset as usize;
         let line: Value = serde_json::from_slice(&bytes[start..start + *byte_len as usize])
             .expect("redacted line is JSON");
-        let EventKind::Unknown { raw_type } = &event.kind else {
-            panic!("the S mapper yields Unknown only");
-        };
-        assert_eq!(line["type"].as_str(), Some(raw_type.as_str()));
+        if let EventKind::Unknown { raw_type } = &event.kind {
+            assert_eq!(line["type"].as_str(), Some(raw_type.as_str()));
+        }
     }
 
     let header = read_capture(S_SLUG);
@@ -274,10 +398,14 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
             "{\"cwd\":\"/Users/dct/code/x\",\"by\":\"david.carbajosa@dalimaray.io\"}\n",
             "{\"remote\":\"git@github.com:o/r.git\",\"img\":\"icons/128x128@2x.png\"}\n",
             "{\"keep\":\"user@example.invalid\",\"home\":\"/home/user\"}\n",
+            "{\"slug\":\"~/.factory/sessions/-Users-dct-code-x\",\"keep\":\"Users-dct\"}\n",
             "no trailing newline /Users/dct",
         ),
     );
-    let settings = write("fx.settings.json", "{\"dir\":\"/Users/dct\"}\n");
+    let settings = write(
+        "fx.settings.json",
+        "{\"dir\":\"/Users/dct\",\"slug\":\"-Users-dct\"}\n",
+    );
     let capture = write("fx.capture.json", "{\"who\":\"a.b@c.io\"}\n");
     let child = write(
         "fx.children/c1.jsonl",
@@ -302,10 +430,14 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
             "{\"cwd\":\"/home/user/code/x\",\"by\":\"user________@example.invalid\"}\n",
             "{\"remote\":\"user@example.invalid:o/r.git\",\"img\":\"icons/user@example.invalid\"}\n",
             "{\"keep\":\"user@example.invalid\",\"home\":\"/home/user\"}\n",
+            "{\"slug\":\"~/.factory/sessions/-home-user-code-x\",\"keep\":\"Users-dct\"}\n",
             "no trailing newline /home/user",
         )
     );
-    assert_eq!(read(&settings), "{\"dir\":\"/home/user\"}\n");
+    assert_eq!(
+        read(&settings),
+        "{\"dir\":\"/home/user\",\"slug\":\"-home-user\"}\n"
+    );
     assert_eq!(read(&capture), "{\"who\":\"user@example.invalid\"}\n");
     assert_eq!(
         read(&child),
@@ -327,4 +459,58 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
         .map(|p| std::fs::read(p).unwrap())
         .collect();
     assert_eq!(once, twice, "a second run is a no-op");
+}
+
+#[test]
+fn every_line_of_every_session_fixture_is_valid_json() {
+    let mut broken = Vec::new();
+    let mut lines = 0;
+    for path in files_under(&streams_dir()) {
+        if path.extension().is_none_or(|ext| ext != "jsonl") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).expect("fixture file reads");
+        let mut offset = 0;
+        for line in bytes.split_inclusive(|b| *b == b'\n') {
+            lines += 1;
+            let body = line.strip_suffix(b"\n").unwrap_or(line);
+            if serde_json::from_slice::<Value>(body).is_err() {
+                broken.push(format!("{}@{offset}", path.display()));
+            }
+            offset += line.len();
+        }
+    }
+
+    assert!(lines > 0, "fixtures/streams must hold session files");
+    assert!(
+        broken.is_empty(),
+        "{} redacted lines are no longer JSON, first ones:\n{}",
+        broken.len(),
+        broken
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn redaction_leaves_the_escape_in_front_of_an_email_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("fx.jsonl");
+    std::fs::write(
+        &root,
+        "{\"out\":\"icons\\nfoo@bar.com\\n128x128@2x.png\\tlast@c.io\"}\n",
+    )
+    .unwrap();
+
+    redact(&root);
+
+    let line = std::fs::read_to_string(&root).unwrap();
+    assert_eq!(
+        line,
+        "{\"out\":\"icons\\nuser@example.invalid\\nuser@example.invalid\\tuser@example.invalid\"}\n"
+    );
+    serde_json::from_str::<Value>(&line).expect("the redacted line is still JSON");
 }

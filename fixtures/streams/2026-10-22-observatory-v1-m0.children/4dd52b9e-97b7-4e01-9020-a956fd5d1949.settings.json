@@ -1,0 +1,52 @@
+{
+  "assistantActiveTimeMs": 0,
+  "model": "claude-sonnet-5-5",
+  "reasoningEffort": "high",
+  "interactionMode": "auto",
+  "autonomyLevel": "high",
+  "autonomyMode": "auto-high",
+  "compactionThresholdCheckEnabled": true,
+  "allowSubagentsInScripts": false,
+  "tags": [
+    {
+      "name": "exec"
+    },
+    {
+      "name": "mission-worker"
+    },
+    {
+      "name": "mission-session",
+      "metadata": {
+        "role": "worker",
+        "missionId": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c"
+      }
+    }
+  ],
+  "toolExecutionMode": "direct_only",
+  "toolExecutionModeModelId": "claude-sonnet-5-5",
+  "tokenUsage": {
+    "inputTokens": 1574,
+    "outputTokens": 22700,
+    "cacheCreationTokens": 95845,
+    "cacheReadTokens": 1606154,
+    "thinkingTokens": 9879,
+    "factoryCredits": 251532
+  },
+  "childInclusiveTokenUsageBySessionId": {},
+  "inclusiveTokenUsage": {
+    "inputTokens": 1574,
+    "outputTokens": 22700,
+    "cacheCreationTokens": 95845,
+    "cacheReadTokens": 1606154,
+    "thinkingTokens": 9879,
+    "factoryCredits": 251532
+  },
+  "providerLock": "anthropic",
+  "providerLockTimestamp": "2026-10-23T09:18:01.538Z",
+  "lastCallTokenUsage": {
+    "inputTokens": 2661,
+    "outputTokens": 1209,
+    "cacheReadTokens": 93186
+  },
+  "apiProviderLock": "bedrock_anthropic"
+}

@@ -98,8 +98,16 @@ fn event_round_trips_through_serde() {
         SourcePtr::App { action_id: 7 },
     ];
 
-    for source in pointers {
-        let event = event_with(source, EventKind::FindingBlocking);
+    let unknown = EventKind::Unknown {
+        raw_type: "future_kind".to_owned(),
+    };
+    let cases = pointers
+        .into_iter()
+        .map(|source| (source, EventKind::FindingBlocking))
+        .chain([(jsonl_pointer(), unknown)]);
+
+    for (source, kind) in cases {
+        let event = event_with(source, kind);
         let json = serde_json::to_string(&event).expect("event serializes");
         let back: Event = serde_json::from_str(&json).expect("event deserializes");
         assert_eq!(back, event, "wire form: {json}");

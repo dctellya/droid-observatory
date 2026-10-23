@@ -1,3 +1,4 @@
+mod inspect;
 mod replay;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
@@ -6,6 +7,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use observatory_core::config::Config;
+use observatory_core::store::Store;
 
 #[derive(Parser)]
 #[command(version, about = "Headless replay and inspection of Droid sessions")]
@@ -20,6 +22,22 @@ enum Command {
     Replay {
         /// The orchestrator session `.jsonl`.
         file: PathBuf,
+        /// Replay only this file, not the child sessions found beside it.
+        #[arg(long)]
+        root_only: bool,
+        /// Write the sessions and event pointers to this SQLite store. Without it, the
+        /// store at `[store].path` is written when a config file is in effect
+        /// (`OBSERVATORY_CONFIG` or `~/.droid-observatory/config.toml`), else none.
+        #[arg(long, value_name = "PATH")]
+        store: Option<PathBuf>,
+    },
+    /// Print the raw line an event was mapped from, found by its stored pointer.
+    Inspect {
+        /// Event id, `<session id>:<byte offset>:<sub>`.
+        event_id: String,
+        /// The SQLite store to read; default `[store].path`.
+        #[arg(long, value_name = "PATH")]
+        store: Option<PathBuf>,
     },
 }
 
@@ -36,11 +54,34 @@ fn main() -> ExitCode {
 }
 
 fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::load(None)?;
+    let (config, config_file) = Config::load_with_origin(None)?;
     match command {
-        Command::Replay { file } => {
+        Command::Replay {
+            file,
+            root_only,
+            store,
+        } => {
+            // Pointers outlive the working directory only when they are absolute.
+            let file = std::path::absolute(&file)?;
+            let store_path =
+                store.or_else(|| config_file.is_some().then(|| config.store.resolved_path()));
+            let mut store = store_path.as_deref().map(Store::open).transpose()?;
             let mut out = BufWriter::new(io::stdout().lock());
-            replay::replay(&file, &config.ingest, &mut out)?;
+            replay::replay(
+                &file,
+                root_only,
+                &config.ingest,
+                store.as_mut(),
+                &mut out,
+                &mut io::stderr().lock(),
+            )?;
+            out.flush()?;
+            Ok(())
+        }
+        Command::Inspect { event_id, store } => {
+            let store = store.unwrap_or_else(|| config.store.resolved_path());
+            let mut out = BufWriter::new(io::stdout().lock());
+            inspect::inspect(&store, &event_id, &mut out)?;
             out.flush()?;
             Ok(())
         }

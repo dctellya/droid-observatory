@@ -5,12 +5,15 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::IngestError;
-use crate::mapping::MappingVersion;
+use crate::mapping::{MappingVersion, Warning, select_version};
 
 /// The part of the header the readers use. Other keys are ignored.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct CaptureHeader {
     pub droid_version: Option<String>,
+    pub source_dir: Option<String>,
+    pub captured_at: Option<String>,
+    pub mission_name: Option<String>,
 }
 
 /// `<dir>/<slug>.jsonl` has its header at `<dir>/<slug>.capture.json`.
@@ -43,4 +46,17 @@ pub fn mapping_version_of(jsonl_path: &Path) -> Result<MappingVersion, IngestErr
             MappingVersion::for_droid_version(&seen)
         });
     Ok(version)
+}
+
+/// Like `mapping_version_of`, with the warning to show once when the header's Droid version has
+/// no mapping of its own (or the header names none).
+pub fn select_mapping_of(
+    jsonl_path: &Path,
+) -> Result<(MappingVersion, Option<Warning>), IngestError> {
+    let header = read_capture(jsonl_path)?;
+    Ok(select_version(
+        header
+            .as_ref()
+            .and_then(|header| header.droid_version.as_deref()),
+    ))
 }

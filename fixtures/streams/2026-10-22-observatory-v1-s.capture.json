@@ -2,7 +2,7 @@
   "schema": 1,
   "droid_version": "0.247.0",
   "captured_at": "2026-10-22T17:03:03Z",
-  "source_dir": "~/.factory/sessions/-Users-dct-code-EllyaOrg-projects-dalimaray-droid-observatory",
+  "source_dir": "~/.factory/sessions/-home-user-code-EllyaOrg-projects-dalimaray-droid-observatory",
   "mission_name": "observatory-v1",
   "mapping_version": "v1",
   "sessions": [
@@ -53,7 +53,7 @@
     },
     {
       "id": "59ee8736-e49e-4091-9ade-536696563973",
-      "role": "explorer",
+      "role": "worker",
       "file": "2026-10-22-observatory-v1-s.children/59ee8736-e49e-4091-9ade-536696563973.jsonl"
     },
     {
@@ -128,7 +128,7 @@
     },
     {
       "id": "e2e3d113-d82b-4548-8809-4ebd269d1629",
-      "role": "explorer",
+      "role": "worker",
       "file": "2026-10-22-observatory-v1-s.children/e2e3d113-d82b-4548-8809-4ebd269d1629.jsonl"
     },
     {
@@ -138,21 +138,22 @@
     }
   ],
   "captured_with": "droid --version",
-  "gitleaks": "clean 2026-10-23 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 25.72 MB scanned, no leaks found; run on the redacted files)",
+  "gitleaks": "clean 2026-10-23 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 25.74 MB scanned, no leaks found; run on the redacted files)",
   "reviewed_by": "factory-droid[bot]",
   "redaction": {
     "script": "scripts/redact-fixture.sh",
-    "applied_at": "2026-10-23T08:48:43Z",
+    "applied_at": "2026-10-23T09:20:23Z",
     "rules": [
       "email -> user@example.invalid",
-      "\/Users\/dct -> /home/user"
+      "\/Users\/dct -> /home/user",
+      "-\u0055sers-dct -> -home-user"
     ],
     "originals_dir": "~/.droid-observatory/originals/2026-10-22-observatory-v1-s/",
     "files": [
       {
         "path": "2026-10-22-observatory-v1-s.children/05820c7d-bd0e-4fe8-b869-cebb72727faa.jsonl",
         "original_sha256": "39dba297aa1f16a1cf2f489af8e34e60f0c42b3a454280ec7e750209326a7cb8",
-        "redacted_sha256": "cab35de7f7fec268245e9de7a959f1899131c6c7a6df87b388ab3940af533e74",
+        "redacted_sha256": "cf9880e7b01c3217ea008058e12b9418c0f4721200bd86dd3008343d133f70b6",
         "lines": 98
       },
       {
@@ -164,7 +165,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/0b1286d9-4bf0-41ff-a14a-67ca7852ddc4.jsonl",
         "original_sha256": "d417200900c2f363c07365935bb09bc17f8e6ca2678906287387438c5715abd2",
-        "redacted_sha256": "e45f5d8a48b86a4f15d39d6de17d7304b3db3457928dd3971eb0db43ad88839a",
+        "redacted_sha256": "e8be4dae52b1c8f0fe36990f6e6230da0a9344adf252f6ecb9d99402230c9bda",
         "lines": 230
       },
       {
@@ -176,7 +177,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/101b9e5d-3e26-424c-bb8d-6c5ad1d1e356.jsonl",
         "original_sha256": "857070cf8b56a8cf25fa56d55d6012038604dbb3e5a32862743f6d1f7e700eab",
-        "redacted_sha256": "57d7db1ffddded17857c35608791830e933d624d13207355c559e359a964e6dd",
+        "redacted_sha256": "a71d1b4c44d373cc4ec90d24f8d23ea5498aa55c6d08493d52026e9ad1801613",
         "lines": 85
       },
       {
@@ -200,7 +201,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/2abf7f4f-100f-4c9c-b12d-78675596ee0f.jsonl",
         "original_sha256": "59907103396d712cd43c759c1ef3c9d0bed62e2e7db388e3afde9ac44811b21f",
-        "redacted_sha256": "9fb6d5fcbbec73a7eeca08a7bcd72d5ff2cc8ccb072a87258c1b1f57f3499d2b",
+        "redacted_sha256": "2e0d2c473092f5edf0d3853e26d7676e0abc5eff4906c2eb4065c6597f5fd4c1",
         "lines": 74
       },
       {
@@ -212,7 +213,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/35fca0ab-5f7e-4924-9d1a-8bf250e785af.jsonl",
         "original_sha256": "3f15fde6bddd780eda75fa5f3fc89cb6b957ed13e010238546c7805f8bf95557",
-        "redacted_sha256": "2fa4f8d0fae222f46f295eae37656015d8ea378656662b7e0b5ae919c0eab462",
+        "redacted_sha256": "8ace9a93d44bf4d5320b14dc1b3e827e9ad70f3b9570bb6bc6f0524e64c0aa4b",
         "lines": 115
       },
       {
@@ -236,7 +237,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/44e19307-7533-41a1-8f66-1234a1386401.jsonl",
         "original_sha256": "e06ec8de1d850b2459ad749d58a90b6e167ff16a95f1c9cfe7e6fdd3ebfd9984",
-        "redacted_sha256": "b57a5054950f4191e6378832f317ded476a3d1b27a2157b08e804188e2336550",
+        "redacted_sha256": "13aec7db88c925b1d8b9cb584892e517d3dd59f9bd9c4b0513b5947fa7f0e738",
         "lines": 83
       },
       {
@@ -260,7 +261,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/73cd8242-3b2c-46ef-b15c-3d2cb7088061.jsonl",
         "original_sha256": "aad0b0ecfa1723c7bfa0950eb5e96fb8dea248b5c9005d8e07e9b833fce20cb2",
-        "redacted_sha256": "c139e95c59de70b956d7d52643339f3a8d1a305c4faee1ac14761684696bd58d",
+        "redacted_sha256": "3af4cecabe2e04166f864418d6ba0832047ad6b85df11fc5c9becbb7f9510167",
         "lines": 32
       },
       {
@@ -284,7 +285,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/7be541b9-cee5-4643-b588-ae6c1f31c74c.jsonl",
         "original_sha256": "c8300fb51464864dea74dc65591f6cfbdb085083a1d611df207c7a0435cfa6a8",
-        "redacted_sha256": "d2ce34bb52cf26cfdd978a7fed98e11ddb190eb6564762d941e990efaaf83b5e",
+        "redacted_sha256": "fb21999e80d153c18154f22e6e6ca85b098beb319efb425dfdabd78ba81f4de9",
         "lines": 61
       },
       {
@@ -296,7 +297,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/82ad1581-fe75-4436-ac9c-9bc1e20a789b.jsonl",
         "original_sha256": "1e1308e9091ac36a71fb5e56358ae750e167e6f155cbf78577ff5f3e76008bd5",
-        "redacted_sha256": "53ee836d3aee296c9eec89e6bdb00d6849f3e34820dd2e0503c58cdb6b65e1cd",
+        "redacted_sha256": "4eae8e01e6aaf2023e1242e06a604132c5a0db2b06ee1057db66473499185e1d",
         "lines": 221
       },
       {
@@ -332,7 +333,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/9d874ce8-7d72-4d9b-8c98-5f176e7ebd30.jsonl",
         "original_sha256": "28a2aa75beb165ee4e9e7f2312a0aae22b0e38e9583b8d7ab0003b576c3bde79",
-        "redacted_sha256": "dfbf63e768cfb73d24a10e03cf812cb55915bcea701c6d09194c66e4d301e43e",
+        "redacted_sha256": "25f5a79840151cb21fcfeacda5b2c49dc2120d5180cf55d47f19830e01ee7b2b",
         "lines": 126
       },
       {
@@ -368,7 +369,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/c911e77f-129c-45d7-bcb4-6a0136a28cb6.jsonl",
         "original_sha256": "8ff2af85091d5ac5b3a270e9711d374ca9125cb83ac80e481fe824979adb09fa",
-        "redacted_sha256": "461e482a8c925001d247634e09ee62c0dd397d59c212036f62fc3722e49dbd79",
+        "redacted_sha256": "0c95885f7a056d3181860e556a1695bf1d04b862b30f0d419c7cc81f46cc6ae6",
         "lines": 93
       },
       {
@@ -380,7 +381,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/ca58108e-3da3-4ed6-bf3e-0a7073d5833b.jsonl",
         "original_sha256": "75638ad233cf39a733d6245e9f2c34d701cf9505fdeb7adc674d43a80af4bce0",
-        "redacted_sha256": "9e1f9c20d85cc7996d11bb4ddedd1d3195d72ebf78568a7b24529215d59fb49e",
+        "redacted_sha256": "3b19c53aafcece1b07a71eb2da8c9105cead5d6b88f6f6d4232d935b3ed20dd5",
         "lines": 144
       },
       {
@@ -416,7 +417,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/d7960fc7-c0a0-4f02-b8cf-408b7a8d3b92.jsonl",
         "original_sha256": "505347611712c111eb65b7a3939c7f2c26da874fcc7b9fa07ffe03f4cbb83d61",
-        "redacted_sha256": "430d3db5d4fae535003372aa4747f41c523f13949c6dfdffbe5a775fcdbdc182",
+        "redacted_sha256": "8c40df04e87a7769462f5189f0bebca9e4d783666ba862e0b1a2eef8af4cc749",
         "lines": 231
       },
       {
@@ -440,7 +441,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.children/e5cb8077-02f7-4d30-acb4-349e8ee0abea.jsonl",
         "original_sha256": "9e9da826f322d68532a7513e668d47619d61da71e0281a84f0401973eb7aad7b",
-        "redacted_sha256": "4337fbd1c53fe4d804eae383b3b2d52db75808d2c9616814c9d372a2ddd0e7fd",
+        "redacted_sha256": "2cb9edd54574e9b64e2b7d04ee097a9bb7fea8b8beaa6ce7b937725648895bdb",
         "lines": 87
       },
       {
@@ -452,7 +453,7 @@
       {
         "path": "2026-10-22-observatory-v1-s.jsonl",
         "original_sha256": "48bd772f9f7d9a110c4a8948b727654cd3464a01a76027f516aa203bbe03e11b",
-        "redacted_sha256": "f23e0ca6b48689d441a167094bde04c97fe20a290aaccb49e76b164362011039",
+        "redacted_sha256": "e9746b0979596003373d584abb273a921c476ff6f43d2c47d76284d81f370b25",
         "lines": 2027
       },
       {

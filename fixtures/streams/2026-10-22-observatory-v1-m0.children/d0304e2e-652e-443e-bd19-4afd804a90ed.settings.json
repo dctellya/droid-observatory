@@ -1,0 +1,85 @@
+{
+  "assistantActiveTimeMs": 1191397,
+  "model": "claude-opus-5-5",
+  "reasoningEffort": "high",
+  "interactionMode": "auto",
+  "autonomyLevel": "high",
+  "autonomyMode": "auto-high",
+  "compactionThresholdCheckEnabled": true,
+  "allowSubagentsInScripts": false,
+  "tags": [
+    {
+      "name": "exec"
+    },
+    {
+      "name": "mission-worker"
+    },
+    {
+      "name": "mission-session",
+      "metadata": {
+        "role": "worker",
+        "missionId": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c"
+      }
+    }
+  ],
+  "toolExecutionMode": "script_only",
+  "toolExecutionModeModelId": "claude-opus-5-5",
+  "tokenUsage": {
+    "inputTokens": 855,
+    "outputTokens": 19420,
+    "cacheCreationTokens": 249370,
+    "cacheReadTokens": 924229,
+    "thinkingTokens": 3216,
+    "factoryCredits": 728369
+  },
+  "childInclusiveTokenUsageBySessionId": {
+    "676e401d-cf77-4397-be4e-cb5aca5e669b": {
+      "inputTokens": 14,
+      "outputTokens": 10704,
+      "cacheCreationTokens": 56952,
+      "cacheReadTokens": 245988,
+      "thinkingTokens": 371,
+      "factoryCredits": 219240
+    },
+    "cedd249c-c940-4d09-be06-bee90f98f76d": {
+      "inputTokens": 36,
+      "outputTokens": 15667,
+      "cacheCreationTokens": 62767,
+      "cacheReadTokens": 792962,
+      "thinkingTokens": 1629,
+      "factoryCredits": 314372
+    },
+    "49847d4f-b024-4858-94cf-ff0e92e2e439": {
+      "inputTokens": 109901,
+      "outputTokens": 6499,
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 227960,
+      "thinkingTokens": 0,
+      "factoryCredits": 198239
+    },
+    "cf2e2456-b1e6-48e5-9a20-dea6ff22ffbe": {
+      "inputTokens": 28,
+      "outputTokens": 17218,
+      "cacheCreationTokens": 57174,
+      "cacheReadTokens": 587123,
+      "thinkingTokens": 2112,
+      "factoryCredits": 299113
+    }
+  },
+  "inclusiveTokenUsage": {
+    "inputTokens": 110834,
+    "outputTokens": 69508,
+    "cacheCreationTokens": 426263,
+    "cacheReadTokens": 2778262,
+    "thinkingTokens": 7328,
+    "factoryCredits": 1759333
+  },
+  "providerLock": "anthropic",
+  "providerLockTimestamp": "2026-10-22T17:45:31.105Z",
+  "lastCallTokenUsage": {
+    "inputTokens": 1660,
+    "outputTokens": 1675,
+    "cacheReadTokens": 98769
+  },
+  "apiProviderLock": "bedrock_anthropic"
+}

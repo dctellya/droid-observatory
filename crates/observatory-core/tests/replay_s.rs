@@ -1,10 +1,11 @@
-//! The skeleton mapper over the S capture: every raw line becomes one `Unknown` event.
+//! The mapper over the S capture: every line is read, every event points at its own line, and
+//! times, roles and lanes follow the session.
 
 use std::path::{Path, PathBuf};
 
 use observatory_core::config::IngestConfig;
-use observatory_core::ingest::{JsonlSource, RawRecord, Source, mapping_version_of};
-use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
+use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, mapping_version_of};
+use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta, TreeMapper};
 use observatory_core::model::{Event, EventKind, Lane, Role, SessionId, SourcePtr};
 
 const SLUG: &str = "2026-10-22-observatory-v1-s";
@@ -32,15 +33,16 @@ fn replay(path: &Path) -> (Vec<RawRecord>, Vec<Event>) {
     let version = mapping_version_of(path).expect("capture header is readable");
     let mut mapper = Mapper::new(SessionMeta::root(source.root_session_id().clone()), version);
     let records = read_all(&mut source);
-    let events = records
+    let mut events: Vec<Event> = records
         .iter()
         .flat_map(|record| mapper.map(record))
         .collect();
+    events.extend(mapper.finish());
     (records, events)
 }
 
 #[test]
-fn replay_counts_every_line_of_a_capture() {
+fn replay_reads_every_line_of_a_capture() {
     let path = fixture("jsonl");
     let lines = std::fs::read(&path)
         .unwrap()
@@ -50,14 +52,8 @@ fn replay_counts_every_line_of_a_capture() {
     let (records, events) = replay(&path);
 
     assert_eq!(records.len(), lines);
-    assert_eq!(events.len(), lines);
     assert!(lines > 0);
-    assert!(
-        events
-            .iter()
-            .all(|event| matches!(event.kind, EventKind::Unknown { .. })),
-        "the S mapper knows no kind but Unknown"
-    );
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -79,19 +75,17 @@ fn every_replayed_event_points_at_its_own_line() {
         let start = *byte_offset as usize;
         let line = &file[start..start + *byte_len as usize];
         let raw: serde_json::Value = serde_json::from_slice(line).expect("fixture lines are JSON");
-        let EventKind::Unknown { raw_type } = &event.kind else {
-            panic!("expected Unknown");
-        };
-        assert_eq!(raw["type"].as_str(), Some(raw_type.as_str()));
-        assert_eq!(
-            event.id.0,
-            format!("{}:{start}:0", event.session_id.as_ref().unwrap())
-        );
+        if let EventKind::Unknown { raw_type } = &event.kind {
+            assert_eq!(raw["type"].as_str(), Some(raw_type.as_str()));
+        }
+        let prefix = format!("{}:{start}:", event.session_id.as_ref().unwrap());
+        let sub = event.id.0.strip_prefix(&prefix).expect("id names its line");
+        assert!(sub.parse::<u32>().is_ok(), "{}", event.id);
     }
 }
 
 #[test]
-fn replayed_events_carry_the_root_session_the_orchestrator_lane_and_the_header_version() {
+fn replayed_events_carry_the_root_session_the_orchestrator_role_and_the_header_version() {
     let (_, events) = replay(&fixture("jsonl"));
 
     let first = events.first().unwrap();
@@ -100,7 +94,12 @@ fn replayed_events_carry_the_root_session_the_orchestrator_lane_and_the_header_v
         Some(SessionId("e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c".to_owned()))
     );
     assert_eq!(first.role, Role::Orchestrator);
-    assert!(events.iter().all(|e| e.lane == Lane::Orchestrator));
+    assert!(events.iter().all(|e| e.role == Role::Orchestrator));
+    assert!(
+        events
+            .iter()
+            .all(|e| e.lane == e.kind.lane().unwrap_or(Lane::Orchestrator))
+    );
     assert!(
         events
             .iter()
@@ -158,4 +157,45 @@ fn the_mapping_version_comes_from_the_capture_header_else_latest() {
     )
     .unwrap();
     assert_eq!(mapping_version_of(&bare).unwrap(), MappingVersion::LATEST);
+}
+
+fn lines_of(path: &Path) -> usize {
+    std::fs::read(path)
+        .unwrap()
+        .split_inclusive(|b| *b == b'\n')
+        .count()
+}
+
+#[test]
+fn a_tree_replay_maps_every_session_under_its_own_role_and_lane() {
+    let path = fixture("jsonl");
+    let cfg = IngestConfig::default();
+    let tree = SessionTree::discover(&path, &cfg).expect("the S capture opens");
+    let mut source = JsonlSource::open_tree(&tree, &cfg).expect("every session file opens");
+    let mut mapper = TreeMapper::new(&tree, mapping_version_of(&path).unwrap());
+
+    let records = read_all(&mut source);
+    let mut events: Vec<Event> = records
+        .iter()
+        .flat_map(|record| mapper.map(record))
+        .collect();
+    events.extend(mapper.finish());
+
+    let expected: usize = tree.sessions().iter().map(|s| lines_of(&s.path)).sum();
+    assert_eq!(records.len(), expected);
+    assert!(
+        expected > lines_of(&path),
+        "the children add lines to the root file"
+    );
+    for event in &events {
+        let session = tree.get(event.session_id.as_ref().unwrap()).unwrap();
+        assert_eq!(event.role, session.role);
+        assert_eq!(
+            event.lane,
+            event.kind.lane().unwrap_or(Lane::for_role(session.role))
+        );
+        assert_eq!(event.mission_id, *tree.mission_id());
+    }
+    assert!(events.iter().any(|e| e.role == Role::Worker));
+    assert!(events.iter().all(|e| e.role != Role::Unresolved));
 }

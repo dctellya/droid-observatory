@@ -3,7 +3,7 @@
 //! Compiled to wasm for the UI (architecture I9), so nothing here depends on the platform
 //! beyond `std::fs` and `std::env`, which only run when the shell asks for a file.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -165,6 +165,25 @@ impl Default for StoreConfig {
     }
 }
 
+impl StoreConfig {
+    /// `path` with a leading `~/` replaced by `$HOME`.
+    pub fn resolved_path(&self) -> PathBuf {
+        expand_home(&self.path, std::env::var_os("HOME").as_deref())
+    }
+}
+
+/// Replaces a leading `~` or `~/` with `home`. Any other path, and `~` without a known home,
+/// is returned as written.
+pub fn expand_home(path: &str, home: Option<&OsStr>) -> PathBuf {
+    match (path.strip_prefix('~'), home) {
+        (Some(""), Some(home)) => PathBuf::from(home),
+        (Some(rest), Some(home)) if rest.starts_with('/') => {
+            Path::new(home).join(rest.trim_start_matches('/'))
+        }
+        _ => PathBuf::from(path),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct GithubConfig {
@@ -294,28 +313,44 @@ impl Config {
     /// `$OBSERVATORY_CONFIG`, else `~/.droid-observatory/config.toml`; a missing default file
     /// means defaults.
     pub fn load(path: Option<&Path>) -> Result<Self, ConfigError> {
-        Self::load_with(path, std::env::var_os(CONFIG_ENV), std::env::var_os("HOME"))
+        Self::load_with_origin(path).map(|(config, _)| config)
     }
 
+    /// Like `load`, and the file the settings were read from: `None` when no config file
+    /// was in effect and the defaults were used.
+    pub fn load_with_origin(path: Option<&Path>) -> Result<(Self, Option<PathBuf>), ConfigError> {
+        Self::locate(path, std::env::var_os(CONFIG_ENV), std::env::var_os("HOME"))
+    }
+
+    #[cfg(test)]
     fn load_with(
         explicit: Option<&Path>,
         env_override: Option<OsString>,
         home: Option<OsString>,
     ) -> Result<Self, ConfigError> {
+        Self::locate(explicit, env_override, home).map(|(config, _)| config)
+    }
+
+    fn locate(
+        explicit: Option<&Path>,
+        env_override: Option<OsString>,
+        home: Option<OsString>,
+    ) -> Result<(Self, Option<PathBuf>), ConfigError> {
         if let Some(path) = explicit {
-            return Self::read_file(path);
+            return Self::read_file(path).map(|config| (config, Some(path.to_owned())));
         }
         let resolved = match (env_override, home) {
             (Some(path), _) if !path.is_empty() => PathBuf::from(path),
             (_, Some(home)) => Path::new(&home).join(DEFAULT_RELATIVE_PATH),
-            _ => return Ok(Self::default()),
+            _ => return Ok((Self::default(), None)),
         };
         match Self::read_file(&resolved) {
+            Ok(config) => Ok((config, Some(resolved))),
             Err(ConfigError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 tracing::debug!(path = %resolved.display(), "no config file, using defaults");
-                Ok(Self::default())
+                Ok((Self::default(), None))
             }
-            other => other,
+            Err(err) => Err(err),
         }
     }
 
@@ -431,6 +466,36 @@ mod tests {
             }
             covered = line.starts_with('#') || (is_key && covered);
         }
+    }
+
+    #[test]
+    fn home_is_expanded_only_at_the_start_of_a_store_path() {
+        let home = OsStr::new("/home/someone");
+        let expand = |path| expand_home(path, Some(home));
+        assert_eq!(
+            expand("~/.droid-observatory/observatory.sqlite"),
+            Path::new("/home/someone/.droid-observatory/observatory.sqlite")
+        );
+        assert_eq!(expand("~"), Path::new("/home/someone"));
+        assert_eq!(expand("/tmp/~/x.sqlite"), Path::new("/tmp/~/x.sqlite"));
+        assert_eq!(expand("~other/x"), Path::new("~other/x"));
+        assert_eq!(expand_home("~/x", None), Path::new("~/x"));
+    }
+
+    #[test]
+    fn load_reports_the_file_the_settings_came_from() {
+        let dir = scratch_dir("origin");
+        let file = dir.join("config.toml");
+        std::fs::write(&file, "[store]\npath = \"/tmp/x.sqlite\"\n").unwrap();
+
+        let (config, origin) = Config::locate(Some(&file), None, None).unwrap();
+        assert_eq!(config.store.path, "/tmp/x.sqlite");
+        assert_eq!(origin.as_deref(), Some(file.as_path()));
+
+        let empty_home = Some(dir.join("nobody").into_os_string());
+        let (config, origin) = Config::locate(None, None, empty_home).unwrap();
+        assert_eq!(config, Config::default());
+        assert_eq!(origin, None);
     }
 
     #[test]

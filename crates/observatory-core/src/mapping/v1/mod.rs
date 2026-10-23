@@ -1,48 +1,548 @@
-//! Mapping rules for Droid 0.247 session files. The skeleton knows none of them yet: every
-//! record becomes `Unknown`, so the unknown count equals the line count.
+//! Mapping rules for Droid 0.247 session files. The rule table is in `kinds.rs`.
+
+mod findings;
+mod ids;
+mod kinds;
+mod roles;
+
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use serde_json::Value;
 
-use super::MapContext;
+pub(crate) use ids::proposal_milestones;
+pub use roles::RoleEvidence;
+pub(in crate::mapping) use roles::resolve_role;
+
+use super::{MappingVersion, SessionMeta};
 use crate::ingest::RawRecord;
-use crate::model::{Event, EventId, EventKind, Lane, SourcePtr, Timestamp};
+use crate::model::{
+    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, ModelId, Role, SourcePtr, Timestamp,
+};
+use kinds::{Outcome, Tool};
 
 /// `raw_type` of a line that is not a JSON object with a string `type`.
 const UNPARSEABLE: &str = "<unparseable>";
+/// `userMessageSource` of text the person typed in the root session.
+const TYPED_BY_HUMAN: &str = "cli_tui";
 
-pub(super) fn map_record(record: &RawRecord, ctx: &MapContext<'_>) -> Vec<Event> {
+/// What the rules remember of one session between its lines.
+pub(super) struct State {
+    first_at: Option<Timestamp>,
+    last_at: Option<Timestamp>,
+    /// Time of the first timestamped line since the last `agent_turn_outcome`.
+    turn_at: Option<Timestamp>,
+    /// `modelId` of the last assistant message.
+    model: Option<ModelId>,
+    todos: Option<Value>,
+    calls: HashMap<String, Call>,
+    /// Events of lines without a time (`session_start`), waiting for the next timestamped line.
+    pending: Vec<Event>,
+    feature: Option<FeatureId>,
+    milestones: Vec<MilestoneId>,
+    defined_features: HashSet<String>,
+    task_started: bool,
+    spawned: bool,
+    last_ptr: Option<SourcePtr>,
+    /// Events the last line produced, so the end-of-file events continue its `sub` numbering.
+    last_subs: u32,
+}
+
+#[derive(Clone, Copy)]
+struct Call {
+    tool: CallKind,
+    at: Timestamp,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CallKind {
+    AskUser,
+    Gate,
+}
+
+impl State {
+    pub(super) fn new(session: &SessionMeta) -> Self {
+        Self {
+            first_at: None,
+            last_at: None,
+            turn_at: None,
+            model: None,
+            todos: None,
+            calls: HashMap::new(),
+            pending: Vec::new(),
+            feature: None,
+            milestones: session.milestones.clone(),
+            defined_features: HashSet::new(),
+            task_started: false,
+            spawned: false,
+            last_ptr: None,
+            last_subs: 0,
+        }
+    }
+
+    /// The time a line without one gets when it is the first line of its session.
+    pub(super) fn set_last_at(&mut self, at: Timestamp) {
+        self.last_at = Some(at);
+    }
+
+    fn milestone(&self) -> Option<MilestoneId> {
+        let feature = self.feature.as_ref()?;
+        ids::milestone_of(&feature.0, &self.milestones)
+    }
+
+    fn is_child(&self, session: &SessionMeta) -> bool {
+        self.spawned || session.role != Role::Orchestrator
+    }
+}
+
+/// The events of one line under construction.
+struct Rec<'a> {
+    session: &'a SessionMeta,
+    version: MappingVersion,
+    ptr: &'a SourcePtr,
+    offset: u64,
+    sub_base: u32,
+    at: Timestamp,
+    model: Option<ModelId>,
+    feature: Option<FeatureId>,
+    milestone: Option<MilestoneId>,
+    events: Vec<Event>,
+}
+
+impl Rec<'_> {
+    fn push(&mut self, kind: EventKind) -> &mut Event {
+        let sub = self.sub_base + u32::try_from(self.events.len()).unwrap_or(u32::MAX);
+        let lane = kind
+            .lane()
+            .unwrap_or_else(|| Lane::for_role(self.session.role));
+        self.events.push(Event {
+            id: EventId(format!("{}:{}:{sub}", self.session.id, self.offset)),
+            mission_id: self.session.mission_id.clone(),
+            milestone_id: self.milestone.clone(),
+            feature_id: self.feature.clone(),
+            lane,
+            kind,
+            role: self.session.role,
+            session_id: Some(self.session.id.clone()),
+            model: self.model.clone(),
+            at: self.at,
+            duration: None,
+            usage: None,
+            source: self.ptr.clone(),
+            mapping_version: self.version,
+        });
+        self.events.last_mut().expect("an event was just pushed")
+    }
+
+    fn unknown(&mut self, raw_type: impl Into<String>) {
+        self.push(EventKind::Unknown {
+            raw_type: raw_type.into(),
+        });
+    }
+
+    /// An event that names its own feature (a `Task` call) rather than the session's.
+    fn push_for(&mut self, kind: EventKind, feature: Option<&str>, milestone: Option<MilestoneId>) {
+        let event = self.push(kind);
+        event.feature_id = feature.map(|id| FeatureId(id.to_owned()));
+        event.milestone_id = milestone;
+    }
+}
+
+pub(super) fn map_record(
+    record: &RawRecord,
+    session: &SessionMeta,
+    version: MappingVersion,
+    state: &mut State,
+) -> Vec<Event> {
     let line = serde_json::from_slice::<Value>(&record.bytes).ok();
-    let raw_type = line
-        .as_ref()
-        .and_then(|line| line.get("type"))
-        .and_then(Value::as_str)
-        .unwrap_or(UNPARSEABLE);
-    let at = line
+    let stamp = line
         .as_ref()
         .and_then(|line| line.get("timestamp"))
         .and_then(Value::as_str)
-        .and_then(|text| Timestamp::parse(text).ok())
-        .unwrap_or(ctx.fallback_at);
-    let session = ctx.session;
-
-    vec![Event {
-        id: EventId(format!("{}:{}:0", session.id, byte_offset(&record.ptr))),
-        mission_id: session.mission_id.clone(),
-        milestone_id: None,
-        feature_id: None,
-        lane: Lane::for_role(session.role),
-        kind: EventKind::Unknown {
-            raw_type: raw_type.to_owned(),
-        },
-        role: session.role,
-        session_id: Some(session.id.clone()),
-        model: session.model.clone(),
+        .and_then(|text| Timestamp::parse(text).ok());
+    if let Some(stamp) = stamp {
+        state.first_at.get_or_insert(stamp);
+        state.turn_at.get_or_insert(stamp);
+        state.last_at = Some(stamp);
+    }
+    let raw_type = line
+        .as_ref()
+        .and_then(|line| line.get("type"))
+        .and_then(Value::as_str);
+    // A line without a time of its own takes the time of the line before it. `session_start`,
+    // the first line, has none before it: it waits for the next timestamped line instead.
+    let waits = stamp.is_none() && raw_type == Some("session_start");
+    let at = state
+        .last_at
+        .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));
+    let mut rec = Rec {
+        session,
+        version,
+        ptr: &record.ptr,
+        offset: byte_offset(&record.ptr),
+        sub_base: 0,
         at,
-        duration: None,
-        usage: None,
-        source: record.ptr.clone(),
-        mapping_version: ctx.version,
-    }]
+        model: state.model.clone().or_else(|| session.model.clone()),
+        feature: state.feature.clone(),
+        milestone: state.milestone(),
+        events: Vec::new(),
+    };
+
+    match (line.as_ref(), raw_type) {
+        (Some(line), Some("session_start")) => session_start(&mut rec, state, line),
+        (Some(line), Some("message")) => message(&mut rec, state, line),
+        (Some(line), Some("todo_state")) => {
+            if state.todos.as_ref() != line.get("todos") {
+                state.todos = line.get("todos").cloned();
+                rec.push(EventKind::PlanRevised);
+            }
+        }
+        (Some(_), Some("compaction_state")) => {
+            rec.push(EventKind::ContextCompacted);
+        }
+        (Some(line), Some("agent_turn_outcome")) => outcome(&mut rec, state, line),
+        (_, other) => rec.unknown(other.unwrap_or(UNPARSEABLE)),
+    }
+
+    state.last_ptr = Some(record.ptr.clone());
+    state.last_subs = u32::try_from(rec.events.len()).unwrap_or(u32::MAX);
+    let mut events = rec.events;
+    if waits {
+        state.pending.append(&mut events);
+        return events;
+    }
+    match stamp {
+        Some(stamp) if !state.pending.is_empty() => {
+            let mut released = release_pending(state, stamp);
+            released.append(&mut events);
+            released
+        }
+        _ => events,
+    }
+}
+
+/// The events of the lines that had no time, now timed by the line that followed them.
+fn release_pending(state: &mut State, at: Timestamp) -> Vec<Event> {
+    let (feature, milestone) = (state.feature.clone(), state.milestone());
+    let mut events = std::mem::take(&mut state.pending);
+    for event in &mut events {
+        event.at = at;
+        event.feature_id = feature.clone();
+        event.milestone_id = milestone.clone();
+    }
+    events
+}
+
+/// Events still waiting for a time, timed by the last time seen (the epoch when none).
+pub(super) fn flush(state: &mut State) -> Vec<Event> {
+    let at = state
+        .last_at
+        .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));
+    release_pending(state, at)
+}
+
+/// The events that belong to the end of a session file: lines still waiting for a time, the
+/// child's `SubagentFinished` and the sidecar usage. They point at the last line.
+pub(super) fn finish(
+    session: &SessionMeta,
+    version: MappingVersion,
+    state: &mut State,
+) -> Vec<Event> {
+    let mut events = flush(state);
+    let at = state
+        .last_at
+        .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));
+    let Some(ptr) = state.last_ptr.clone() else {
+        return events;
+    };
+    let mut rec = Rec {
+        session,
+        version,
+        ptr: &ptr,
+        offset: byte_offset(&ptr),
+        sub_base: state.last_subs,
+        at,
+        model: session.model.clone().or_else(|| state.model.clone()),
+        feature: state.feature.clone(),
+        milestone: state.milestone(),
+        events: Vec::new(),
+    };
+    if let Some(usage) = session.usage {
+        rec.push(EventKind::UsageReported).usage = Some(usage);
+    }
+    if state.is_child(session) {
+        let finished = rec.push(EventKind::SubagentFinished);
+        finished.duration = state.first_at.and_then(|first| between(first, at));
+    }
+    state.last_subs += u32::try_from(rec.events.len()).unwrap_or(u32::MAX);
+    events.append(&mut rec.events);
+    events
+}
+
+fn session_start(rec: &mut Rec<'_>, state: &mut State, line: &Value) {
+    if line.get("callingSessionId").is_some_and(Value::is_string) {
+        state.spawned = true;
+        rec.push(EventKind::SubagentSpawned);
+    } else {
+        rec.push(EventKind::IntentCreated);
+    }
+}
+
+fn message(rec: &mut Rec<'_>, state: &mut State, line: &Value) {
+    let Some(message) = line.get("message").filter(|message| message.is_object()) else {
+        return rec.unknown("message");
+    };
+    let Some(parts) = parts(&message["content"]) else {
+        return rec.unknown("message");
+    };
+    let role = message["role"].as_str();
+    if !matches!(role, Some("user" | "assistant")) {
+        return rec.unknown("message");
+    }
+    if role == Some("assistant") {
+        model_of(rec, state, message);
+    }
+    for part in &parts {
+        match part {
+            Part::Text(text) if role == Some("assistant") => validator_text(rec, text),
+            Part::Text(text) => user_text(rec, state, message, text),
+            Part::Thinking => {}
+            Part::ToolUse { id, name, input } => tool_use(rec, state, id, name, input),
+            Part::ToolResult {
+                id,
+                content,
+                is_error,
+            } => tool_result(rec, state, id, content, *is_error),
+            Part::Other(kind) => rec.unknown(format!("message/{kind}")),
+        }
+    }
+}
+
+fn model_of(rec: &mut Rec<'_>, state: &mut State, message: &Value) {
+    let Some(id) = message["modelId"].as_str() else {
+        return;
+    };
+    let current = ModelId(id.to_owned());
+    let switched = state
+        .model
+        .as_ref()
+        .is_some_and(|before| *before != current);
+    state.model = Some(current.clone());
+    rec.model = Some(current);
+    if switched {
+        rec.push(EventKind::ModelChanged);
+    }
+}
+
+fn validator_text(rec: &mut Rec<'_>, text: &str) {
+    let kinds = match rec.session.role {
+        Role::ScrutinyValidator => findings::scrutiny(text),
+        Role::UserTestingValidator => findings::user_testing(text),
+        _ => Vec::new(),
+    };
+    for kind in kinds {
+        rec.push(kind);
+    }
+}
+
+fn user_text(rec: &mut Rec<'_>, state: &mut State, message: &Value, text: &str) {
+    if !state.is_child(rec.session) {
+        if message["userMessageSource"] == TYPED_BY_HUMAN {
+            rec.push(EventKind::IntentAmended);
+        }
+        return;
+    }
+    if state.task_started {
+        return;
+    }
+    if let Some(feature) = ids::assignment(text, &state.milestones) {
+        state.task_started = true;
+        state.feature = feature.map(FeatureId);
+        rec.feature = state.feature.clone();
+        rec.milestone = state.milestone();
+        rec.push(EventKind::TaskStarted);
+    }
+}
+
+fn tool_use(rec: &mut Rec<'_>, state: &mut State, id: &str, name: &str, input: &Value) {
+    let Some(tool) = kinds::tool(name) else {
+        return rec.unknown(format!("message/tool_use/{name}"));
+    };
+    match tool {
+        Tool::Quiet => {}
+        Tool::Task => {
+            let description = input["description"].as_str().unwrap_or_default();
+            let feature = ids::feature_in(description, &state.milestones);
+            let milestone = feature
+                .as_deref()
+                .and_then(|feature| ids::milestone_of(feature, &state.milestones));
+            rec.push_for(
+                EventKind::TaskAssigned,
+                feature.as_deref(),
+                milestone.clone(),
+            );
+            if let Some(feature) = feature.filter(|f| state.defined_features.insert(f.clone())) {
+                rec.push_for(EventKind::FeatureDefined, Some(&feature), milestone);
+            }
+        }
+        Tool::ProposeMission => {
+            rec.push_for(EventKind::PlanCreated, None, None);
+            let proposal = input["proposal"].as_str().unwrap_or_default();
+            for milestone in ids::proposal_milestones(proposal) {
+                let milestone = MilestoneId(milestone);
+                if !state.milestones.contains(&milestone) {
+                    state.milestones.push(milestone.clone());
+                }
+                rec.push_for(EventKind::MilestoneDefined, None, Some(milestone));
+            }
+        }
+        Tool::AskUser => {
+            state.calls.insert(
+                id.to_owned(),
+                Call {
+                    tool: CallKind::AskUser,
+                    at: rec.at,
+                },
+            );
+            rec.push(EventKind::QuestionAsked);
+        }
+        Tool::Command => {
+            let kinds = kinds::classify_command(input["command"].as_str().unwrap_or_default());
+            if kinds.commit {
+                rec.push(EventKind::CommitCreated);
+            }
+            if kinds.tests {
+                rec.push(EventKind::TestsRun);
+            }
+            if kinds.gate {
+                state.calls.insert(
+                    id.to_owned(),
+                    Call {
+                        tool: CallKind::Gate,
+                        at: rec.at,
+                    },
+                );
+                rec.push(EventKind::GateCommandRun);
+            }
+        }
+        Tool::Edit => {
+            rec.push(EventKind::FileTouched);
+        }
+    }
+}
+
+fn tool_result(rec: &mut Rec<'_>, state: &mut State, id: &str, content: &Value, is_error: bool) {
+    let call = state.calls.remove(id);
+    let elapsed = call.and_then(|call| between(call.at, rec.at));
+    let text = flatten(content);
+    let gate_failed = call.map(|call| call.tool) == Some(CallKind::Gate)
+        && (is_error || kinds::exit_code(&text).is_some_and(|code| code != 0));
+    match (is_error, call.map(|call| call.tool)) {
+        (true, tool) => {
+            let kind = if kinds::names_a_hook(&text) {
+                EventKind::HookBlocked
+            } else if tool == Some(CallKind::Gate) {
+                EventKind::GateCommandFailed
+            } else {
+                EventKind::ToolError
+            };
+            rec.push(kind).duration = elapsed;
+        }
+        (false, Some(CallKind::AskUser)) => {
+            rec.push(EventKind::IntentAnswered);
+        }
+        (false, Some(CallKind::Gate)) if gate_failed => {
+            rec.push(EventKind::GateCommandFailed).duration = elapsed;
+        }
+        (false, Some(CallKind::Gate)) => {
+            rec.push(EventKind::GateCommandPassed).duration = elapsed;
+        }
+        (false, None) => {}
+    }
+}
+
+fn outcome(rec: &mut Rec<'_>, state: &mut State, line: &Value) {
+    let Some(reason) = line["reason"].as_str() else {
+        return rec.unknown("agent_turn_outcome");
+    };
+    let Some(outcome) = kinds::outcome(reason) else {
+        return rec.unknown(format!("agent_turn_outcome/{reason}"));
+    };
+    let elapsed = state.turn_at.and_then(|start| between(start, rec.at));
+    state.turn_at = None;
+    let kind = match (state.is_child(rec.session), outcome) {
+        (true, Outcome::Completed) => Some(EventKind::TaskDone),
+        (true, Outcome::Cancelled) => Some(EventKind::TaskSkipped),
+        (true, Outcome::Failed) => Some(EventKind::ToolError),
+        (false, Outcome::Completed) => None,
+        (false, Outcome::Cancelled) => Some(EventKind::MissionPaused),
+        (false, Outcome::Failed) => Some(EventKind::EscalationRaised),
+    };
+    if let Some(kind) = kind {
+        rec.push(kind).duration = elapsed;
+    }
+}
+
+enum Part<'a> {
+    Text(&'a str),
+    Thinking,
+    ToolUse {
+        id: &'a str,
+        name: &'a str,
+        input: &'a Value,
+    },
+    ToolResult {
+        id: &'a str,
+        content: &'a Value,
+        is_error: bool,
+    },
+    /// A content part type the rules do not know.
+    Other(&'a str),
+}
+
+/// `None` when `content` is neither a string nor a list.
+fn parts(content: &Value) -> Option<Vec<Part<'_>>> {
+    if let Some(text) = content.as_str() {
+        return Some(vec![Part::Text(text)]);
+    }
+    let list = content.as_array()?;
+    Some(
+        list.iter()
+            .map(|part| match part["type"].as_str() {
+                Some("text") => Part::Text(part["text"].as_str().unwrap_or_default()),
+                Some("thinking") => Part::Thinking,
+                Some("tool_use") => Part::ToolUse {
+                    id: part["id"].as_str().unwrap_or_default(),
+                    name: part["name"].as_str().unwrap_or_default(),
+                    input: &part["input"],
+                },
+                Some("tool_result") => Part::ToolResult {
+                    id: part["tool_use_id"].as_str().unwrap_or_default(),
+                    content: &part["content"],
+                    is_error: part["is_error"].as_bool().unwrap_or(false),
+                },
+                Some(other) => Part::Other(other),
+                None => Part::Other("?"),
+            })
+            .collect(),
+    )
+}
+
+/// The text of a tool result, which is a string or a list of `{type: text, text}` parts.
+fn flatten(content: &Value) -> String {
+    match content {
+        Value::String(text) => text.clone(),
+        Value::Array(list) => list
+            .iter()
+            .filter_map(|part| part["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+fn between(from: Timestamp, to: Timestamp) -> Option<Duration> {
+    Duration::try_from(to.0 - from.0).ok()
 }
 
 fn byte_offset(ptr: &SourcePtr) -> u64 {

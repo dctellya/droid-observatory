@@ -16,4 +16,5 @@ observatory-core.workspace = true
 clap.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true

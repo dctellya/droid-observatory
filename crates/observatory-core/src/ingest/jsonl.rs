@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use super::{IngestError, RawRecord, Source, SourceKind};
+use super::{IngestError, RawRecord, SessionTree, Source, SourceKind};
 use crate::config::IngestConfig;
 use crate::model::{SessionId, SourcePtr};
 
@@ -106,6 +106,15 @@ impl JsonlSource {
         Ok(source)
     }
 
+    /// Opens the root of a discovered tree, then every child in it.
+    pub fn open_tree(tree: &SessionTree, cfg: &IngestConfig) -> Result<Self, IngestError> {
+        let mut source = Self::open(&tree.root().path, cfg)?;
+        for child in &tree.sessions()[1..] {
+            source.add_file(&child.path)?;
+        }
+        Ok(source)
+    }
+
     /// Starts reading another file (a child or a newly discovered session) from its start.
     pub fn add_file(&mut self, path: &Path) -> Result<SessionId, IngestError> {
         let session_id = session_id_of(path, self.chunk_bytes)?;
@@ -123,14 +132,19 @@ impl JsonlSource {
         &self.files[0].session_id
     }
 
-    /// Re-reads the line a pointer names.
+    /// Re-reads the line a pointer names. A moved, shortened or unreadable file is
+    /// `PointerLost`, which names the pointer.
     pub fn read_at(path: &Path, byte_offset: u64, byte_len: u32) -> Result<Vec<u8>, IngestError> {
-        let mut file = File::open(path).map_err(|source| io_error(path, source))?;
-        file.seek(SeekFrom::Start(byte_offset))
-            .map_err(|source| io_error(path, source))?;
+        let lost = |source: std::io::Error| IngestError::PointerLost {
+            path: path.to_owned(),
+            byte_offset,
+            byte_len,
+            source,
+        };
+        let mut file = File::open(path).map_err(lost)?;
+        file.seek(SeekFrom::Start(byte_offset)).map_err(lost)?;
         let mut line = vec![0; byte_len as usize];
-        file.read_exact(&mut line)
-            .map_err(|source| io_error(path, source))?;
+        file.read_exact(&mut line).map_err(lost)?;
         Ok(line)
     }
 
