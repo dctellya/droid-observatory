@@ -20,7 +20,7 @@ MAX_FILE_KB ?= 200
 COVERAGE_MIN ?= 80
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-todos check-decisions-index decisions-index check-secrets \
+        check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
 
 help: ## List targets
@@ -34,7 +34,7 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets fmt-check lint test deny machete replay-fixtures ## All light checks (= mission-branch CI)
+check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures ## All light checks (= mission-branch CI)
 
 check-docs: ## Lint markdown
 	@markdownlint-cli2 "**/*.md"
@@ -61,6 +61,9 @@ check-decisions-index: ## Fail if the decisions index is stale
 
 check-secrets: ## Scan the repository for committed secrets
 	@gitleaks git --no-banner --redact .
+
+redact-check: ## Fixtures are redacted: a second redaction pass changes nothing
+	@sh scripts/check-redaction-idempotent.sh
 
 # --- Rust (active once Cargo.toml exists) ---
 
