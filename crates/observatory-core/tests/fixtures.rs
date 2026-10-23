@@ -138,6 +138,59 @@ fn m0_capture_header_lists_all_four_roles() {
     );
 }
 
+#[test]
+fn capture_headers_use_four_roles_and_a_redacted_source_dir() {
+    const ROLES: [&str; 4] = [
+        "orchestrator",
+        "worker",
+        "scrutiny_validator",
+        "user_testing_validator",
+    ];
+    let mut headers = 0;
+    for entry in std::fs::read_dir(streams_dir()).expect("fixtures/streams reads") {
+        let path = entry.expect("directory entry reads").path();
+        let is_header = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".capture.json"));
+        if !is_header {
+            continue;
+        }
+        headers += 1;
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} reads: {e}", path.display()));
+        let header: Value = serde_json::from_str(&text).expect("capture header is valid JSON");
+
+        let source_dir = header["source_dir"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{} has a source_dir string", path.display()));
+        assert!(
+            !source_dir.contains("-Users-dct"),
+            "{} source_dir {source_dir:?} holds the unredacted home directory",
+            path.display()
+        );
+        assert!(
+            source_dir.starts_with("~/.factory/sessions/-home-user-"),
+            "{} source_dir {source_dir:?} must be the redacted session directory",
+            path.display()
+        );
+
+        for session in header["sessions"].as_array().expect("sessions is an array") {
+            let role = session["role"].as_str().expect("role is a string");
+            assert!(
+                ROLES.contains(&role),
+                "{} session {} has role {role:?}, not one of the four Role values",
+                path.display(),
+                session["id"]
+            );
+        }
+    }
+    assert!(
+        headers >= 2,
+        "found {headers} capture headers, expected the S and M0 headers"
+    );
+}
+
 fn files_under(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for entry in std::fs::read_dir(dir).expect("directory reads") {
