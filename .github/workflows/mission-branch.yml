@@ -156,8 +156,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # Reported, not enforced, in S (SPEC section 6); M0 raises it to 80.
-      COVERAGE_MIN: "0"
+      # Enforced from M0 (SPEC section 6, D-016); same default as the Makefile.
+      COVERAGE_MIN: "80"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Same channel as rust-toolchain.toml, so the llvm-tools component lands on the toolchain cargo uses.
