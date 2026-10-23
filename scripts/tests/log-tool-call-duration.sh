@@ -72,8 +72,8 @@ expect "orphan start is skipped" '.duration_ms' 50
 
 # a different session never pairs with this session's start
 fire 40000000 PreToolUse Execute "$cargo" sess-b
-fire 40000900 PostToolUse Execute "$cargo" sess-a
-expect "other session ignored" '.duration_ms' 900
+fire 40000900 PostToolUse Execute "$cargo" sess-a # sess-a has no unclaimed start of its own
+expect "other session ignored" '.duration_ms' null
 log sess-b >/dev/null || fail "no sess-b log"
 
 # Script calls keep the 200 character script field on both events
