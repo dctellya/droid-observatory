@@ -1,7 +1,7 @@
 # D-011: cargo-deny exceptions for the Leptos and Tauri dependency trees
 
 **Date:** 2026-10-22
-**Status:** accepted (worker decision at the S scaffold; the owner reviews it at the S boundary)
+**Status:** accepted (worker decision at the S scaffold); confirmed by owner 2026-10-23
 
 ## Context
 
@@ -37,3 +37,8 @@ advisory, including future ones nobody reviewed).
 Any new licence, ignored advisory or target still needs a decision file. Remove the
 RUSTSEC-2024-0436 ignore when Leptos drops `paste`. Linux support would need the target
 list revisited and RUSTSEC-2024-0370 decided.
+
+## Addenda (owner, 2026-10-23, S to M0 boundary)
+
+- BSL-1.0 is the Boost Software License (not Business Source).
+- RUSTSEC-2024-0436 is ignored with a re-check date 90 days out: 2027-01-21.

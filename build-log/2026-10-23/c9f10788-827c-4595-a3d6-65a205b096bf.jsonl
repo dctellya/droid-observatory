@@ -1,0 +1,8 @@
+{"ts":"2026-10-23T08:54:45Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:54:59Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:55:08Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:58:42Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"WaitForScript","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:58:50Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:59:00Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:59:06Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}
+{"ts":"2026-10-23T08:59:34Z","session_id":"c9f10788-827c-4595-a3d6-65a205b096bf","event":"PostToolUse","tool":"Script","command":null,"file":null,"summary":null,"exit_code":null}

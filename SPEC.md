@@ -139,6 +139,14 @@ At the M0 boundary the orchestrator proposes re-caps for M1–M5 from the measur
 | M5 time, waste, cost | 120 | The metric engine and its oracle test; export; charts. |
 | Total | 630 | Hard stop for the mission; the final PR and fixes come out of the unspent remainder. |
 
+**Orchestrator cap (owner decision 2026-10-23, F-018).** The orchestrator is capped per milestone at
+20 % of that milestone's cap, measured as the delta of its own session's `tokenUsage` (session
+`e194b9e3`, not `inclusiveTokenUsage`) from the baseline recorded in `reports/usage/s.md`
+(input 629 245, output 499 465, cache read 32 674 587, cache write 3 520 336; 83.44 USD-eq
+mission-to-date), priced at the `claude-fable-5.1` row: M0 12, M1 30, M2 16, M3 12, M4 24, M5 24
+USD-eq. The shares are re-set at the M0 boundary together with the milestone caps. Each
+`reports/usage/<m>.md` shows the delta and records the new absolute `tokenUsage` as the next baseline.
+
 At a cap the orchestrator stops dispatching, writes the usage so far to `reports/usage/`, raises
 the stall flag and waits for the human (rule 15). Spending beyond a cap is a deviation (rule 9).
 
@@ -576,6 +584,12 @@ Fixtures are captured streams, named and dated (§3). Local = `make check` in a 
 | Interactive QA (validators) | board, Details, tray, filters, scrubber in the **browser host** `trunk serve --port 3141` with the fixture opened through the file picker; attach, host, controls and gate in the **Tauri window** (`make app-dev`) with screenshots and the CLI as oracle | per milestone, by the user-testing validator | `make app-dev`; `trunk serve --port 3141` |
 | Coverage (B-005) | `observatory-core` lines | S: reported; **M0 onward: fail under 80 %**; MB and PR | `cargo llvm-cov -p observatory-core --fail-under-lines 80` |
 
+**As-built (D-022).** On the Linux runner the unit and fixture suites run for `observatory-core` and
+`observatory-cli` only (`cargo test -p observatory-core -p observatory-cli --all-features`); the
+Tauri shell crate is linted and tested by `make check` locally and compiled by the macOS bundle job
+(B-024). Fixtures are redacted at capture and `make redact-check` (part of `make check`) proves a
+second redaction pass changes nothing (D-020, rule 22).
+
 **B-005 settled: 80 % lines on `observatory-core`.** Reason: core holds every piece of logic that
 can be wrong silently (mapping, time states, cost), so it is where coverage buys correctness;
 IO adapters that need a live `droid` or GitHub are in core too and cannot all be exercised in CI,
@@ -597,6 +611,14 @@ decisions index, gitleaks, `cargo fmt --check`, `cargo clippy -D warnings`, `car
 rust-cache. Gates integration: the orchestrator waits for green before the next milestone. If the
 warm time exceeds 3 min after the coverage job joins, coverage moves to the final PR only, by
 decision file.
+
+**As-built (D-022).** The Linux `rust` job installs no apt packages and does not build the Tauri
+shell: `make fmt-check`; `cargo clippy --workspace --exclude observatory-app --all-targets
+--all-features -- -D warnings -W clippy::cognitive_complexity`; the wasm32 clippy of
+`observatory-ui`; `cargo test -p observatory-core -p observatory-cli --all-features`; `make
+replay-fixtures`. The apt variant took 4 min 24 s and 4 min 50 s, over the 3 min budget.
+`mission-branch.yml` also runs on push to `wt/**`. Measured: run 39928967884 on the integration
+commit, wall time 2 min 56 s (`reports/ci/2026-10-23-s.md`).
 
 **B-014 settled: `cargo-machete`, not `cargo-udeps`.** Reason: machete runs on the stable toolchain
 in seconds; udeps needs nightly, which is a second toolchain to pin and cache for a check that
@@ -674,6 +696,14 @@ Written by the orchestrator on the mission branch, never in a worktree.
 | F-013 | 2026-10-22 | Owner answers before the mission (entry 26): "Schema: agreed. Record droid --version in the fixture header as the mapping-version signal, read the sibling .settings.json for usage and child links, decision file at S integration, and amend the SPEC as-built at that integration (rule 8), not now."; keyring-core + apple-native-keyring-store accepted with a decision file; DMG only in the CI bundle job; Tauri evidence is the validators' smoke check plus one owner screenshot per integration; concurrency limits accepted; GitHub token read-only, check results from Actions runs and commit statuses | §3 M0, §5.2, §5.8, D-012, D-013, D-014 | done (as-built at the S integration) |
 | F-014 | 2026-10-22 | Owner approval of the mission proposal (entry 27), with four comments: (1) "Budget vs plan: 630 USD-eq total against a Max month (and the 5-hour/7-day limits) will likely hit throttling mid-M1 or M4. State what happens at a throttle (pause at the boundary, no silent model downgrade) and keep the M0 re-cap step."; (2) "M4 acceptance contradicts my decision: it reads \"merge from the app → badge updates\". Make the M4 exit: Merge button visible when policy allows, the app surfaces the 403 cleanly with the read-only token, and the merge happens by me(UI or API); the badge updates from the poll. Write-token question stays at the M3→M4 boundary."; (3) "Reasoning effort: §8 says \"all high\"; the spec sets workers to medium. One or the other."; (4) "Backlog: \"hybrid backlog (gh issues labelled backlog)\" reopens the Issues question you closed yesterday; AGENTS.md says deferred work goes to BACKLOG.md, not Issues. Pick BACKLOG.md only, unless you want Issues back on purpose." | §2, §3 M4, §8, D-014, D-015 | (1) in mission files, M0 re-cap kept; (2) done, §3 M4 amended; (3) checked, all `high`, no change; (4) done, §8 amended, F-003 withdrawn |
 | F-015 | 2026-10-23 | Owner decision at the S to M0 boundary: the models and reasoning efforts defined at mission approval never change for the lifetime of the mission; at a usage limit the mission stops, never continues on a fallback model | §2, D-018, `ai/RULES.md` rule 20 | done (as-built at the S integration) |
+| F-016 | 2026-10-23 | Owner decision at the S to M0 boundary: communication. "Think as much as you need, say little. To the human: one line of status per milestone event, a decision request in three lines (what, options, your recommendation) when rule 15 requires one, and nothing else." | D-019, `ai/RULES.md` rule 21, `.factory/output-styles/mission-terse.md` | done (second S integration pass); the owner selects the style with `/settings` |
+| F-017 | 2026-10-23 | Owner decision: PII in fixtures. Redact emails and `/Users/dct` paths deterministically, originals outside the repo with both SHA-256 in the decision file, offsets against the redacted file, gitleaks before commit, every future fixture | D-020, `ai/RULES.md` rule 22, S fixture redacted (`92d2208`) | done; open point: the hyphenated `-Users-dct-code-...` form (M0 to M1 list) |
+| F-018 | 2026-10-23 | Owner decision: orchestrator cap, 20 % of each milestone cap, measured as the delta of session `e194b9e3`'s own `tokenUsage` from the baseline in `reports/usage/s.md`; re-set at the M0 boundary | §2 | done (as-built); re-cap at M0 boundary |
+| F-019 | 2026-10-23 | Owner confirms D-011 with two addenda: BSL-1.0 is the Boost Software License (not Business Source); RUSTSEC-2024-0436 ignored with a re-check date 2027-01-21 | D-011 | done |
+| F-020 | 2026-10-23 | Owner decision: the tool-call hook logs a `script` field (first 200 characters of `tool_input.script`) | D-021, `.factory/hooks/log-tool-call.sh`, B-022 | done (verified: 300-character payload logs length 200, other tools log null) |
+| F-021 | 2026-10-23 | Owner: `.capture.json` `reviewed_by` stays `factory-droid[bot]` | S fixture capture header | done (no change) |
+| F-022 | 2026-10-23 | Owner approves the rule 14 wording "everything else goes to `BACKLOG.md` with its reason" | `ai/RULES.md` rule 14, D-015 | done; F-003 and F-009 fully closed |
+| F-023 | 2026-10-23 | Owner: keep `ai/prd/review-2026-10-22.md` (restored with `git checkout`); §1 unchanged | §1 | done (no edit needed) |
 
 ## 10. Evolution log
 
@@ -683,3 +713,4 @@ reports.
 | Milestone | Integrated | What landed | Tests green | Usage spent | Deviations | Unknown events left |
 |---|---|---|---|---|---|---|
 | S | 2026-10-23 | Cargo workspace (`observatory-core`, `observatory-cli`, `observatory-app`), `Cargo.lock`; canonical `Event` with 61 PRD kinds plus `Unknown`; `JsonlSource`, capture header and the Unknown-only `mapping::v1`; `observatory-cli replay` (`unknown events: 2027` on the S fixture); Leptos UI and Tauri window with nine empty lanes; S fixture (orchestrator session plus 25 children, gitleaks clean); `machete` and `coverage` jobs, tag check in `release.yml`, pinned bundle tools; D-011 | `cargo test --workspace --all-features`: 41 passed, 0 failed; `make check` exit 0 on the merge commit `38e5617`; coverage 94.48 % lines on `observatory-core` (reported, not enforced); 20 of 20 VAL-SKEL assertions passed; **`mission-checks` red on the first run** (run 39919592562, `rust` job: the Linux runner lacks `glib-2.0`, which the Tauri shell needs), see `reports/ci/2026-10-23-s.md` | 13.21 USD-eq of the 40 cap on workers and validators (`reports/usage/s.md`); orchestrator share not exposed | §3 M0 and §5.2 amended (mapping version from the fixture header, D-012); §3 M4 acceptance amended (owner merges, app surfaces 403, D-014); §8 hybrid backlog withdrawn (D-015); D-011 (deny exceptions) awaits owner confirmation; kimi-k3 episode at the boundary (D-018) | 2027 on the S fixture (expected: the S mapper knows no kind); 0 required from the M0 fixture |
+| S, second pass (M0 pre-work) | 2026-10-23 | `wt/m0` merged as `cc05aa5` (`Integrate m0 CI fix and S fixture redaction`): Linux `rust` job without the Tauri shell and `wt/**` trigger (D-022); `scripts/redact-fixture.sh`, `make redact-check` and the redacted S fixture (D-020); owner decisions D-019, D-020, D-021, D-011 and D-018 addenda, rules 14, 21, 22; hook `script` field | `make check` exit 0 on `cc05aa5`; `mission-checks` green, run 39928967884, 2 min 56 s; user-testing round 2 on `claude-opus-5-5`: 20 of 20 VAL-SKEL passed | S unchanged at 13.21 USD-eq of 40; round-2 validators 2.69; orchestrator delta 18.94 USD-eq (`reports/usage/s.md`) | S row above: "`mission-checks` red" is superseded by this row; D-022 (Linux CI excludes the shell, B-024) | 2027 on the S fixture (unchanged); 0 required from the M0 fixture |

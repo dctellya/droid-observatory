@@ -81,3 +81,47 @@ limit overnight, then resumed). `assistantActiveTimeMs` summed over the eight pa
 
 The owner adds `reports/screenshots/2026-10-23-s.png` (display unlocked, `make app-dev` window with
 the nine empty lanes) at this boundary. Byte size recorded when the file arrives.
+
+## Addendum: round-2 user testing on `claude-opus-5-5` (read 2026-10-23, second integration pass)
+
+Round 2 re-ran VAL-SKEL-004..009 and VAL-SKEL-020 on `claude-opus-5-5` after D-018 (round 1 had run
+them on `kimi-k3`). Same source and pricing as above (Opus row: 4.0 input, 20.0 output, 0.20 cache
+read, 5.0 cache write per million). All three sessions: `claude-opus-5-5`, effort `high`.
+
+| Session | Role | Input | Output | Cache read | Cache write | Thinking | Credits | USD-eq |
+|---|---|---|---|---|---|---|---|---|
+| `94334a8c` | user-testing-validator-s, round 2 | 1 086 | 14 868 | 656 708 | 162 139 | 1 693 | 496 173 | 1.24 |
+| `067dcdb4` | flow validator `cli-tests-r2` (child) | 28 | 19 209 | 612 342 | 78 584 | 2 523 | 359 878 | 0.90 |
+| `c9f10788` | flow validator `clean-clone-r2` (child) | 26 | 9 118 | 358 599 | 57 628 | 1 016 | 216 934 | 0.54 |
+| **Round 2** | 3 sessions | 1 140 | 43 195 | 1 627 649 | 298 351 | 5 232 | 1 073 985 | **2.69** |
+
+The "S, priced" total of 13.21 above is **unchanged** (13.21 of 40, 33.0 %). With round 2 added,
+the S milestone's validators and workers come to 15.90 USD-eq (39.8 % of the cap). The round-1
+`kimi-k3` sessions stay listed unpriced above; the round-2 sessions replace their evidence.
+
+## Orchestrator delta since the baseline (session `e194b9e3`, `claude-fable-5.1`)
+
+Owner decision 13: the orchestrator is capped at 20 % of each milestone cap, measured as the delta of
+its own `tokenUsage` from the baseline above. Read from the sidecar at 2026-10-23T09:07Z (the session
+is still running, so the number grows):
+
+| | Input | Output | Cache read | Cache write | Thinking | Credits | USD-eq |
+|---|---|---|---|---|---|---|---|
+| Baseline (S integration, first pass) | 629 245 | 499 465 | 32 674 587 | 3 520 336 | 114 552 | 31 002 862 | 83.44 |
+| Read now (absolute) | 629 309 | 537 587 | 37 126 596 | 4 794 045 | 126 147 | 38 579 320 | 102.38 |
+| **Delta** | 64 | 38 122 | 4 452 009 | 1 273 709 | 11 595 | 7 576 458 | **18.94** |
+
+Fable row: 10.0 input, 50.0 output, 0.25 cache read, 12.5 cache write per million. The M0 orchestrator
+cap is 12 USD-eq (SPEC §2); the delta so far is 18.94, which is 158 % of it, and includes the S to M0
+boundary work (model-fallback episode, restarts, owner decisions) before any M0 feature ran. The new
+absolute `tokenUsage` above becomes the baseline for M1 only after the M0 boundary re-reads it.
+
+Two orchestrator child sessions on `claude-fable-5.1` at effort `medium` (`180b4a60`, `4162070f`; tag
+`subagent`) are listed in the orchestrator's children; their own usage is 19 743 and 16 529 output
+tokens, and they belong to the M0 boundary, not to S. The `high` effort of the orchestrator row does not
+apply to them.
+
+## Screenshot request
+
+`reports/screenshots/2026-10-23-s.png`: the owner runs `make app-dev` from the mission branch with the
+display unlocked and adds the file; the byte size is recorded here when it arrives.

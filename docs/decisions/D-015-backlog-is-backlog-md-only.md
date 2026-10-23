@@ -28,3 +28,6 @@ issues only (loses the offline, reviewable-in-PR history that `BACKLOG.md` gives
 `ai/RULES.md` rule 14 still reads "GitHub issues labelled `backlog`, indexed in `BACKLOG.md`".
 The file is the owner's; the proposed wording is "everything else goes to `BACKLOG.md` with its
 reason", and its change is on the S to M0 boundary list.
+
+Addendum (2026-10-23): the owner approved the rule 14 wording at the S to M0 boundary and
+`ai/RULES.md` rule 14 now reads "everything else goes to `BACKLOG.md` with its reason".

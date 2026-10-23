@@ -44,3 +44,12 @@ approved one might fail).
 A usage limit costs wall time, not quality or attribution. `ai/RULES.md` rule 20 states the same
 invariant for any mission. Each integration checks `.factory/settings.json` and the model ids in
 `reports/usage/<m>.md` (VAL-PROC-027).
+
+### Addendum: protection of `model-settings.json` (applied 2026-10-23)
+
+- `model-settings.json` in the mission directory is protected with `chflags uchg` once it holds
+  the correct models.
+- A deliberate change is `chflags nouchg`, edit, `chflags uchg`, plus a decision file.
+- The orchestrator checks `ls -lO` before every resume.
+- Applied 2026-10-23; second start of `m0-integrate-s` is session `2c04bd42` on
+  `claude-sonnet-5-5`.

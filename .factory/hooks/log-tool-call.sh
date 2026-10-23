@@ -20,6 +20,7 @@ line=$(printf '%s' "$input" | jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
   command: (.tool_input.command? // null),
   file: (.tool_input.file_path? // null),
   summary: (.tool_input.summary? // null),
+  script: (.tool_input.script? // null | if . == null then null else .[0:200] end),
   exit_code: (.tool_response.exitCode? // null)
 }') && [ -n "$line" ] && printf '%s\n' "$line" >> "$dir/$session.jsonl"
 exit 0
