@@ -157,7 +157,6 @@ PY
     fi
     ;;
 limit)
-    start_app
     # 65 small sessions with ascending mtimes; the oldest must be the one left unwatched.
     python3 - "$fixture.jsonl" "$sessions" <<'PY'
 import json, os, sys, time
@@ -173,6 +172,7 @@ for i in range(1, 66):
         out.writelines(head[1:])
     os.utime(path, (now - (70 - i) * 60, now - (70 - i) * 60))
 PY
+    start_app
     sleep 4
     stop_app
     grep ' attach_status' "$work/app.log" | tail -1
