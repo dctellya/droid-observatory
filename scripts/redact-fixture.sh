@@ -29,9 +29,11 @@ tmp=$(mktemp "${TMPDIR:-/tmp}/redact-fixture.XXXXXX")
 trap 'rm -f "$tmp"' EXIT INT TERM
 
 # Byte-wise on purpose: the fixtures are JSON text and must keep their exact framing.
+# An address cannot start right after a backslash: in `\n128x128@2x.png` the `n` belongs to the JSON
+# escape, and swallowing it turned the line into invalid JSON.
 redact_stream() {
   LC_ALL=C perl -pe '
-    s{([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})}{
+    s{(?<!\\)([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})}{
       my $m = $1;
       $m =~ /\@example\.invalid\z/ ? $m
         : length($m) >= 20 ? "user" . ("_" x (length($m) - 20)) . "\@example.invalid"

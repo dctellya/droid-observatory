@@ -507,7 +507,7 @@
       {
         "path": "2026-10-22-observatory-v1-m0.children/571a9e79-c07e-43f5-899f-0e4f188a6a61.jsonl",
         "original_sha256": "bb4d11243fa8dd0c0456e9f9b3c62c8c46f2532bd205c3e6e8c0f7d2e7c35591",
-        "redacted_sha256": "fe99cb8e8167fda954756648785c5937192546da5eb452e6c7555bd2b929773e",
+        "redacted_sha256": "93a6b8789e27169f0cdcb5f8542bc68d64aa6c12392b906a869d89d37473ddd0",
         "lines": 81
       },
       {
@@ -663,7 +663,7 @@
       {
         "path": "2026-10-22-observatory-v1-m0.children/82ad1581-fe75-4436-ac9c-9bc1e20a789b.jsonl",
         "original_sha256": "1e1308e9091ac36a71fb5e56358ae750e167e6f155cbf78577ff5f3e76008bd5",
-        "redacted_sha256": "63327183e7b599505f2022281a2c8f2280491037f688e02ce2a0e4967fc03d41",
+        "redacted_sha256": "4eae8e01e6aaf2023e1242e06a604132c5a0db2b06ee1057db66473499185e1d",
         "lines": 221
       },
       {
@@ -807,7 +807,7 @@
       {
         "path": "2026-10-22-observatory-v1-m0.children/ca58108e-3da3-4ed6-bf3e-0a7073d5833b.jsonl",
         "original_sha256": "75638ad233cf39a733d6245e9f2c34d701cf9505fdeb7adc674d43a80af4bce0",
-        "redacted_sha256": "e561ca6160a1daeb3df774b3ea008b563ed8aab619149be2350ccf87a2706720",
+        "redacted_sha256": "3b19c53aafcece1b07a71eb2da8c9105cead5d6b88f6f6d4232d935b3ed20dd5",
         "lines": 144
       },
       {
@@ -867,7 +867,7 @@
       {
         "path": "2026-10-22-observatory-v1-m0.children/d0304e2e-652e-443e-bd19-4afd804a90ed.jsonl",
         "original_sha256": "4adbb32cffff98ecc61d5cac7b184ed659817c4116d9830450f813cbe34ce3fd",
-        "redacted_sha256": "a40721e7c018943595d5f2a36f07cbd8689c2e4ddf96e552be83e9b20b2e05c1",
+        "redacted_sha256": "df88809d6cfb9735311c07e1c04ba3009f321c1312f1f099b1f02687b79f9ab1",
         "lines": 107
       },
       {
