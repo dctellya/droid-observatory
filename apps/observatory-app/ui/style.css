@@ -1,0 +1,5 @@
+html, body { margin: 0; height: 100%; font-family: -apple-system, system-ui, sans-serif; }
+.board { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; height: 100%; padding: 8px; box-sizing: border-box; }
+.lane { display: flex; flex-direction: column; border: 1px solid #c8ccd0; border-radius: 6px; min-width: 0; }
+.lane-name { margin: 0; padding: 8px; font-size: 13px; border-bottom: 1px solid #c8ccd0; }
+.cards { flex: 1; padding: 8px; }

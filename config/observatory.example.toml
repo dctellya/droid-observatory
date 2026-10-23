@@ -2,8 +2,9 @@
 # Every value has a default and a reason (ai/RULES.md rule 4). Secrets never live here:
 # they come from the OS keychain or the environment (see .env.example).
 #
-# Status: contract for the mission to implement. Keys may be added by decision file;
-# none are read by any code yet.
+# Loaded by core::config (crates/observatory-core/src/config.rs). Config::default() equals
+# this file; a test enforces it. Keys may be added by decision file, with their reason, in the
+# same commit that reads them.
 
 [mission]
 # Default models per role, mirrored in .factory/settings.json and the mission command
@@ -25,6 +26,30 @@ watch_sessions_dir = true
 # the notifier when it coalesces or misses an event. 500 ms keeps "live within 1 s"
 # (PRD FR-B6, M1 acceptance) with headroom and negligible IO.
 jsonl_poll_ms = 500
+# Upper bound on session files tailed at once, newest first. Bounds file handles and tail work;
+# the UI reports how many sessions are not watched.
+max_watched_sessions = 64
+# Session files above this size are indexed but not tailed, with a warning, to protect memory.
+max_session_file_mb = 512
+# Size of one read per file per poll step. One bounded chunk per step keeps each step short
+# enough for "live within 1 s" (PRD FR-B6) while a burst still drains over a few polls.
+tail_chunk_kb = 1024
+# Startup scan attaches only files modified within this window; older sessions stay in the
+# library and open on demand, so a directory of hundreds of old sessions does not open at once.
+startup_scan_hours = 24
+
+[ui]
+# Shell-to-UI flush interval. 100 ms is well under the 1 s latency target and avoids one
+# render per line during a burst.
+event_batch_ms = 100
+# Port of `trunk serve` for the browser host and `devUrl` of the Tauri shell. 3141 was free at
+# planning; services.yaml and Trunk.toml carry the same number.
+dev_port = 3141
+
+[store]
+# SQLite index of events by pointer (path, byte offset, length). One index per user; raw lines
+# stay where Droid wrote them and are never copied here (architecture I3).
+path = "~/.droid-observatory/observatory.sqlite"
 
 [github]
 # Poll interval for PR, checks and rulesets on the gate. 30 s stays well under GitHub's
@@ -33,6 +58,11 @@ poll_interval_s = 30
 # App-level override of the merge policy read from branch protection/rulesets (PRD FR-G4).
 # "auto" = read from GitHub; "human" = always require the Merge button; "policy" = never show it.
 merge_policy = "auto"
+# Branch a mission pull request targets. Parameterised so the demo pair (demo/base) and the
+# real gate (main) use the same code path.
+target_branch = "main"
+# owner/repo the forge client reads. The default is this repository.
+repo = "dctellya/droid-observatory"
 
 [intervention]
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
@@ -61,6 +91,7 @@ endpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
 # keychain item with this service name and the current user as account. It is never written
 # to config, the store or logs. No environment fallback in the app (CI uses B-002's secret).
 keychain_service = "droid-observatory/otlp-headers"
+# Value of the service.name resource attribute (D-010).
 service_name = "droid-observatory"
 # Resource attributes are fixed by D-010: service.name (above) and service.version (crate
 # version, added by the app). No other resource attribute is sent.
@@ -88,3 +119,15 @@ mission_metrics = [
   "observatory.cost_usd",
   "observatory.unknown_events",
 ]
+# Milestone label values allowed per metric: 7 milestones plus an "overflow" bucket, so the
+# series count stays bounded when a mission defines more (D-010).
+max_milestone_labels = 8
+# Minimum gap before the exporter switches to another mission, so two missions are never
+# active at once on the stack (D-010).
+mission_switch_min_interval_min = 30
+
+[telemetry.buckets]
+# Histogram bucket bounds in seconds for the mission cycle: hours to days.
+mission_cycle_seconds = [3600, 7200, 14400, 28800, 86400, 172800]
+# Histogram bucket bounds in seconds for a feature cycle: minutes to hours.
+feature_cycle_seconds = [600, 1800, 3600, 7200, 14400]

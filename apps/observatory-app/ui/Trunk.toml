@@ -1,0 +1,11 @@
+[build]
+target = "index.html"
+dist = "dist"
+release = false
+
+[serve]
+port = 3141
+open = false
+
+[watch]
+ignore = ["dist"]
