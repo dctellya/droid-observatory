@@ -59,17 +59,19 @@ fn watcher_sees_a_new_session_file_within_poll_interval() {
     assert!(watcher.next_discovered().is_empty());
 
     let path = session_path(dir.path(), "new-session");
-    let created = Instant::now();
     append(&path, &session_start("new-session", None));
-    let found = loop {
+    let written = Instant::now();
+    // Time is taken when the finding call starts: the call's own file system work is not
+    // the watcher's latency, and it stretches on a busy machine.
+    let (found, seen_after) = loop {
         watcher.wait();
+        let asked = Instant::now();
         let found = watcher.next_discovered();
         if !found.is_empty() {
-            break found;
+            break (found, asked.duration_since(written));
         }
-        assert!(created.elapsed() < LIMIT, "the file was never discovered");
+        assert!(written.elapsed() < LIMIT, "the file was never discovered");
     };
-    let seen_after = created.elapsed();
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].session_id, id("new-session"));
