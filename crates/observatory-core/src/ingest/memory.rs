@@ -179,8 +179,18 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
         mapping_version: version.to_string(),
         warning: (!warnings.is_empty()).then(|| warnings.join("; ")),
     };
-    let sessions = tree
-        .sessions()
+    let sessions = session_infos(&tree);
+    Ok(MemoryReplay {
+        summary,
+        events,
+        sessions,
+        files,
+    })
+}
+
+/// The sessions of a tree, for naming rows.
+pub fn session_infos(tree: &SessionTree) -> Vec<SessionInfo> {
+    tree.sessions()
         .iter()
         .map(|session| SessionInfo {
             id: session.id.clone(),
@@ -193,13 +203,7 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
                 .as_ref()
                 .and_then(|sidecar| sidecar.reasoning_effort.clone()),
         })
-        .collect();
-    Ok(MemoryReplay {
-        summary,
-        events,
-        sessions,
-        files,
-    })
+        .collect()
 }
 
 /// `<root stem>.capture.json` when the selection has it, else the only other capture header.

@@ -3,12 +3,15 @@
 //! Plain data and a clock-injected batcher, so the UI crate can read the types in wasm and the
 //! timing is testable without sleeping.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use super::{SessionInfo, order_key};
 use crate::model::{Event, MissionId, SessionId};
+use crate::view::MissionSummary;
 
 /// The `events_appended` payload.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -39,6 +42,35 @@ pub struct AttachStatus {
     pub warnings: Vec<String>,
     /// Why nothing is watched, when attach could not start.
     pub error: Option<String>,
+}
+
+/// A mission handed to the UI: the answer of `open_replay`, `attach` and `open_mission`. The
+/// UI folds later `events_appended` batches into `events` with `merge_ordered`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OpenedMission {
+    pub summary: MissionSummary,
+    pub events: Vec<Event>,
+    pub sessions: Vec<SessionInfo>,
+    /// True while one of the mission's session files is being tailed.
+    pub live: bool,
+}
+
+/// Adds the events of `incoming` whose id `held` does not hold and puts `held` back in replay
+/// order, so a board fed by batches lists what a replay of the same files lists. Returns the
+/// number of events added.
+pub fn merge_ordered(held: &mut Vec<Event>, incoming: Vec<Event>) -> usize {
+    let mut known: HashSet<String> = held.iter().map(|event| event.id.0.clone()).collect();
+    let before = held.len();
+    for event in incoming {
+        if known.insert(event.id.0.clone()) {
+            held.push(event);
+        }
+    }
+    let added = held.len() - before;
+    if added > 0 {
+        held.sort_by_cached_key(order_key);
+    }
+    added
 }
 
 struct Pending {

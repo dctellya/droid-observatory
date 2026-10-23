@@ -14,8 +14,8 @@ pub use capture::{
     CaptureHeader, capture_path, mapping_version_of, read_capture, select_mapping_of,
 };
 pub use jsonl::JsonlSource;
-pub use live::{AttachStatus, EventBatch, EventBatcher, SessionRow};
-pub use memory::{MemoryReplay, SessionInfo, order_key, replay_files};
+pub use live::{AttachStatus, EventBatch, EventBatcher, OpenedMission, SessionRow, merge_ordered};
+pub use memory::{MemoryReplay, SessionInfo, order_key, replay_files, session_infos};
 pub use sessions::{Session, SessionTree};
 pub use sidecar::{Sidecar, SidecarTag, SidecarUsage, read_sidecar, sidecar_path};
 pub use source::{IngestError, RawRecord, Source, SourceKind};

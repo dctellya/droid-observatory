@@ -5,6 +5,7 @@
 mod error;
 mod read;
 mod record;
+mod replay;
 mod rows;
 mod schema;
 

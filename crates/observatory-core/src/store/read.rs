@@ -52,7 +52,7 @@ const SELECT_EVENTS: &str = "SELECT e.id, e.mission_id, e.session_id, e.mileston
     FROM events e LEFT JOIN usage u ON u.event_id = e.id \
     WHERE (?1 IS NULL OR e.mission_id = ?1) AND (?2 IS NULL OR e.milestone_id = ?2) \
     AND (?3 IS NULL OR e.feature_id = ?3) AND (?4 IS NULL OR e.session_id = ?4) \
-    AND (?5 IS NULL OR e.at >= ?5) AND (?6 IS NULL OR e.at <= ?6) \
+    AND (?5 IS NULL OR e.at >= ?5) AND (?6 IS NULL OR e.at <= ?6) AND (?7 IS NULL OR e.id = ?7) \
     ORDER BY e.at, e.session_id, e.byte_offset, e.sub";
 
 impl Store {
@@ -79,6 +79,7 @@ impl Store {
                 session,
                 range.from.map(|at| at.to_rfc3339_millis()),
                 range.to.map(|at| at.to_rfc3339_millis()),
+                None::<String>,
             ],
             |row| Ok(event_of(row)),
         )?;
@@ -87,6 +88,27 @@ impl Store {
             events.push(row??);
         }
         Ok(events)
+    }
+
+    /// The event with `id`.
+    pub fn event(&self, id: &EventId) -> Result<Event, StoreError> {
+        let mut statement = self.conn.prepare_cached(SELECT_EVENTS)?;
+        let mut rows = statement.query_map(
+            params![
+                None::<String>,
+                None::<String>,
+                None::<String>,
+                None::<String>,
+                None::<String>,
+                None::<String>,
+                Some(id.to_string()),
+            ],
+            |row| Ok(event_of(row)),
+        )?;
+        match rows.next() {
+            Some(row) => row?,
+            None => Err(StoreError::UnknownEvent { id: id.to_string() }),
+        }
     }
 
     /// Every mission with the number of events indexed for it, newest first.
@@ -178,7 +200,7 @@ fn unsigned(value: i64) -> u64 {
 }
 
 /// A unit-variant enum from its wire text (`"scrutiny_validator"`).
-fn from_wire<T: DeserializeOwned>(text: &str) -> Option<T> {
+pub(super) fn from_wire<T: DeserializeOwned>(text: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
 }
 

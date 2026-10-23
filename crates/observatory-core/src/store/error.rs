@@ -18,6 +18,8 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("no event with id {id} in the store")]
     UnknownEvent { id: String },
+    #[error("no mission with id {id} in the store")]
+    UnknownMission { id: String },
     #[error("event {id} has a pointer the store cannot read back: {message}")]
     BadRow { id: String, message: String },
     #[error("{} is not valid UTF-8 and cannot be stored as a pointer", path.display())]
