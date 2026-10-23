@@ -10,8 +10,10 @@ use observatory_core::model::{Event, EventKind, SourcePtr};
 use serde_json::Value;
 
 const S_SLUG: &str = "2026-10-22-observatory-v1-s";
+const M0_SLUG: &str = "2026-10-22-observatory-v1-m0";
 const EMAIL_REPLACEMENT_DOMAIN: &[u8] = b"@example.invalid";
 const HOME_PATH: &[u8] = b"/Users/dct";
+const HYPHENATED_HOME_PATH: &[u8] = b"-Users-dct";
 
 fn streams_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/streams")
@@ -68,6 +70,72 @@ fn s_fixture_has_capture_header_with_droid_version() {
             jsonl.display()
         );
     }
+}
+
+fn first_line_json(path: &Path) -> Value {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{} reads: {e}", path.display()));
+    let end = bytes
+        .iter()
+        .position(|b| *b == b'\n')
+        .unwrap_or(bytes.len());
+    serde_json::from_slice(&bytes[..end]).expect("first line is JSON")
+}
+
+#[test]
+fn m0_capture_header_lists_all_four_roles() {
+    let header = read_capture(M0_SLUG);
+
+    assert_eq!(header["schema"], 1);
+    assert_eq!(header["droid_version"], "0.247.0");
+    assert_eq!(header["mapping_version"], "v1");
+    assert_eq!(header["mission_name"], "observatory-v1");
+    assert_eq!(header["captured_with"], "droid --version");
+    assert_eq!(header["reviewed_by"], "factory-droid[bot]");
+    assert!(
+        header["gitleaks"]
+            .as_str()
+            .is_some_and(|g| g.starts_with("clean"))
+    );
+
+    let sessions = header["sessions"].as_array().expect("sessions is an array");
+    let mut roles: Vec<&str> = sessions
+        .iter()
+        .map(|s| s["role"].as_str().expect("role is a string"))
+        .collect();
+    roles.sort_unstable();
+    roles.dedup();
+    assert_eq!(
+        roles,
+        [
+            "orchestrator",
+            "scrutiny_validator",
+            "user_testing_validator",
+            "worker"
+        ]
+    );
+
+    let mut roots = Vec::new();
+    for session in sessions {
+        let file = session["file"].as_str().expect("session file is a string");
+        let jsonl = streams_dir().join(file);
+        assert!(jsonl.is_file(), "{} must exist", jsonl.display());
+        assert!(
+            jsonl.with_extension("settings.json").is_file(),
+            "sidecar beside {} must exist",
+            jsonl.display()
+        );
+        let first = first_line_json(&jsonl);
+        assert_eq!(first["type"], "session_start");
+        assert_eq!(first["id"], session["id"]);
+        if first.get("callingSessionId").is_none() {
+            roots.push(session["role"].as_str().expect("role is a string"));
+        }
+    }
+    assert_eq!(
+        roots,
+        ["orchestrator"],
+        "exactly one root, the orchestrator"
+    );
 }
 
 fn files_under(dir: &Path) -> Vec<PathBuf> {
@@ -156,6 +224,9 @@ fn fixtures_contain_no_email_or_home_path() {
         }
         if contains(&bytes, HOME_PATH) {
             offences.push(format!("{}: contains /Users/dct", path.display()));
+        }
+        if contains(&bytes, HYPHENATED_HOME_PATH) {
+            offences.push(format!("{}: contains -Users-dct", path.display()));
         }
     }
 
@@ -274,10 +345,14 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
             "{\"cwd\":\"/Users/dct/code/x\",\"by\":\"david.carbajosa@dalimaray.io\"}\n",
             "{\"remote\":\"git@github.com:o/r.git\",\"img\":\"icons/128x128@2x.png\"}\n",
             "{\"keep\":\"user@example.invalid\",\"home\":\"/home/user\"}\n",
+            "{\"slug\":\"~/.factory/sessions/-Users-dct-code-x\",\"keep\":\"Users-dct\"}\n",
             "no trailing newline /Users/dct",
         ),
     );
-    let settings = write("fx.settings.json", "{\"dir\":\"/Users/dct\"}\n");
+    let settings = write(
+        "fx.settings.json",
+        "{\"dir\":\"/Users/dct\",\"slug\":\"-Users-dct\"}\n",
+    );
     let capture = write("fx.capture.json", "{\"who\":\"a.b@c.io\"}\n");
     let child = write(
         "fx.children/c1.jsonl",
@@ -302,10 +377,14 @@ fn redact_script_rewrites_emails_and_home_paths_in_every_fixture_file_and_nothin
             "{\"cwd\":\"/home/user/code/x\",\"by\":\"user________@example.invalid\"}\n",
             "{\"remote\":\"user@example.invalid:o/r.git\",\"img\":\"icons/user@example.invalid\"}\n",
             "{\"keep\":\"user@example.invalid\",\"home\":\"/home/user\"}\n",
+            "{\"slug\":\"~/.factory/sessions/-home-user-code-x\",\"keep\":\"Users-dct\"}\n",
             "no trailing newline /home/user",
         )
     );
-    assert_eq!(read(&settings), "{\"dir\":\"/home/user\"}\n");
+    assert_eq!(
+        read(&settings),
+        "{\"dir\":\"/home/user\",\"slug\":\"-home-user\"}\n"
+    );
     assert_eq!(read(&capture), "{\"who\":\"user@example.invalid\"}\n");
     assert_eq!(
         read(&child),
