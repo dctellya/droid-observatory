@@ -16,6 +16,38 @@ pub enum ValidationBadge {
     Green,
 }
 
+impl ValidationBadge {
+    pub const ALL: [ValidationBadge; 3] = [
+        ValidationBadge::Red,
+        ValidationBadge::Grey,
+        ValidationBadge::Green,
+    ];
+
+    /// The wire text (`red`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ValidationBadge::Red => "red",
+            ValidationBadge::Grey => "grey",
+            ValidationBadge::Green => "green",
+        }
+    }
+
+    /// The badge as the board prints it (`RED`).
+    pub fn label(self) -> &'static str {
+        match self {
+            ValidationBadge::Red => "RED",
+            ValidationBadge::Grey => "GREY",
+            ValidationBadge::Green => "GREEN",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<ValidationBadge> {
+        ValidationBadge::ALL
+            .into_iter()
+            .find(|badge| badge.as_str() == text)
+    }
+}
+
 /// Who holds a milestone right now: the session whose events for it came last and that has
 /// not finished.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

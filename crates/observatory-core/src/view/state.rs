@@ -65,9 +65,12 @@ impl BoardState {
     /// The board of `events` (in time order) under `cfg`. The scrubber keeps the events up to
     /// `cfg.at`; the filter narrows what is left.
     pub fn fold(events: &[Event], cfg: &ViewConfig) -> Self {
-        let kept =
-            |event: &&Event| cfg.at.is_none_or(|at| event.at <= at) && cfg.filter.keeps(event);
-        let build = |events: &mut dyn Iterator<Item = &Event>| {
+        Self::fold_kept(events, cfg).0
+    }
+
+    /// `fold`, with the events the board was folded from, in time order.
+    pub fn fold_kept<'a>(events: &'a [Event], cfg: &ViewConfig) -> (Self, Vec<&'a Event>) {
+        let build = |events: &[&Event]| {
             let mut state = Self::new(cfg.grouping);
             for event in events {
                 state.apply(event);
@@ -75,10 +78,15 @@ impl BoardState {
             state
         };
 
-        let mut state = build(&mut events.iter().filter(kept));
+        let mut kept: Vec<&Event> = events
+            .iter()
+            .filter(|event| cfg.at.is_none_or(|at| event.at <= at) && cfg.filter.keeps(event))
+            .collect();
+        let mut state = build(&kept);
         if let Some(gate) = cfg.filter.gate
             && state.gate.badge != gate
         {
+            kept.clear();
             state = Self::new(cfg.grouping);
         }
         if let Some(validation) = cfg.filter.validation {
@@ -88,16 +96,16 @@ impl BoardState {
                 .filter(|card| card.validation == validation)
                 .map(|card| &card.milestone)
                 .collect();
-            let narrowed = build(&mut events.iter().filter(kept).filter(|event| {
+            kept.retain(|event| {
                 event
                     .milestone_id
                     .as_ref()
                     .is_some_and(|m| milestones.contains(m))
-            }));
-            state = narrowed;
+            });
+            state = build(&kept);
         }
         state.now = cfg.at.or(state.now);
-        state
+        (state, kept)
     }
 
     /// Folds one more event, in time order, into the board.
