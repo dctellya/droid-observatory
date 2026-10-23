@@ -8,15 +8,18 @@ use observatory_core::config::IngestConfig;
 use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, select_mapping_of};
 use observatory_core::mapping::{Mapper, TreeMapper};
 use observatory_core::model::{Event, EventKind};
+use observatory_core::store::{CaptureInfo, Store};
 
 /// Writes `<time>\t<lane>\t<kind>\t<session>` per event, then `unknown events: N`.
 /// Child sessions found beside `file` or in `<slug>.children/` are replayed with it unless
 /// `root_only` is set. Only reads session files; it writes to `out`, and to `warnings` once
-/// when the capture's Droid version has no mapping of its own.
+/// when the capture's Droid version has no mapping of its own. With a `store`, the sessions
+/// and the event pointers are written through to it as they are mapped.
 pub fn replay(
     file: &Path,
     root_only: bool,
     cfg: &IngestConfig,
+    mut store: Option<&mut Store>,
     out: &mut impl Write,
     warnings: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
@@ -24,6 +27,9 @@ pub fn replay(
     let tree = SessionTree::discover(file, cfg)?;
     if let Some(warning) = warning {
         writeln!(warnings, "observatory-cli: warning: {warning}")?;
+    }
+    if let Some(store) = store.as_deref_mut() {
+        store.record_tree(&tree, &CaptureInfo::from_session_file(file)?, root_only)?;
     }
     let (mut source, mut mapper) = if root_only {
         let source = JsonlSource::open(file, cfg)?;
@@ -43,26 +49,36 @@ pub fn replay(
         } else {
             batch
         };
-        for record in &records {
-            print_events(mapper.map(record), &mut unknown, out)?;
-        }
+        let mut events: Vec<Event> = records
+            .iter()
+            .flat_map(|record| mapper.map(record))
+            .collect();
         if at_eof {
-            print_events(mapper.finish(), &mut unknown, out)?;
+            events.extend(mapper.finish());
+        }
+        if let Some(store) = store.as_deref_mut() {
+            store.insert_events(&events)?;
+        }
+        print_events(&events, &mut unknown, out)?;
+        if at_eof {
             break;
         }
+    }
+    if let Some(store) = store {
+        store.mark_tailed(tree.mission_id())?;
     }
     writeln!(out, "unknown events: {unknown}")?;
     Ok(())
 }
 
 fn print_events(
-    events: Vec<Event>,
+    events: &[Event],
     unknown: &mut u64,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
     for event in events {
         *unknown += u64::from(matches!(event.kind, EventKind::Unknown { .. }));
-        writeln!(out, "{}", event_line(&event))?;
+        writeln!(out, "{}", event_line(event))?;
     }
     Ok(())
 }

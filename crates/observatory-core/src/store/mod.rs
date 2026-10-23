@@ -9,7 +9,7 @@ mod schema;
 
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
 pub use record::CaptureInfo;
@@ -46,6 +46,18 @@ impl Store {
             .map_err(open)?;
         schema::migrate(&mut conn).map_err(open)?;
         schema::seed_mapping_versions(&conn).map_err(open)?;
+        Ok(Self { conn })
+    }
+
+    /// Opens a store that must already exist, read-only: nothing is created and nothing
+    /// written. For readers such as `inspect`.
+    pub fn open_existing(path: &Path) -> Result<Self, StoreError> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
+            |source| StoreError::Open {
+                path: path.to_owned(),
+                source,
+            },
+        )?;
         Ok(Self { conn })
     }
 

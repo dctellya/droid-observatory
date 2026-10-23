@@ -526,3 +526,19 @@ fn a_store_opened_read_only_answers_pointer_queries() {
 
     assert_eq!(store.pointer(&events[0].id).unwrap(), events[0].source);
 }
+
+#[test]
+fn a_root_only_replay_records_only_the_root_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("observatory.sqlite");
+    let mut store = Store::open(&db).unwrap();
+
+    let events = replay_into(&mut store, &m0_root(), true);
+
+    assert!(!events.is_empty());
+    assert_eq!(query_count(&db, "SELECT count(*) FROM sessions"), 1);
+    assert_eq!(
+        query_count(&db, "SELECT count(*) FROM sessions WHERE parent_id IS NULL"),
+        1
+    );
+}
