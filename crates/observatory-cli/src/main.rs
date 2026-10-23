@@ -43,7 +43,13 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
         Command::Replay { file, root_only } => {
             let mut out = BufWriter::new(io::stdout().lock());
-            replay::replay(&file, root_only, &config.ingest, &mut out)?;
+            replay::replay(
+                &file,
+                root_only,
+                &config.ingest,
+                &mut out,
+                &mut io::stderr().lock(),
+            )?;
             out.flush()?;
             Ok(())
         }

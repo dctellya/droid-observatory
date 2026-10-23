@@ -12,8 +12,10 @@ use super::IngestError;
 use super::capture::mapping_version_of;
 use super::sidecar::{Sidecar, SidecarTag, read_sidecar};
 use crate::config::IngestConfig;
-use crate::mapping::{MappingVersion, RoleEvidence, SessionMeta, resolve_role};
-use crate::model::{MissionId, ModelId, Role, SessionId, TokenUsage};
+use crate::mapping::{
+    MappingVersion, RoleEvidence, SessionMeta, proposal_milestones, resolve_role,
+};
+use crate::model::{MilestoneId, MissionId, ModelId, Role, SessionId, TokenUsage};
 
 const KB: u64 = 1024;
 const JSONL_EXTENSION: &str = "jsonl";
@@ -64,6 +66,8 @@ impl Session {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SessionTree {
     mission_id: MissionId,
+    /// Milestone ids of the plan the root proposed, in the plan's order.
+    milestones: Vec<MilestoneId>,
     sessions: Vec<Session>,
 }
 
@@ -128,6 +132,17 @@ impl SessionTree {
             );
 
         let mut transcripts = Transcripts::default();
+        let milestones = transcripts
+            .get(&attached[0].path)?
+            .proposals
+            .iter()
+            .flat_map(|proposal| proposal_milestones(version, proposal))
+            .fold(Vec::new(), |mut all, milestone| {
+                if !all.contains(&milestone) {
+                    all.push(milestone);
+                }
+                all
+            });
         let mut sessions = Vec::with_capacity(attached.len());
         for (index, (entry, sidecar)) in attached.iter().zip(sidecars).enumerate() {
             let is_root = index == 0;
@@ -151,6 +166,7 @@ impl SessionTree {
         }
         Ok(Self {
             mission_id,
+            milestones,
             sessions,
         })
     }
@@ -186,6 +202,8 @@ impl SessionTree {
             mission_id: self.mission_id.clone(),
             role: session.role,
             model: session.model().map(|model| ModelId(model.to_owned())),
+            usage: session.usage(),
+            milestones: self.milestones.clone(),
         }
     }
 }
@@ -313,6 +331,8 @@ struct Transcript {
     subagent_types: HashMap<String, String>,
     /// `input.skill` of every `Skill` tool_use, in order.
     skills: Vec<String>,
+    /// `input.proposal` of every `ProposeMission` tool_use, in order.
+    proposals: Vec<String>,
 }
 
 /// Transcripts are large and only a few are needed, so each is read at most once and only on demand.
@@ -330,6 +350,12 @@ impl Transcripts {
     }
 }
 
+const WATCHED_TOOLS: [&[u8]; 3] = [
+    br#""name":"Task""#,
+    br#""name":"Skill""#,
+    br#""name":"ProposeMission""#,
+];
+
 fn scan(path: &Path) -> Result<Transcript, IngestError> {
     let file = File::open(path).map_err(|source| io_error(path, source))?;
     let mut reader = BufReader::new(file);
@@ -344,8 +370,8 @@ fn scan(path: &Path) -> Result<Transcript, IngestError> {
             return Ok(transcript);
         }
         // Compact JSON writes the part as `"name":"Task"`; the same text inside a string value
-        // is escaped, so this filter skips parsing lines that cannot hold either tool_use.
-        if !(contains(&line, br#""name":"Task""#) || contains(&line, br#""name":"Skill""#)) {
+        // is escaped, so this filter skips parsing lines that cannot hold any of the tool_uses.
+        if !WATCHED_TOOLS.iter().any(|name| contains(&line, name)) {
             continue;
         }
         let Ok(value) = serde_json::from_slice::<Value>(&line) else {
@@ -361,6 +387,11 @@ fn scan(path: &Path) -> Result<Transcript, IngestError> {
                         transcript
                             .subagent_types
                             .insert(id.to_owned(), kind.to_owned());
+                    }
+                }
+                Some("ProposeMission") => {
+                    if let Some(proposal) = part["input"]["proposal"].as_str() {
+                        transcript.proposals.push(proposal.to_owned());
                     }
                 }
                 Some("Skill") => {

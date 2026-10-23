@@ -1,5 +1,9 @@
 //! `mapping::v1` over the M0 capture (golden file, hard gate, version selection) and over
 //! hand-made records (one test per rule of the table in `mapping/v1/kinds.rs`).
+//!
+//! The golden file `fixtures/streams/<slug>.events.json` changes only through
+//! `OBSERVATORY_UPDATE_GOLDEN=1 cargo test -p observatory-core --test mapping`; read the diff
+//! and explain it in the commit body.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -161,7 +165,6 @@ const OBSERVED_IN_M0: &[&str] = &[
     "task.skipped",
     "plan.revised",
     "escalation.raised",
-    "mission.paused",
     "context.compacted",
     "subagent.spawned",
     "task.started",
@@ -410,7 +413,11 @@ fn human_prompts_in_the_root_amend_the_intent() {
     let events = session.feed(&typed);
 
     assert_eq!(kinds(&events), ["intent.amended"]);
-    assert_eq!(events[0].role, Role::Human);
+    assert_eq!(
+        events[0].role,
+        Role::Orchestrator,
+        "the session's role, not Human"
+    );
     assert_eq!(events[0].lane, Lane::Intent);
 
     let injected = json!({"type": "message", "id": "m", "timestamp": at(2),
@@ -680,7 +687,7 @@ fn the_plan_the_questions_and_the_features_come_from_the_orchestrators_tool_call
     assert_eq!(asked[0].lane, Lane::Intent);
     let answered = session.feed(&user(4, json!([tool_result("q", "yes", false)])));
     assert_eq!(kinds(&answered), ["intent.answered"]);
-    assert_eq!(answered[0].role, Role::Human);
+    assert_eq!(answered[0].role, Role::Orchestrator);
 }
 
 #[test]

@@ -27,26 +27,6 @@ fn root_only_replay(home: &Path, file: &Path) -> Output {
     cli(home, &[Path::new("replay"), Path::new("--root-only"), file])
 }
 
-/// The root file plus every child file in `<slug>.children/`.
-fn lines_with_children(root: &Path) -> usize {
-    let children = root.with_extension("children");
-    let mut total = line_count(root);
-    for entry in std::fs::read_dir(children).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_some_and(|ext| ext == "jsonl") {
-            total += line_count(&path);
-        }
-    }
-    total
-}
-
-fn line_count(file: &Path) -> usize {
-    std::fs::read(file)
-        .unwrap()
-        .split_inclusive(|byte| *byte == b'\n')
-        .count()
-}
-
 #[test]
 fn cli_exits_nonzero_on_missing_file() {
     let home = tempfile::tempdir().unwrap();
@@ -74,19 +54,20 @@ fn replay_without_a_file_exits_nonzero() {
 #[test]
 fn replay_prints_one_line_per_event_and_ends_with_the_unknown_count() {
     let home = tempfile::tempdir().unwrap();
-    let lines = lines_with_children(&s_fixture());
 
     let output = replay(home.path(), &s_fixture());
 
     assert!(output.status.success(), "{:?}", output.status);
     let stdout = String::from_utf8(output.stdout).unwrap();
     let printed: Vec<&str> = stdout.lines().collect();
-    assert_eq!(printed.len(), lines + 1);
-    assert_eq!(
-        printed.last().copied(),
-        Some(format!("unknown events: {lines}").as_str())
-    );
-    for event in &printed[..lines] {
+    let (summary, events) = printed.split_last().unwrap();
+    assert!(!events.is_empty());
+    let unknown = events
+        .iter()
+        .filter(|line| line.contains("\tunknown.event"))
+        .count();
+    assert_eq!(*summary, format!("unknown events: {unknown}"));
+    for event in events {
         let fields: Vec<&str> = event.split('\t').collect();
         assert_eq!(fields.len(), 4, "{event}");
         assert!(fields[0].ends_with('Z'), "{event}");
@@ -94,7 +75,7 @@ fn replay_prints_one_line_per_event_and_ends_with_the_unknown_count() {
             fields[1].starts_with(|c: char| c.is_ascii_digit()),
             "{event}"
         );
-        assert!(fields[2].starts_with("unknown.event("), "{event}");
+        assert!(!fields[2].is_empty(), "{event}");
         assert!(!fields[3].is_empty(), "{event}");
     }
 }
@@ -121,33 +102,39 @@ fn replay_includes_the_child_sessions_under_their_own_lanes() {
 }
 
 #[test]
-fn replay_root_only_prints_one_line_per_line_of_the_root_file() {
+fn replay_root_only_prints_only_events_of_the_root_session() {
     let home = tempfile::tempdir().unwrap();
-    let lines = line_count(&s_fixture());
 
-    let output = root_only_replay(home.path(), &s_fixture());
+    let all = replay(home.path(), &s_fixture());
+    let root = root_only_replay(home.path(), &s_fixture());
 
-    assert!(output.status.success(), "{:?}", output.status);
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let printed: Vec<&str> = stdout.lines().collect();
-    assert_eq!(printed.len(), lines + 1);
-    assert_eq!(
-        printed.last().copied(),
-        Some(format!("unknown events: {lines}").as_str())
+    assert!(root.status.success(), "{:?}", root.status);
+    let (all, root) = (
+        String::from_utf8(all.stdout).unwrap(),
+        String::from_utf8(root.stdout).unwrap(),
     );
-    assert!(printed[..lines].iter().all(|line| line.ends_with(SESSION)));
+    let printed: Vec<&str> = root.lines().collect();
+    let (summary, events) = printed.split_last().unwrap();
+    assert!(summary.starts_with("unknown events: "), "{summary}");
+    assert!(!events.is_empty());
+    assert!(events.iter().all(|line| line.ends_with(SESSION)));
+    assert!(
+        events.len() < all.lines().count() - 1,
+        "the children add events to the root's"
+    );
 }
 
 #[test]
-fn replay_names_the_raw_type_of_each_unknown_event() {
+fn replay_names_the_kind_of_each_event_by_its_prd_name() {
     let home = tempfile::tempdir().unwrap();
 
     let output = replay(home.path(), &s_fixture());
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     let first = stdout.lines().next().unwrap();
-    assert!(first.contains("unknown.event(session_start)"), "{first}");
-    assert!(stdout.contains("unknown.event(message)"));
+    assert!(first.contains("\t1 Intent\tintent.created\t"), "{first}");
+    assert!(stdout.contains("\tsubagent.spawned\t"));
+    assert!(stdout.contains("\tfile.touched\t"));
 }
 
 #[test]
@@ -190,8 +177,11 @@ fn m0_copy(dir: &Path, droid_version: &str, appended: &str) -> PathBuf {
         .unwrap();
     }
     let header = std::fs::read_to_string(streams.join(format!("{M0_SLUG}.capture.json"))).unwrap();
+    assert!(
+        header.contains("0.247.0"),
+        "the header names the Droid version"
+    );
     let edited = header.replace("0.247.0", droid_version);
-    assert_ne!(edited, header, "the header names the Droid version");
     std::fs::write(dir.join(format!("{M0_SLUG}.capture.json")), edited).unwrap();
     root
 }

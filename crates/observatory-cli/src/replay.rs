@@ -5,26 +5,31 @@ use std::io::Write;
 use std::path::Path;
 
 use observatory_core::config::IngestConfig;
-use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, mapping_version_of};
-use observatory_core::mapping::{Mapper, SessionMeta, TreeMapper};
+use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, select_mapping_of};
+use observatory_core::mapping::{Mapper, TreeMapper};
 use observatory_core::model::{Event, EventKind};
 
 /// Writes `<time>\t<lane>\t<kind>\t<session>` per event, then `unknown events: N`.
 /// Child sessions found beside `file` or in `<slug>.children/` are replayed with it unless
-/// `root_only` is set. Only reads session files; it writes to `out` and nowhere else.
+/// `root_only` is set. Only reads session files; it writes to `out`, and to `warnings` once
+/// when the capture's Droid version has no mapping of its own.
 pub fn replay(
     file: &Path,
     root_only: bool,
     cfg: &IngestConfig,
     out: &mut impl Write,
+    warnings: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
-    let version = mapping_version_of(file)?;
+    let (version, warning) = select_mapping_of(file)?;
+    let tree = SessionTree::discover(file, cfg)?;
+    if let Some(warning) = warning {
+        writeln!(warnings, "observatory-cli: warning: {warning}")?;
+    }
     let (mut source, mut mapper) = if root_only {
         let source = JsonlSource::open(file, cfg)?;
-        let root = Mapper::new(SessionMeta::root(source.root_session_id().clone()), version);
-        (source, Mapping::Root(root))
+        let root = Mapper::new(tree.meta(tree.root()), version);
+        (source, Mapping::Root(Box::new(root)))
     } else {
-        let tree = SessionTree::discover(file, cfg)?;
         let source = JsonlSource::open_tree(&tree, cfg)?;
         (source, Mapping::Tree(TreeMapper::new(&tree, version)))
     };
@@ -39,16 +44,26 @@ pub fn replay(
             batch
         };
         for record in &records {
-            for event in mapper.map(record) {
-                unknown += u64::from(matches!(event.kind, EventKind::Unknown { .. }));
-                writeln!(out, "{}", event_line(&event))?;
-            }
+            print_events(mapper.map(record), &mut unknown, out)?;
         }
         if at_eof {
+            print_events(mapper.finish(), &mut unknown, out)?;
             break;
         }
     }
     writeln!(out, "unknown events: {unknown}")?;
+    Ok(())
+}
+
+fn print_events(
+    events: Vec<Event>,
+    unknown: &mut u64,
+    out: &mut impl Write,
+) -> Result<(), Box<dyn Error>> {
+    for event in events {
+        *unknown += u64::from(matches!(event.kind, EventKind::Unknown { .. }));
+        writeln!(out, "{}", event_line(&event))?;
+    }
     Ok(())
 }
 
@@ -70,7 +85,7 @@ fn event_line(event: &Event) -> String {
 }
 
 enum Mapping {
-    Root(Mapper),
+    Root(Box<Mapper>),
     Tree(TreeMapper),
 }
 
@@ -79,6 +94,13 @@ impl Mapping {
         match self {
             Self::Root(mapper) => mapper.map(record),
             Self::Tree(mapper) => mapper.map(record),
+        }
+    }
+
+    fn finish(&mut self) -> Vec<Event> {
+        match self {
+            Self::Root(mapper) => mapper.finish(),
+            Self::Tree(mapper) => mapper.finish(),
         }
     }
 }
