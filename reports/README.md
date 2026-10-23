@@ -12,3 +12,10 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
   `2026-10-22-validation-readiness.md`: browser and Tauri validation path, concurrency limits.
 - `usage/<milestone>.md`: tokens per role and model, waste by cause, wall time, per
   integrated milestone (written by the orchestrator at integration).
+  `usage/s.md`: milestone S, 13.21 USD-eq of the 40 cap on workers and validators.
+- `ci/<date>-<milestone>.md`: the `mission-checks` runs on the integration pushes: run ids, wall
+  times, per-job durations, verdict against the 3-minute budget. `ci/2026-10-23-s.md`: S, red.
+- `readiness/<date>-<milestone>.json`: Agent Readiness report at an integration.
+  `2026-10-23-s.json`: 42 of 66, hand re-evaluation of the criteria S changed (see its `method`).
+- `screenshots/<date>-<milestone>.png`: the owner's unlocked-display screenshot per integration.
+  Expected at S: `screenshots/2026-10-23-s.png`.
