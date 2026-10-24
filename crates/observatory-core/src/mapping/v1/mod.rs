@@ -174,7 +174,17 @@ impl Rec<'_> {
 /// The phase of an event (D-024). The kind's own phase wins; role-neutral kinds of an
 /// integration or contract session take that session's phase; the rest take the role's.
 /// `feature` is the session's feature, not the one a `Task` call names.
+///
+/// A `feature.defined` is the one fixed-phase kind that follows its emitter (D-032): a
+/// validator that names the features it reviews is working in its own phase, not planning.
 fn lane_of(kind: &EventKind, session: &SessionMeta, feature: Option<&FeatureId>) -> Lane {
+    if matches!(kind, EventKind::FeatureDefined) {
+        match session.role {
+            Role::ScrutinyValidator => return Lane::Scrutiny,
+            Role::UserTestingValidator => return Lane::UserTesting,
+            _ => {}
+        }
+    }
     if kind.fixed_lane().is_some() || matches!(kind, EventKind::Unknown { .. }) {
         return kind.lane(session.role);
     }

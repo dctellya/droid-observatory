@@ -16,7 +16,7 @@
 //! | `session_start` with `callingSessionId` | `subagent.spawned` | child's home phase (Build, Scrutiny, User testing; Contract or Integrate by rules 3 and 4) |
 //! | root user text typed by the person (`userMessageSource: cli_tui`) | `intent.amended` | Plan, overlay human, session role |
 //! | child user text that is a `Task` or runner assignment (first only) | `task.started` | home phase |
-//! | assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan |
+//! | assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan, except from a scrutiny validator (Scrutiny) or a user-testing validator (User testing), D-032 |
 //! | assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | Plan |
 //! | assistant `tool_use` `AskUser` | `question.asked` | Plan, overlay human |
 //! | `tool_result` of an `AskUser` | `intent.answered` | Plan, overlay human, session role |
