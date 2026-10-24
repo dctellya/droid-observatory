@@ -13,7 +13,7 @@ use common::{Collected, append, config, m0_lines, pump, replayed_ids, session_st
 use observatory_core::config::Config;
 use observatory_core::ingest::watch::{Attach, LiveIngest};
 use observatory_core::ingest::{Retraction, merge_ordered, retract_stale};
-use observatory_core::model::{Event, EventKind, SessionId};
+use observatory_core::model::{Event, EventKind, SessionId, SourcePtr};
 use observatory_core::store::{EventScope, Store, TimeRange};
 use tempfile::TempDir;
 
@@ -199,6 +199,96 @@ fn resync_does_not_duplicate_events_in_the_store_or_the_batches() {
         stored_ids, expected_sorted,
         "the store holds each event once, none stale"
     );
+}
+
+#[test]
+fn the_first_line_event_pointer_follows_the_rewrite() {
+    let dir = TempDir::new().unwrap();
+    let store_dir = TempDir::new().unwrap();
+    let store_path = store_dir.path().join("pointer.sqlite");
+    let path = session_path(dir.path());
+    append(&path, &file_before_the_rewrite());
+
+    let store = Store::open(&store_path).unwrap();
+    let mut live = LiveIngest::start(&live_config(dir.path()), store).unwrap();
+    let mut batches = Vec::new();
+    let started = Instant::now();
+    while started.elapsed() < LIMIT && batches.is_empty() {
+        batches.extend(live.step().batches);
+    }
+    assert!(!batches.is_empty(), "events were out before the rewrite");
+
+    std::fs::write(&path, rewritten_file()).unwrap();
+    let expected = replayed_ids(&path, SESSION);
+    let mut board: Vec<Event> = Vec::new();
+    while started.elapsed() < LIMIT {
+        let step = live.step();
+        assert!(step.errors.is_empty(), "{:?}", step.errors);
+        batches.extend(step.batches);
+        board.clear();
+        for batch in &batches {
+            fold(&mut board, &batch.retracted, batch.events.clone());
+        }
+        if board.len() >= expected.len() {
+            break;
+        }
+    }
+    batches.extend(live.finish());
+    drop(live);
+
+    let batch_ids: Vec<String> = batches.iter().flat_map(|b| ids(&b.events)).collect();
+    let distinct: BTreeSet<_> = batch_ids.iter().collect();
+    assert_eq!(batch_ids.len(), distinct.len(), "an id is batched twice");
+
+    let file = std::fs::read(&path).unwrap();
+    let first_line = file.split(|byte| *byte == b'\n').next().unwrap().len();
+    assert_eq!(first_line, first_lines().0.len() - 1 + GROWTH);
+
+    let store = Store::open_existing(&store_path).unwrap();
+    let stored = store
+        .events(
+            &EventScope::Session(SessionId(SESSION.to_owned())),
+            TimeRange::ALL,
+        )
+        .unwrap();
+    let mut stored_ids = ids(&stored);
+    stored_ids.sort();
+    let mut expected_sorted = expected;
+    expected_sorted.sort();
+    assert_eq!(stored_ids, expected_sorted, "no id lost or stored twice");
+
+    let mut at_zero = 0;
+    for event in &stored {
+        let SourcePtr::Jsonl {
+            byte_offset,
+            byte_len,
+            ..
+        } = &event.source
+        else {
+            panic!(
+                "a session event without a jsonl pointer: {:?}",
+                event.source
+            );
+        };
+        let start = usize::try_from(*byte_offset).unwrap();
+        let line = &file[start..start + usize::try_from(*byte_len).unwrap()];
+        assert!(
+            serde_json::from_slice::<serde_json::Value>(line).is_ok(),
+            "the pointer of {} ({byte_offset}, {byte_len}) does not read back as JSON",
+            event.id
+        );
+        if *byte_offset == 0 {
+            at_zero += 1;
+            assert_eq!(
+                usize::try_from(*byte_len).unwrap(),
+                first_line,
+                "the first line event keeps its pre-rewrite length"
+            );
+            let pointer = store.pointer(&event.id).unwrap();
+            assert_eq!(pointer, event.source);
+        }
+    }
+    assert!(at_zero > 0, "the first line produced an event");
 }
 
 #[test]
