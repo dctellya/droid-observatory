@@ -361,6 +361,12 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         latencies.last().copied().unwrap_or(0.0)
     );
     println!("unknown_total: {}", log.unknown_total);
+    let settings = std::path::PathBuf::from(std::env::var("HOME").expect("HOME is set"))
+        .join(".factory/missions")
+        .join(&launched.session_id)
+        .join("model-settings.json");
+    let settings = std::fs::read_to_string(&settings).expect("the mission has model settings");
+    println!("model-settings.json: {}", settings.replace('\n', " "));
     println!("spool: {}", launched.spool);
     println!("session: {}", launched.session_id);
 
@@ -370,6 +376,11 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         "the answer is stamped after the question"
     );
     assert_eq!(log.unknown_total, 0, "no unknown events");
+    assert_eq!(
+        settings.matches("claude-haiku-4-5-20251001").count(),
+        2,
+        "worker and validator run the cheapest model: {settings}"
+    );
     for (before, panel, after) in moments {
         assert!(
             before <= panel && panel <= after,

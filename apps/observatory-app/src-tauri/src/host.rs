@@ -244,6 +244,7 @@ pub async fn launch<R: Runtime>(
         auto_approve: cfg.mission.auto_approve_proposal,
         first_message: config.first_message(&mission_text),
         mission_name: config.branch.clone(),
+        config,
         mission: None,
         pending: Vec::new(),
         unknown_total: 0,
@@ -300,6 +301,7 @@ struct Pump<R: Runtime> {
     spool: Spool,
     source: RpcSource,
     auto_approve: bool,
+    config: LaunchConfig,
     first_message: String,
     mission_name: String,
     mission: Option<MissionId>,
@@ -411,6 +413,19 @@ impl<R: Runtime> Pump<R> {
         drop(status);
         if ack.method == method::INITIALIZE_SESSION && accepted {
             lock(&run.status).initialised();
+            match inner.channel.mission_settings(&self.config) {
+                Ok(sent) => tracing::info!(
+                    launch_id = %self.launch_id,
+                    request_id = %sent.id,
+                    method = sent.method,
+                    "host_control"
+                ),
+                Err(err) => tracing::error!(%err, launch_id = %self.launch_id, "host_control"),
+            }
+        }
+        // The mission starts only on the models the form named: a rejected update leaves the
+        // first message unsent and the rejection in the status.
+        if ack.method == method::UPDATE_SESSION_SETTINGS && accepted {
             self.send(
                 inner,
                 &HostControl::Message {

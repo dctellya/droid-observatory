@@ -50,8 +50,16 @@ owner's machine (Haiku for all roles, scratch repo under `target/scratch`).
   the logged initialize request (`host_control` line).
 - A message sent while a turn runs is queued by Droid and discarded by a pause (`queued_messages_discarded`,
   chatter). The UI lists what was written and what Droid acknowledged, so the difference is visible.
-- Stream notifications carry no timestamps; events mapped from them inherit the previous event's `at`
-  (a pause or an answer has the same `at` as the line before it). Not fixed here.
+- Stream notifications carry no timestamps; the pump stamps each event with the arrival time of its spool line
+  (`RawRecord.arrived_at`, round 2 of `m2-host-shell-and-launch`).
+- Amended 2026-10-24 (round 2): `missionSettings` in `droid.initialize_session` reaches the session's settings but
+  not the mission's `model-settings.json`, which Droid wrote from the user's defaults (a scratch mission ran its
+  worker on `claude-opus-5-5`, seen in `progress_log.jsonl`, `worker_started.modelId`). A `droid.update_session_settings`
+  request with the same `missionSettings`, sent after the initialize ack and before the first message, does write it
+  (`model-settings.json` then holds the form's models and skip flags; a worker started afterwards used Haiku). The host
+  sends it and holds the first message until it is acknowledged. Point 3 above now follows that update.
+- `droid.add_user_message` for resume yields no `mission.resumed` event: Droid does not announce one, so the ack of
+  the message is the visible reaction. A denied proposal leaves Droid idle until a message asks for a new one.
 - The process group is reaped on window close: SIGTERM goes to the group, then SIGKILL after
   `[mission].reap_grace_ms` if members remain; `host_reaped` is logged. The process is stopped by the host, not
   left to finish.
