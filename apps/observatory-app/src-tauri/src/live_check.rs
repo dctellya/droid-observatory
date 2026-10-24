@@ -1,0 +1,343 @@
+//! Live self-check of the hosting path with a real `droid` and a scratch mission (F-042). It runs
+//! the same `host::launch`, pump, control channel and reaping as the window does, on Tauri's mock
+//! runtime, so it needs no display. Ignored by default: it spends model tokens.
+//!
+//! ```sh
+//! OBSERVATORY_LIVE_CONFIG=<scratch config.toml> OBSERVATORY_LIVE_REPO=<scratch repo> \
+//! OBSERVATORY_LIVE_MISSION=<mission.md> cargo test -p observatory-app --lib \
+//!     live_check -- --ignored --nocapture
+//! ```
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use observatory_core::config::Config;
+use observatory_core::ingest::AttachStatus;
+use observatory_core::ingest::EventBatch;
+use observatory_core::ingest::rpc::HostControl;
+use observatory_core::store::Store;
+use observatory_core::view::{HostedStatus, LaunchForm, OutputLines};
+use tauri::{Listener, Manager};
+
+use crate::Shell;
+use crate::host::{Hosts, launch};
+use crate::process::group_members;
+
+fn env_path(name: &str) -> PathBuf {
+    PathBuf::from(std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set")))
+}
+
+fn now_nanos() -> i128 {
+    let since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("the clock is after 1970");
+    i128::try_from(since.as_nanos()).expect("nanoseconds fit")
+}
+
+/// One event as the `events_appended` listener saw it: when it was stamped (arrival of its line)
+/// and when the pump emitted it to the window.
+struct Seen {
+    id: String,
+    kind: String,
+    at_nanos: i128,
+    emitted_nanos: i128,
+}
+
+#[derive(Default)]
+struct Log {
+    seen: Vec<Seen>,
+    output_total: u64,
+    unknown_total: u64,
+}
+
+async fn wait_until<T>(what: &str, within: Duration, mut probe: impl FnMut() -> Option<T>) -> T {
+    let started = Instant::now();
+    loop {
+        if let Some(found) = probe() {
+            return found;
+        }
+        assert!(
+            started.elapsed() < within,
+            "gave up after {within:?} waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+fn percentile(sorted: &[f64], p: f64) -> f64 {
+    let rank = (p * sorted.len() as f64).ceil().max(1.0) as usize;
+    sorted[rank.min(sorted.len()) - 1]
+}
+
+fn spool_lines(path: &str) -> usize {
+    std::fs::read_to_string(path).map_or(0, |text| text.lines().count())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "spends model tokens: hosts a scratch mission with a real droid"]
+async fn live_check_a_hosted_scratch_mission_takes_every_control() {
+    let (cfg, origin) = Config::load_with_origin(Some(&env_path("OBSERVATORY_LIVE_CONFIG")))
+        .expect("the scratch config loads");
+    println!("config: {origin:?}");
+    let store = Store::open(&cfg.store.resolved_path()).expect("the scratch store opens");
+    let app = tauri::test::mock_app();
+    app.manage(Shell {
+        cfg: cfg.clone(),
+        store: Mutex::new(store),
+        status: Arc::new(Mutex::new(AttachStatus::default())),
+    });
+    let (exclude, _excluded) = std::sync::mpsc::channel();
+    let hosts = Hosts::new(exclude);
+    let handle = app.handle().clone();
+
+    let log = Arc::new(Mutex::new(Log::default()));
+    let listened = log.clone();
+    handle.listen("events_appended", move |event| {
+        let emitted_nanos = now_nanos();
+        let batch: EventBatch = serde_json::from_str(event.payload()).expect("a batch");
+        let mut log = listened.lock().unwrap();
+        log.unknown_total = batch.unknown_total;
+        for event in batch.events {
+            log.seen.push(Seen {
+                id: event.id.to_string(),
+                kind: serde_json::to_value(&event.kind)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                at_nanos: event.at.0.unix_timestamp_nanos(),
+                emitted_nanos,
+            });
+        }
+    });
+    let listened = log.clone();
+    handle.listen("live_output", move |event| {
+        let lines: OutputLines = serde_json::from_str(event.payload()).expect("output lines");
+        listened.lock().unwrap().output_total = lines.total;
+    });
+    let status: Arc<Mutex<Option<HostedStatus>>> = Arc::new(Mutex::new(None));
+    let listened = status.clone();
+    handle.listen("hosted_status", move |event| {
+        *listened.lock().unwrap() = serde_json::from_str(event.payload()).ok();
+    });
+
+    let mut form = LaunchForm::defaults(&cfg.mission);
+    form.repo = env_path("OBSERVATORY_LIVE_REPO").display().to_string();
+    form.mission_file = env_path("OBSERVATORY_LIVE_MISSION").display().to_string();
+    form.branch = "scratch/m2-host".to_owned();
+    let config = form.validate().expect("the scratch form is complete");
+    println!("models: {:?}", config.models);
+    println!("efforts: {:?}", config.efforts);
+    println!(
+        "tags: {:?} skip_scrutiny: {} skip_user_testing: {}",
+        config.tags, config.skip_scrutiny, config.skip_user_testing
+    );
+    let launched = launch(&handle, &hosts, &cfg, config)
+        .await
+        .expect("the scratch mission launches");
+    println!("launched: {launched:?}");
+    let id = launched.launch_id.clone();
+    let pgid = launched.pid;
+    println!("ps (group {pgid}):");
+    print_group(pgid);
+
+    let current = || hosts.status(&id).expect("the run is registered");
+    let sent = |what: &str, control: HostControl| {
+        let at = now_nanos();
+        let sent = hosts
+            .control(&id, &control)
+            .expect("the control is written");
+        println!(
+            "control {what}: request {} method {} written at {at}",
+            sent.request_id, sent.method
+        );
+        at
+    };
+    let first_after = |kind: &str, after: i128| {
+        log.lock()
+            .unwrap()
+            .seen
+            .iter()
+            .find(|seen| seen.kind == kind && seen.emitted_nanos >= after)
+            .map(|seen| (seen.id.clone(), seen.at_nanos))
+    };
+
+    let question = wait_until(
+        "the orchestrator's question",
+        Duration::from_secs(240),
+        || current().questions.first().cloned(),
+    )
+    .await;
+    let (question_event, question_at) =
+        wait_until("the question event", Duration::from_secs(5), || {
+            first_after("question.asked", 0)
+        })
+        .await;
+    println!("question: event {question_event} at {question_at}");
+
+    let paused = sent("pause", HostControl::Pause);
+    let (paused_event, paused_at) = wait_until("mission.paused", Duration::from_secs(30), || {
+        first_after("mission.paused", paused)
+    })
+    .await;
+    println!(
+        "pause -> mission.paused event {paused_event} at {paused_at} (question at {question_at})"
+    );
+    let resumed = sent("resume", HostControl::Resume);
+    let (resumed_event, resumed_at) =
+        wait_until("mission.resumed", Duration::from_secs(30), || {
+            first_after("mission.resumed", resumed)
+        })
+        .await;
+    println!("resume -> mission.resumed event {resumed_event} at {resumed_at}");
+    let messaged = sent(
+        "message",
+        HostControl::Message {
+            text: "Keep it to the one feature; answer comes next.".to_owned(),
+        },
+    );
+    let answered = sent(
+        "answer",
+        HostControl::Answer {
+            question_id: question.event_id.clone(),
+            text: "salud".to_owned(),
+        },
+    );
+    let (answered_event, answered_at) =
+        wait_until("intent.answered", Duration::from_secs(30), || {
+            first_after("intent.answered", answered)
+        })
+        .await;
+    println!(
+        "answer -> intent.answered event {answered_event} at {answered_at} (question at {question_at}, later: {})",
+        answered_at > question_at
+    );
+    let _ = messaged;
+
+    let proposal = wait_until("the mission proposal", Duration::from_secs(240), || {
+        current()
+            .permissions
+            .iter()
+            .find(|p| p.can_approve && p.can_deny)
+            .cloned()
+    })
+    .await;
+    println!(
+        "proposal waits: request {} tools {:?}",
+        proposal.request_id, proposal.tools
+    );
+    let denied = sent(
+        "deny",
+        HostControl::Deny {
+            request_id: proposal.request_id.clone(),
+        },
+    );
+    let denied_event = wait_until("permission.denied", Duration::from_secs(30), || {
+        first_after("permission.denied", denied)
+    })
+    .await;
+    println!(
+        "deny -> permission.denied event {} at {}",
+        denied_event.0, denied_event.1
+    );
+
+    let second = wait_until(
+        "a second proposal after the denial",
+        Duration::from_secs(180),
+        || {
+            current()
+                .permissions
+                .iter()
+                .find(|p| p.request_id != proposal.request_id && p.can_approve)
+                .cloned()
+        },
+    )
+    .await;
+    println!("second proposal waits: request {}", second.request_id);
+    let approved = sent(
+        "approve",
+        HostControl::Approve {
+            request_id: second.request_id.clone(),
+        },
+    );
+    let approval = wait_until("permission.granted", Duration::from_secs(30), || {
+        first_after("permission.granted", approved)
+    })
+    .await;
+    println!(
+        "approve -> permission.granted event {} at {}",
+        approval.0, approval.1
+    );
+
+    // VAL-HOST-013: the count the panel shows (live_output total) against `wc -l` of the spool,
+    // at two moments at least 30 s apart.
+    let mut moments = Vec::new();
+    for moment in 0..2 {
+        tokio::time::sleep(Duration::from_secs(if moment == 0 { 5 } else { 31 })).await;
+        let panel = log.lock().unwrap().output_total;
+        let wc = spool_lines(&launched.spool);
+        println!(
+            "moment {moment}: panel_lines {panel} wc_l {wc} at {}",
+            now_nanos()
+        );
+        moments.push((panel, wc));
+    }
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let reaping = Instant::now();
+    hosts
+        .reap_all(Duration::from_millis(cfg.mission.reap_grace_ms))
+        .await;
+    println!("reaped in {:?}", reaping.elapsed());
+    println!(
+        "ps after reap (group {pgid}): members {}",
+        group_members(pgid)
+    );
+    print_group(pgid);
+
+    let log = log.lock().unwrap();
+    let mut latencies: Vec<f64> = log
+        .seen
+        .iter()
+        .map(|seen| (seen.emitted_nanos - seen.at_nanos) as f64 / 1_000_000.0)
+        .collect();
+    latencies.sort_by(f64::total_cmp);
+    println!(
+        "latency (arrival stamp to emit, ms) over {} events: p50 {:.1} p95 {:.1} max {:.1}",
+        latencies.len(),
+        percentile(&latencies, 0.50),
+        percentile(&latencies, 0.95),
+        latencies.last().copied().unwrap_or(0.0)
+    );
+    println!("unknown_total: {}", log.unknown_total);
+    println!("spool: {}", launched.spool);
+    println!("session: {}", launched.session_id);
+
+    assert_eq!(group_members(pgid), 0, "the process group is gone");
+    assert!(
+        answered_at > question_at,
+        "the answer is stamped after the question"
+    );
+    assert_eq!(log.unknown_total, 0, "no unknown events");
+    for (panel, wc) in moments {
+        assert_eq!(panel as usize, wc, "the panel count equals wc -l");
+    }
+}
+
+fn print_group(pgid: u32) {
+    let out = std::process::Command::new("ps")
+        .args(["-axo", "pid,pgid,command"])
+        .output()
+        .expect("ps runs");
+    let text = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<&str> = text
+        .lines()
+        .filter(|line| line.split_whitespace().nth(1) == Some(&pgid.to_string()))
+        .collect();
+    if rows.is_empty() {
+        println!("  (no process in group {pgid})");
+    }
+    for row in rows {
+        println!("  {row}");
+    }
+}

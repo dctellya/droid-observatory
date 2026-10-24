@@ -4,6 +4,8 @@
 mod commands;
 mod host;
 mod ingest;
+#[cfg(test)]
+mod live_check;
 mod logging;
 mod process;
 
