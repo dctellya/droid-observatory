@@ -381,7 +381,7 @@ fn the_m0_board_agrees_with_the_replay_counts() {
     assert_eq!(board.event_count, 1279);
     assert_eq!(board.tray_unknown, 0, "the replay ends `unknown events: 0`");
     assert!(board.tray.is_empty());
-    assert_eq!(board.lane_counts, [443, 69, 424, 87, 122, 134, 0]);
+    assert_eq!(board.lane_counts, [437, 69, 424, 93, 122, 134, 0]);
     assert_eq!(lane_counts(&events), board.lane_counts);
     assert_eq!(board.human_overlays, 70);
     assert_eq!(overlay_markers(&events, Overlay::Human).len(), 70);
@@ -1347,7 +1347,7 @@ mod render {
         let board = build(&events, &ViewConfig::default());
 
         let counts: Vec<u64> = board.lanes.iter().map(|l| l.event_count).collect();
-        assert_eq!(counts, [443, 69, 424, 87, 122, 134, 0]);
+        assert_eq!(counts, [437, 69, 424, 93, 122, 134, 0]);
         for view in &board.lanes {
             let rows: usize = view.groups.iter().map(|g| g.rows.len()).sum();
             assert_eq!(rows as u64, view.event_count, "{}", view.name);

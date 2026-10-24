@@ -270,7 +270,7 @@ fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
     let count = |lane: Lane| events.iter().filter(|event| event.lane == lane).count();
 
     let phases: Vec<usize> = Lane::ALL.into_iter().map(count).collect();
-    assert_eq!(phases, [443, 69, 424, 87, 122, 134, 0], "Plan..Gate");
+    assert_eq!(phases, [437, 69, 424, 93, 122, 134, 0], "Plan..Gate");
     assert_eq!(phases.iter().sum::<usize>(), events.len());
 
     let overlays: Vec<&Event> = events
