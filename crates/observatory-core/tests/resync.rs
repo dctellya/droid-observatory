@@ -217,3 +217,26 @@ fn an_unfinished_line_that_changed_under_the_tail_is_read_again() {
     assert!(!source.take_rewritten(), "reported once");
     assert_eq!(lines, [b"{\"a\":1}".to_vec(), b"{\"c\":2}".to_vec()]);
 }
+
+#[test]
+fn a_file_truncated_before_it_is_rewritten_is_read_from_its_start() {
+    let dir = TempDir::new().unwrap();
+    let path = session_path(dir.path());
+    append(&path, &first_lines().0);
+    let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
+    let mut collected = Collected::default();
+    collected.absorb(attach.poll());
+
+    // Droid truncates the file before it writes the longer line; the tail can poll in between.
+    std::fs::write(&path, b"").unwrap();
+    collected.absorb(attach.poll());
+    std::fs::write(&path, rewritten_file()).unwrap();
+    pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+        attach.at_eof()
+    });
+    collected.events.extend(attach.finish());
+
+    assert!(collected.warnings.is_empty(), "{:?}", collected.warnings);
+    assert_eq!(unknown_count(&collected.events), 0);
+    assert_eq!(ids(&collected.events), replayed_ids(&path, SESSION));
+}
