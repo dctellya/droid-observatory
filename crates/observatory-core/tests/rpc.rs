@@ -759,6 +759,38 @@ fn a_mission_proposal_is_told_from_other_permission_requests() {
 }
 
 #[test]
+fn a_permission_request_for_the_propose_mission_tool_is_a_mission_proposal() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = Vec::new();
+    stream.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    for (id, tool) in [("p-1", "ProposeMission"), ("p-2", "Execute")] {
+        stream.extend(line(&request(
+            id,
+            "droid.request_permission",
+            json!({
+                "toolUses": [{ "toolUse": { "type": "tool_use", "id": "t", "name": tool, "input": {} } }],
+                "options": [{ "value": "proceed_once" }, { "value": "cancel" }],
+            }),
+        )));
+    }
+
+    let hosted = host(dir.path(), &stream);
+
+    let proposals: Vec<&str> = hosted
+        .mapper
+        .open_requests()
+        .permissions()
+        .iter()
+        .filter(|permission| permission.is_mission_proposal())
+        .map(|permission| permission.request_id.as_str())
+        .collect();
+    assert_eq!(proposals, ["p-1"]);
+}
+
+#[test]
 fn open_questions_are_listed_by_the_event_that_asked_them() {
     let dir = tempfile::tempdir().unwrap();
     let mut hosted = host(dir.path(), &question_stream());
