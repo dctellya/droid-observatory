@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{SessionId, SourcePtr};
+use crate::model::{SessionId, SourcePtr, Timestamp};
 
 /// One line of a source, as read: not parsed, not copied anywhere else.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -12,6 +12,9 @@ pub struct RawRecord {
     pub session_id: SessionId,
     /// The line without its newline.
     pub bytes: Vec<u8>,
+    /// When the line was read, for a source whose lines carry no time of their own (a hosted
+    /// stream). A session file's lines are timestamped inside, so its records leave this empty.
+    pub arrived_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

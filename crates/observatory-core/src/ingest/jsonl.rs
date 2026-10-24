@@ -105,6 +105,7 @@ impl TailState {
             },
             session_id: self.session_id.clone(),
             bytes,
+            arrived_at: None,
         }
     }
 }

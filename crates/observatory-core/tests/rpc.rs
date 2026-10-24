@@ -237,7 +237,32 @@ fn rpc_events_map_to_the_same_lane_events_as_the_session_file() {
     let hosted_lanes: Vec<_> = hosted.events.iter().map(lane_event).collect();
     let attached_lanes: Vec<_> = attached.iter().map(lane_event).collect();
     assert_eq!(hosted_lanes.len(), attached_lanes.len());
-    assert_eq!(hosted_lanes, attached_lanes);
+    // A turn outcome notification has no time of its own: the host stamps it with the time it
+    // arrived, where the session file's line takes the time of the line before it, and the
+    // turn's duration follows from that time.
+    let untimed = |index: usize| {
+        let SourcePtr::Rpc {
+            path,
+            byte_offset,
+            byte_len,
+        } = &hosted.events[index].source
+        else {
+            panic!("a hosted event must carry an rpc pointer");
+        };
+        let raw = JsonlSource::read_at(path, *byte_offset, *byte_len).unwrap();
+        String::from_utf8_lossy(&raw).contains("agent_turn_completed")
+    };
+    for (index, (hosted_event, attached_event)) in
+        hosted_lanes.iter().zip(&attached_lanes).enumerate()
+    {
+        if untimed(index) {
+            let mut hosted_event = hosted_event.clone();
+            (hosted_event.5, hosted_event.6) = (attached_event.5, attached_event.6);
+            assert_eq!(&hosted_event, attached_event, "event {index}");
+        } else {
+            assert_eq!(hosted_event, attached_event, "event {index}");
+        }
+    }
     for event in &hosted.events {
         assert_eq!(event.mapping_version, MappingVersion::V1);
         let SourcePtr::Rpc {

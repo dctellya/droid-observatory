@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::IngestConfig;
 use crate::ingest::{IngestError, JsonlSource, RawRecord, Source, SourceKind};
-use crate::model::SourcePtr;
+use crate::model::{SourcePtr, Timestamp};
 
 /// The tail of a spool: the same reader as a session file (incomplete last line held back,
 /// pointers by byte offset), with pointers that say `rpc` so a stored event names the spool.
@@ -30,6 +30,7 @@ impl RpcSource {
 }
 
 fn rpc(mut record: RawRecord) -> RawRecord {
+    record.arrived_at = Some(Timestamp(time::OffsetDateTime::now_utc()));
     if let SourcePtr::Jsonl {
         path,
         byte_offset,

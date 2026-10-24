@@ -260,6 +260,7 @@ fn records_of(session: &SessionId, path: &Path, bytes: &[u8]) -> Vec<RawRecord> 
                 },
                 session_id: session.clone(),
                 bytes: line.to_vec(),
+                arrived_at: None,
             });
         }
         offset += line.len() + 1;

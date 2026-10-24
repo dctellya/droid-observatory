@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde_json::Value;
+
 use super::envelope::{Incoming, parse};
 use super::open::OpenRequests;
 use crate::ingest::RawRecord;
@@ -65,7 +67,7 @@ impl RpcMapper {
                 asks,
                 results,
             } => {
-                let events = self.feed(record, line);
+                let events = self.feed(record, arrival(line, record));
                 let questions = events
                     .iter()
                     .filter(|event| event.kind == EventKind::QuestionAsked);
@@ -77,9 +79,9 @@ impl RpcMapper {
                 }
                 events
             }
-            Incoming::Outcome { record: line } => self.feed(record, line),
+            Incoming::Outcome { record: line } => self.feed(record, arrival(line, record)),
             Incoming::ToolResult { record: line, call } => {
-                let events = self.feed(record, line);
+                let events = self.feed(record, arrival(line, record));
                 self.open.close_call(&call);
                 events
             }
@@ -98,7 +100,7 @@ impl RpcMapper {
             Incoming::Protocol(name) => self.count(&name),
             Incoming::Unrecognised(name) => {
                 let line = serde_json::json!({ "type": name }).to_string().into_bytes();
-                self.feed(record, line)
+                self.feed(record, arrival(line, record))
             }
         }
     }
@@ -122,8 +124,24 @@ impl RpcMapper {
             ptr: record.ptr.clone(),
             session_id: mapper.session().id.clone(),
             bytes,
+            arrived_at: record.arrived_at,
         };
         mapper.map(&line)
+    }
+}
+
+/// A record rebuilt from a notification has the time its message carried, if it carried one;
+/// otherwise it takes the time its line arrived, not the time of the line before it.
+fn arrival(line: Vec<u8>, record: &RawRecord) -> Vec<u8> {
+    let Some(at) = record.arrived_at else {
+        return line;
+    };
+    match serde_json::from_slice::<Value>(&line) {
+        Ok(Value::Object(mut fields)) if !fields.contains_key("timestamp") => {
+            fields.insert("timestamp".into(), at.to_rfc3339_millis().into());
+            Value::Object(fields).to_string().into_bytes()
+        }
+        _ => line,
     }
 }
 
@@ -142,6 +160,7 @@ mod tests {
             },
             session_id: SessionId("launch".into()),
             bytes: bytes.as_bytes().to_vec(),
+            arrived_at: None,
         }
     }
 

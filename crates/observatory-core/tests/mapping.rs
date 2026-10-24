@@ -447,6 +447,7 @@ impl Session {
             },
             session_id: SessionId(SESSION.to_owned()),
             bytes,
+            arrived_at: None,
         };
         self.last_offset = self.offset;
         self.offset += record.bytes.len() as u64 + 1;
