@@ -224,7 +224,11 @@ impl Attach {
                 id: tail.found.session_id.clone(),
                 path: tail.found.path.clone(),
                 parent: tail.found.parent.clone(),
-                name: session_name(&tail.found.path, &tail.found.session_id),
+                name: session_name(
+                    &tail.found.path,
+                    &tail.found.session_id,
+                    &self.cfg.runner_tags,
+                ),
             })
             .collect()
     }

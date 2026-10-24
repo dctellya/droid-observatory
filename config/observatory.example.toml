@@ -41,6 +41,10 @@ tail_chunk_kb = 1024
 # Startup scan attaches only files modified within this window; older sessions stay in the
 # library and open on demand, so a directory of hundreds of old sessions does not open at once.
 startup_scan_hours = 24
+# Sidecar tags the Droid runner writes itself (0.247 puts `exec` before the user's `--tag`). A
+# session is named by its first tag that is not in this list and carries no `role`, `missionId`
+# or `callingSessionId` metadata; with none left, by its session id (FR-L1).
+runner_tags = ["exec", "mission-worker", "mission-session", "subagent", "read-only"]
 
 [ui]
 # Shell-to-UI flush interval. 100 ms is well under the 1 s latency target and avoids one

@@ -120,6 +120,7 @@ pub struct IngestConfig {
     pub max_session_file_mb: u64,
     pub tail_chunk_kb: u64,
     pub startup_scan_hours: u64,
+    pub runner_tags: Vec<String>,
 }
 
 impl IngestConfig {
@@ -148,6 +149,15 @@ impl Default for IngestConfig {
             max_session_file_mb: 512,
             tail_chunk_kb: 1024,
             startup_scan_hours: 24,
+            runner_tags: [
+                "exec",
+                "mission-worker",
+                "mission-session",
+                "subagent",
+                "read-only",
+            ]
+            .map(String::from)
+            .to_vec(),
         }
     }
 }
@@ -403,6 +413,7 @@ mod tests {
         ("ingest", "max_session_file_mb"),
         ("ingest", "tail_chunk_kb"),
         ("ingest", "startup_scan_hours"),
+        ("ingest", "runner_tags"),
         ("ui", "event_batch_ms"),
         ("ui", "dev_port"),
         ("store", "path"),

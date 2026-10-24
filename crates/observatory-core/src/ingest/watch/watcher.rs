@@ -14,7 +14,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::scan::{Found, is_session_file, scan, stat};
 use crate::config::IngestConfig;
-use crate::ingest::{IngestError, read_sidecar};
+use crate::ingest::{IngestError, SidecarTag, read_sidecar};
 use crate::model::SessionId;
 
 const KB: u64 = 1024;
@@ -27,18 +27,30 @@ pub struct DiscoveredSession {
     pub session_id: SessionId,
     /// `callingSessionId` of the first line: set for a child session.
     pub parent: Option<SessionId>,
-    /// The first sidecar tag, else the session id (FR-L1).
+    /// The first sidecar tag a user wrote, else the session id (FR-L1).
     pub name: String,
     pub modified: SystemTime,
     pub size: u64,
 }
 
-/// What the UI calls a session: the name of the first tag in its sidecar, else its id.
-pub fn session_name(jsonl_path: &Path, id: &SessionId) -> String {
+/// Metadata keys only the runner sets on the tags it creates.
+const RUNNER_METADATA_KEYS: [&str; 3] = ["role", "missionId", "callingSessionId"];
+
+/// What the UI calls a session: the first sidecar tag that is not runner-generated (named in
+/// `runner_tags` or carrying runner metadata), else its id.
+pub fn session_name(jsonl_path: &Path, id: &SessionId, runner_tags: &[String]) -> String {
+    let user_tag = |tag: &SidecarTag| {
+        !runner_tags.contains(&tag.name)
+            && !RUNNER_METADATA_KEYS.iter().any(|key| {
+                tag.metadata
+                    .as_ref()
+                    .is_some_and(|meta| meta.get(key).is_some())
+            })
+    };
     read_sidecar(jsonl_path)
         .ok()
         .flatten()
-        .and_then(|sidecar| sidecar.tags?.into_iter().next())
+        .and_then(|sidecar| sidecar.tags?.into_iter().find(user_tag))
         .map_or_else(|| id.0.clone(), |tag| tag.name)
 }
 
@@ -47,6 +59,7 @@ pub struct SessionWatcher {
     poll: Duration,
     window: Duration,
     head_bytes: usize,
+    runner_tags: Vec<String>,
     changed: Receiver<PathBuf>,
     /// Paths `wait` took off the channel and `next_discovered` has not looked at yet.
     hints: HashSet<PathBuf>,
@@ -96,6 +109,7 @@ impl SessionWatcher {
             poll: Duration::from_millis(cfg.jsonl_poll_ms.max(1)),
             window: Duration::from_secs(cfg.startup_scan_hours.saturating_mul(SECONDS_PER_HOUR)),
             head_bytes: usize::try_from(cfg.tail_chunk_kb.saturating_mul(KB)).unwrap_or(usize::MAX),
+            runner_tags: cfg.runner_tags.clone(),
             changed,
             hints: HashSet::new(),
             _notifier: notifier,
@@ -195,7 +209,7 @@ impl SessionWatcher {
                 .file_stem()
                 .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned())
         }));
-        let name = session_name(&file.path, &session_id);
+        let name = session_name(&file.path, &session_id, &self.runner_tags);
         Some(DiscoveredSession {
             path: file.path.clone(),
             parent: text("callingSessionId").map(SessionId),
