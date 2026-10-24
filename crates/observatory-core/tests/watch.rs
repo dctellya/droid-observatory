@@ -398,3 +398,52 @@ fn replay_is_attach_at_end_of_file() {
 
     assert_eq!(event_ids(&collected), replayed_ids(&path, "done"));
 }
+
+fn unknown_events(collected: &Collected) -> usize {
+    collected
+        .events
+        .iter()
+        .filter(|event| matches!(event.kind, EventKind::Unknown { .. }))
+        .count()
+}
+
+#[test]
+fn tail_keeps_an_incomplete_last_line_until_its_newline_arrives() {
+    let dir = TempDir::new().unwrap();
+    let path = session_path(dir.path(), "short");
+    let mut lines = m0_lines(6);
+    lines[0] = session_start("short", None);
+    let (last, body) = lines.split_last().unwrap();
+
+    // The session file as `droid exec` leaves it: its start, then the lines, the last one
+    // written without its newline for now.
+    let (first_half, second_half) = last.split_at(last.len() - 1);
+    for line in body {
+        append(&path, line);
+    }
+    append(&path, first_half);
+
+    let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
+    let mut collected = Collected::default();
+    pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+        attach.at_eof()
+    });
+    assert_eq!(
+        unknown_events(&collected),
+        0,
+        "no unknown event before the newline"
+    );
+
+    append(&path, second_half);
+    pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+        attach.at_eof()
+    });
+    collected.events.extend(attach.finish());
+
+    assert_eq!(
+        unknown_events(&collected),
+        0,
+        "no unknown event after it either"
+    );
+    assert_eq!(event_ids(&collected), replayed_ids(&path, "short"));
+}
