@@ -2,32 +2,40 @@
 //! kind. The decision file `D-0NN-mapping-v1.md` reproduces it; change both together and bump
 //! the mapping version.
 //!
-//! | Raw shape | Kind | Lane / role |
+//! The phase column is one of the seven mission phases (D-024: 1 Plan, 2 Contract, 3 Build,
+//! 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate). "Home phase" is `Lane::home(role)`
+//! (Orchestrator and Human: Plan; Worker and Unresolved: Build; scrutiny validator: Scrutiny;
+//! user-testing validator: User testing; External: Gate), except that a role-neutral kind of an
+//! integration session (feature id `^(m[0-9]+|final)-integrate-`) is Integrate and one of a
+//! contract session (spawned by a `Task` whose description matches
+//! `^Contract\b|[Vv]alidation contract`) is Contract.
+//!
+//! | Raw shape | Kind | Phase (D-024) / role |
 //! |---|---|---|
-//! | `session_start`, no `callingSessionId` | `IntentCreated` | 1, session role |
-//! | `session_start` with `callingSessionId` | `SubagentSpawned` | 3, child's role |
-//! | root user text typed by the person (`userMessageSource: cli_tui`) | `IntentAmended` | 1, session role |
-//! | child user text that is a `Task` or runner assignment (first only) | `TaskStarted` | 3 |
-//! | assistant `tool_use` `Task` | `TaskAssigned`, plus `FeatureDefined` the first time a feature is named | 2 |
-//! | assistant `tool_use` `ProposeMission` | `PlanCreated`, `MilestoneDefined` per `\| **Mn** ...` row | 2 |
-//! | assistant `tool_use` `AskUser` | `QuestionAsked` | 1 |
-//! | `tool_result` of an `AskUser` | `IntentAnswered` | 1, session role |
-//! | `Execute` command that runs `git commit` (whole command words) | `CommitCreated` | 3 |
-//! | `Execute` command that runs `cargo test`, `make test` or `make check` | `TestsRun` | 3 |
-//! | `Execute` command that runs `make check` | `GateCommandRun`; its result `GateCommandPassed` / `GateCommandFailed` by the exit status in the result text, `is_error` as a second failure signal | 6 |
-//! | assistant `tool_use` `Edit`, `Create`, `ApplyPatch` | `FileTouched` | 3 |
-//! | `tool_result` with `is_error` | `ToolError`; `HookBlocked` when the text names a hook | 3 |
-//! | assistant `modelId` differs from the session's previous one | `ModelChanged` | 3 |
-//! | `compaction_state` | `ContextCompacted` | 2 |
-//! | `todo_state` whose todos differ from the previous one | `PlanRevised` | 2 |
-//! | `agent_turn_outcome` in a child: completed / cancelled / error or usage exhausted | `TaskDone` / `TaskSkipped` / `ToolError` | 3 / 2 / 3 |
-//! | `agent_turn_outcome` in the root: cancelled / error or usage exhausted | `MissionPaused` / `EscalationRaised`; completed is quiet | 2 |
-//! | child end of file | `SubagentFinished` | 3 |
-//! | sidecar `tokenUsage`, at end of file | `UsageReported` | 3 |
-//! | scrutiny validator report text | `FindingBlocking`, `FindingNonBlocking`, `ScrutinyPassed` | 4 |
-//! | user-testing validator report text | `QaScenarioPassed`, `QaScenarioFailed`, `QaEvidence` | 5 |
+//! | `session_start`, no `callingSessionId` | `intent.created` | Plan, overlay human, session role |
+//! | `session_start` with `callingSessionId` | `subagent.spawned` | child's home phase (Build, Scrutiny, User testing; Contract or Integrate by rules 3 and 4) |
+//! | root user text typed by the person (`userMessageSource: cli_tui`) | `intent.amended` | Plan, overlay human, session role |
+//! | child user text that is a `Task` or runner assignment (first only) | `task.started` | home phase |
+//! | assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan |
+//! | assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | Plan |
+//! | assistant `tool_use` `AskUser` | `question.asked` | Plan, overlay human |
+//! | `tool_result` of an `AskUser` | `intent.answered` | Plan, overlay human, session role |
+//! | `Execute` command that runs `git commit` (whole command words) | `commit.created` | home phase; the orchestrator's commits: Integrate |
+//! | `Execute` command that runs `cargo test`, `make test` or `make check` | `tests.run` | home phase |
+//! | `Execute` command that runs `make check` | `gate_command.run`; its result `gate_command.passed` / `gate_command.failed` by the exit status in the result text (`is_error` is a second failure signal) | Integrate for every role |
+//! | assistant `tool_use` `Edit`, `Create`, `ApplyPatch` | `file.touched` | home phase |
+//! | `tool_result` with `is_error` | `tool.error`; `hook.blocked` when the text names a hook | home phase |
+//! | assistant `modelId` differs from the session's previous one | `model.changed` | home phase |
+//! | `compaction_state` | `context.compacted` | home phase |
+//! | `todo_state` whose todos differ from the previous one | `plan.revised` | Plan |
+//! | `agent_turn_outcome` in a child: completed / cancelled / error or usage exhausted | `task.done` / `task.skipped` / `tool.error` | home phase |
+//! | `agent_turn_outcome` in the root: cancelled / error or usage exhausted | `mission.paused` / `escalation.raised`; completed is quiet | Plan (`escalation.raised`; `mission.paused` also carries the human overlay) |
+//! | child end of file | `subagent.finished` | home phase |
+//! | sidecar `tokenUsage`, at end of file | `usage.reported` | home phase |
+//! | scrutiny validator report text | `finding.blocking`, `finding.non_blocking`, `scrutiny.passed` | Scrutiny |
+//! | user-testing validator report text | `qa.scenario.passed`, `qa.scenario.failed`, `qa.evidence` | User testing |
 //! | thinking, plain text, empty user messages, `Script` (its inner `Execute` calls are their own records), other tool calls and their results | no event | none |
-//! | any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | role's lane |
+//! | any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | `Lane::home(role)` |
 //!
 //! An event's `role` is always the role of its session (the capture header's role is the oracle
 //! for it); a person's words are told apart by the kind, not by a `Human` role.

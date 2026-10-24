@@ -26,7 +26,7 @@ cli=("cargo" "run" "-q" "-p" "observatory-cli" "--")
 [ -x "$app" ] || { echo "attach-smoke: $app not found; run cargo build -p observatory-app" >&2; exit 2; }
 work="$(mktemp -d "${TMPDIR:-/tmp}/attach-smoke.XXXXXX")"
 sessions="$work/sessions/-scratch"
-mkdir -p "$sessions" "$work/oracle"
+mkdir -p "$sessions" "$work/logs" "$work/oracle"
 session_id="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["id"])' "$fixture.jsonl")"
 pid=""
 cleanup() {
@@ -40,6 +40,7 @@ max_mb=512
 cat >"$work/config.toml" <<EOF
 [ingest]
 factory_sessions_dir = "$work/sessions"
+factory_logs_dir = "$work/logs"
 max_session_file_mb = $max_mb
 
 [store]
