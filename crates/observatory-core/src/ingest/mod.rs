@@ -4,6 +4,8 @@ mod capture;
 mod jsonl;
 mod live;
 mod memory;
+#[cfg(feature = "rpc")]
+pub mod rpc;
 mod sessions;
 mod sidecar;
 mod source;

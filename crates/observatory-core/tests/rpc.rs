@@ -298,6 +298,7 @@ fn host_and_attach_of_the_same_mission_agree_on_event_count() {
     let hosted = host(dir.path(), &stream);
     let attached = attach(&common::m0_root());
 
+    assert!(!attached.is_empty());
     assert_eq!(hosted.events.len(), attached.len());
     let kinds = |events: &[Event]| {
         let mut counts = BTreeMap::new();

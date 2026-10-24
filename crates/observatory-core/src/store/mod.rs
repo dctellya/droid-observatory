@@ -3,6 +3,7 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod hosted;
 mod read;
 mod record;
 mod replay;
@@ -14,6 +15,7 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
+pub use hosted::HostedRun;
 pub use read::{EventScope, TimeRange};
 pub use record::CaptureInfo;
 
