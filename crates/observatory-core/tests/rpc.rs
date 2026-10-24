@@ -942,6 +942,40 @@ fn a_result_delivered_twice_maps_once() {
 }
 
 #[test]
+fn retry_and_retraction_notifications_are_counted_not_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = Vec::new();
+    stream.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    stream.extend(line(&notification(
+        "s-1",
+        json!({ "type": "llm_retry", "attempt": 1, "reason": "timeout" }),
+    )));
+    stream.extend(line(&notification(
+        "s-1",
+        json!({ "type": "assistant_message_retracted", "messageId": "m" }),
+    )));
+
+    let hosted = host(dir.path(), &stream);
+
+    assert!(
+        hosted
+            .events
+            .iter()
+            .all(|event| !matches!(event.kind, EventKind::Unknown { .. })),
+        "{:?}",
+        hosted.events
+    );
+    assert_eq!(hosted.mapper.protocol_counts()["llm_retry"], 1);
+    assert_eq!(
+        hosted.mapper.protocol_counts()["assistant_message_retracted"],
+        1
+    );
+}
+
+#[test]
 fn host_controls_travel_as_tagged_json() {
     let control: HostControl =
         serde_json::from_value(json!({ "kind": "answer", "question_id": "q", "text": "t" }))
