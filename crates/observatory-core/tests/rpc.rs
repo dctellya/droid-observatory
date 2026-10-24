@@ -1177,3 +1177,50 @@ fn the_default_config_adds_no_tags_and_skips_no_validation() {
     assert!(params["missionSettings"].get("skipScrutiny").is_none());
     assert!(params["missionSettings"].get("skipUserTesting").is_none());
 }
+
+#[test]
+fn the_mission_models_are_set_with_an_update_after_initialize() {
+    // Droid 0.247.0 takes `missionSettings` of `droid.initialize_session` into the session
+    // but writes the mission's model-settings.json from the user's own defaults; the update
+    // request is what reaches the mission (a hosted scratch mission ran a worker on Opus).
+    let mission = MissionConfig {
+        worker_model: "worker-model".into(),
+        validator_model: "validator-model".into(),
+        skip_scrutiny: true,
+        ..MissionConfig::default()
+    };
+    let mut form = LaunchForm::defaults(&mission);
+    form.repo = "/work/repo".into();
+    form.mission_file = "/work/repo/mission.md".into();
+    form.branch = "mission/hello".into();
+    let config = form.validate().unwrap();
+    let mut channel = ControlChannel::new(Vec::new());
+    channel.initialize(&config, "s-1").unwrap();
+
+    let sent = channel.mission_settings(&config).unwrap();
+
+    let written = written_lines(&channel);
+    assert_eq!(written.len(), 2);
+    let update = &written[1];
+    assert_eq!(update["method"], "droid.update_session_settings");
+    assert_eq!(sent.method, "droid.update_session_settings");
+    assert_eq!(update["id"], sent.id.as_str());
+    assert_eq!(written[0]["id"], "1");
+    assert_eq!(update["id"], "2");
+    assert_eq!(
+        update["params"],
+        json!({ "missionSettings": written[0]["params"]["missionSettings"] })
+    );
+    assert_eq!(
+        update["params"]["missionSettings"]["workerModel"],
+        "worker-model"
+    );
+    assert_eq!(
+        update["params"]["missionSettings"]["validationWorkerModel"],
+        "validator-model"
+    );
+    let ack = channel
+        .observe(&line(&response("2", json!({}))))
+        .expect("the update is acknowledged");
+    assert_eq!(ack.method, "droid.update_session_settings");
+}
