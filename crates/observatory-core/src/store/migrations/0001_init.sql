@@ -14,9 +14,10 @@ CREATE TABLE milestones (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCE
 CREATE TABLE features (id TEXT PRIMARY KEY, milestone_id TEXT NOT NULL REFERENCES milestones(id), name TEXT NOT NULL,
   defined_at TEXT, completed_at TEXT, state TEXT NOT NULL);
 CREATE TABLE events (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL REFERENCES missions(id), session_id TEXT REFERENCES sessions(id),
-  milestone_id TEXT, feature_id TEXT, lane INTEGER NOT NULL CHECK (lane BETWEEN 1 AND 8), kind TEXT NOT NULL,
+  milestone_id TEXT, feature_id TEXT, lane INTEGER NOT NULL CHECK (lane BETWEEN 1 AND 7),
+  overlay TEXT CHECK (overlay IN ('human','commander')), kind TEXT NOT NULL,
   raw_type TEXT, mapping_version TEXT NOT NULL REFERENCES mapping_versions(version), role TEXT NOT NULL, model TEXT,
-  at TEXT NOT NULL, duration_ms INTEGER, source TEXT NOT NULL CHECK (source IN ('jsonl','rpc','git','github','app')),
+  at TEXT NOT NULL, duration_ms INTEGER, source TEXT NOT NULL CHECK (source IN ('jsonl','rpc','usage_log','git','github','app')),
   path TEXT, byte_offset INTEGER, byte_len INTEGER, sub INTEGER NOT NULL DEFAULT 0, repo TEXT, sha TEXT, url TEXT, action_id INTEGER);
 CREATE UNIQUE INDEX events_ptr ON events(path, byte_offset, sub) WHERE path IS NOT NULL;
 CREATE INDEX events_mission_at ON events(mission_id, at);

@@ -466,7 +466,11 @@ fn every_line_of_every_session_fixture_is_valid_json() {
     let mut broken = Vec::new();
     let mut lines = 0;
     for path in files_under(&streams_dir()) {
-        if path.extension().is_none_or(|ext| ext != "jsonl") {
+        // The usage-log extract holds log lines, not JSON: tests/usage_log.rs reads it.
+        let is_extract = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".usage-log.jsonl"));
+        if path.extension().is_none_or(|ext| ext != "jsonl") || is_extract {
             continue;
         }
         let bytes = std::fs::read(&path).expect("fixture file reads");

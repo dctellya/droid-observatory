@@ -148,6 +148,11 @@ impl JsonlSource {
         Ok(line)
     }
 
+    /// Bytes read so far, over all files: how far a capped index has got.
+    pub fn consumed(&self) -> u64 {
+        self.files.iter().map(|file| file.offset).sum()
+    }
+
     /// Returns each unfinished last line as a record. For a file that will not grow again
     /// (replay): `next_batch` keeps such a line back because a writer may be mid-line.
     pub fn drain_partial(&mut self) -> Vec<RawRecord> {

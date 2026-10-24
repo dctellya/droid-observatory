@@ -14,6 +14,21 @@ pub struct CaptureHeader {
     pub source_dir: Option<String>,
     pub captured_at: Option<String>,
     pub mission_name: Option<String>,
+    /// The usage-log extract that belongs to the capture (F-034).
+    #[serde(default)]
+    pub usage_log: Option<UsageLogInfo>,
+}
+
+/// The `usage_log` field: the extract of Droid's CLI log beside the capture, named relative to
+/// the capture's directory.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct UsageLogInfo {
+    pub file: String,
+    pub sha256: String,
+    pub first_ts: Option<String>,
+    pub last_ts: Option<String>,
+    pub lines: Option<u64>,
+    pub turns: Option<u64>,
 }
 
 /// `<dir>/<slug>.jsonl` has its header at `<dir>/<slug>.capture.json`.
@@ -35,6 +50,13 @@ pub fn read_capture(jsonl_path: &Path) -> Result<Option<CaptureHeader>, IngestEr
             path,
             message: err.to_string(),
         })
+}
+
+/// The usage-log extract the header of `jsonl_path` names, as a path beside the capture.
+pub fn usage_log_path(jsonl_path: &Path) -> Result<Option<PathBuf>, IngestError> {
+    Ok(read_capture(jsonl_path)?
+        .and_then(|header| header.usage_log)
+        .map(|info| jsonl_path.with_file_name(info.file)))
 }
 
 /// Mapping version for a session file: chosen by the header's Droid version, `LATEST`

@@ -18,6 +18,10 @@ branch_pattern = "mission/<name>"
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
 factory_sessions_dir = "~/.factory/sessions"
+# Where Droid writes its CLI log, droid-log-single.log and its dated rotations. The session files
+# do not carry per-turn token counts; the log does (F-034, D-029). Read-only; no log line is
+# copied, only the parsed counts and a pointer to the line.
+factory_logs_dir = "~/.factory/logs"
 # Attach is the primary live mode (PRD §11.1, D-008): watch the sessions directory with a
 # filesystem notifier and attach to every new session JSONL automatically. Off means attach
 # only to files picked by hand.
@@ -37,6 +41,10 @@ tail_chunk_kb = 1024
 # Startup scan attaches only files modified within this window; older sessions stay in the
 # library and open on demand, so a directory of hundreds of old sessions does not open at once.
 startup_scan_hours = 24
+# Sidecar tags the Droid runner writes itself (0.247 puts `exec` before the user's `--tag`). A
+# session is named by its first tag that is not in this list and carries no `role`, `missionId`
+# or `callingSessionId` metadata; with none left, by its session id (FR-L1).
+runner_tags = ["exec", "mission-worker", "mission-session", "subagent", "read-only"]
 
 [ui]
 # Shell-to-UI flush interval. 100 ms is well under the 1 s latency target and avoids one

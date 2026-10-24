@@ -113,24 +113,51 @@ impl Default for MissionConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct IngestConfig {
     pub factory_sessions_dir: String,
+    pub factory_logs_dir: String,
     pub watch_sessions_dir: bool,
     pub jsonl_poll_ms: u64,
     pub max_watched_sessions: u32,
     pub max_session_file_mb: u64,
     pub tail_chunk_kb: u64,
     pub startup_scan_hours: u64,
+    pub runner_tags: Vec<String>,
+}
+
+impl IngestConfig {
+    /// `factory_logs_dir` with a leading `~/` replaced by `$HOME`.
+    pub fn resolved_logs_dir(&self) -> PathBuf {
+        expand_home(&self.factory_logs_dir, std::env::var_os("HOME").as_deref())
+    }
+
+    /// `factory_sessions_dir` with a leading `~/` replaced by `$HOME`.
+    pub fn resolved_sessions_dir(&self) -> PathBuf {
+        expand_home(
+            &self.factory_sessions_dir,
+            std::env::var_os("HOME").as_deref(),
+        )
+    }
 }
 
 impl Default for IngestConfig {
     fn default() -> Self {
         Self {
             factory_sessions_dir: "~/.factory/sessions".into(),
+            factory_logs_dir: "~/.factory/logs".into(),
             watch_sessions_dir: true,
             jsonl_poll_ms: 500,
             max_watched_sessions: 64,
             max_session_file_mb: 512,
             tail_chunk_kb: 1024,
             startup_scan_hours: 24,
+            runner_tags: [
+                "exec",
+                "mission-worker",
+                "mission-session",
+                "subagent",
+                "read-only",
+            ]
+            .map(String::from)
+            .to_vec(),
         }
     }
 }
@@ -379,12 +406,14 @@ mod tests {
         ("mission", "validator_model"),
         ("mission", "branch_pattern"),
         ("ingest", "factory_sessions_dir"),
+        ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),
         ("ingest", "jsonl_poll_ms"),
         ("ingest", "max_watched_sessions"),
         ("ingest", "max_session_file_mb"),
         ("ingest", "tail_chunk_kb"),
         ("ingest", "startup_scan_hours"),
+        ("ingest", "runner_tags"),
         ("ui", "event_batch_ms"),
         ("ui", "dev_port"),
         ("store", "path"),
@@ -480,6 +509,15 @@ mod tests {
         assert_eq!(expand("/tmp/~/x.sqlite"), Path::new("/tmp/~/x.sqlite"));
         assert_eq!(expand("~other/x"), Path::new("~other/x"));
         assert_eq!(expand_home("~/x", None), Path::new("~/x"));
+    }
+
+    #[test]
+    fn sessions_dir_resolves_like_the_store_path() {
+        let cfg = IngestConfig {
+            factory_sessions_dir: "/var/sessions".into(),
+            ..IngestConfig::default()
+        };
+        assert_eq!(cfg.resolved_sessions_dir(), Path::new("/var/sessions"));
     }
 
     #[test]

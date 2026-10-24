@@ -1,0 +1,125 @@
+//! The Tauri commands of architecture §7. Each answers with a core value; the UI renders it.
+
+use std::path::PathBuf;
+
+use observatory_core::config::MissionConfig;
+use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
+use observatory_core::model::{EventId, MissionId, SessionId, Timestamp};
+use observatory_core::view::{
+    BoardDigest, BoardView, DeclaredModels, Filter, MissionRow, RawLineView, ViewConfig,
+    WorkerGrouping, branch_of,
+};
+use tauri::State;
+
+use crate::Shell;
+
+fn text(err: impl std::fmt::Display) -> String {
+    err.to_string()
+}
+
+fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Replays the capture at `path` (the root `.jsonl` or its `.capture.json`) through the store
+/// and answers with the mission as the store now holds it.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
+    let mut opened = lock(&shell.store)
+        .replay_file(&PathBuf::from(path), &shell.cfg.ingest)
+        .map_err(text)?;
+    opened.live = is_live(&shell, &opened.summary.mission_id);
+    Ok(opened)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_missions(shell: State<'_, Shell>) -> Result<Vec<MissionRow>, String> {
+    lock(&shell.store).missions().map_err(text)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_mission(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+) -> Result<OpenedMission, String> {
+    let mut opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    opened.live = is_live(&shell, &mission_id);
+    Ok(opened)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_sessions(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+) -> Result<Vec<SessionInfo>, String> {
+    lock(&shell.store).sessions_of(&mission_id).map_err(text)
+}
+
+/// The sessions being watched, how many were found and not watched, and the warnings raised.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_sessions(shell: State<'_, Shell>) -> Result<AttachStatus, String> {
+    Ok(lock(&shell.status).clone())
+}
+
+/// Opens the mission a watched session belongs to. The ingest thread tails every growing
+/// session file already; later events of the mission arrive as `events_appended` batches.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn attach(
+    shell: State<'_, Shell>,
+    session_id: SessionId,
+) -> Result<OpenedMission, String> {
+    let store = lock(&shell.store);
+    let mission = store
+        .mission_of_session(&session_id)
+        .map_err(text)?
+        .ok_or_else(|| format!("session {session_id} is not known to the store"))?;
+    let mut opened = store.open_mission(&mission).map_err(text)?;
+    drop(store);
+    opened.live = is_live(&shell, &mission);
+    Ok(opened)
+}
+
+/// The counts of the board of a mission under a filter, a grouping and a scrubber position.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn board(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+    filter: Option<Filter>,
+    grouping: Option<WorkerGrouping>,
+    at: Option<Timestamp>,
+) -> Result<BoardDigest, String> {
+    let opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    let mission = MissionConfig::default();
+    let cfg = ViewConfig {
+        filter: filter.unwrap_or_default(),
+        grouping: grouping.unwrap_or_default(),
+        at,
+    };
+    let board = BoardView::build(
+        &opened.events,
+        &cfg,
+        &DeclaredModels::from_config(&mission),
+        &branch_of(&mission, &opened.summary.name),
+    );
+    Ok(board.digest())
+}
+
+/// The raw line of an event, masked for display.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn event_raw(shell: State<'_, Shell>, event_id: EventId) -> Result<RawLineView, String> {
+    lock(&shell.store).event_raw(&event_id).map_err(text)
+}
+
+fn is_live(shell: &Shell, mission: &MissionId) -> bool {
+    let watched = lock(&shell.status).watched.clone();
+    let store = lock(&shell.store);
+    watched.iter().any(|row| {
+        store
+            .mission_of_session(&row.session_id)
+            .ok()
+            .flatten()
+            .is_some_and(|of| of == *mission)
+    })
+}

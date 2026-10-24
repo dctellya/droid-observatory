@@ -15,3 +15,33 @@ pub enum Role {
     External,
     Unresolved,
 }
+
+impl Role {
+    /// Every role, in the order the UI lists them.
+    pub const ALL: [Role; 7] = [
+        Role::Orchestrator,
+        Role::Worker,
+        Role::ScrutinyValidator,
+        Role::UserTestingValidator,
+        Role::Human,
+        Role::External,
+        Role::Unresolved,
+    ];
+
+    /// The wire text (`scrutiny_validator`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Orchestrator => "orchestrator",
+            Role::Worker => "worker",
+            Role::ScrutinyValidator => "scrutiny_validator",
+            Role::UserTestingValidator => "user_testing_validator",
+            Role::Human => "human",
+            Role::External => "external",
+            Role::Unresolved => "unresolved",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Role> {
+        Role::ALL.into_iter().find(|role| role.as_str() == text)
+    }
+}

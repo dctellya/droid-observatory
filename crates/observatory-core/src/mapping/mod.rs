@@ -8,7 +8,7 @@ pub use version::{MappingVersion, Warning, select_version};
 
 use std::collections::HashMap;
 
-use crate::ingest::{RawRecord, SessionTree};
+use crate::ingest::{RawRecord, SessionTree, UsageTurn};
 use crate::model::{
     Event, MilestoneId, MissionId, ModelId, Role, SessionId, Timestamp, TokenUsage,
 };
@@ -24,6 +24,9 @@ pub struct SessionMeta {
     pub usage: Option<TokenUsage>,
     /// Milestone ids of the mission's plan, to tell a feature id from any other word.
     pub milestones: Vec<MilestoneId>,
+    /// The session was spawned by a `Task` whose description names the validation contract
+    /// (`is_contract_task`); its role-neutral events land in the Contract phase.
+    pub contract: bool,
 }
 
 impl SessionMeta {
@@ -36,6 +39,7 @@ impl SessionMeta {
             model: None,
             usage: None,
             milestones: Vec::new(),
+            contract: false,
         }
     }
 }
@@ -51,6 +55,14 @@ pub struct MapContext<'a> {
 pub fn resolve_role(version: MappingVersion, evidence: &RoleEvidence<'_>) -> Role {
     match version {
         MappingVersion::V1 => v1::resolve_role(evidence),
+    }
+}
+
+/// Whether the description of the `Task` that spawned a session says it writes the validation
+/// contract. A heuristic of the mapping version, so the version decides.
+pub fn is_contract_task(version: MappingVersion, description: &str) -> bool {
+    match version {
+        MappingVersion::V1 => v1::is_contract_task(description),
     }
 }
 
@@ -73,7 +85,7 @@ pub fn map_record(record: &RawRecord, ctx: &MapContext<'_>) -> Vec<Event> {
             let mut state = v1::State::new(ctx.session);
             state.set_last_at(ctx.fallback_at);
             let mut events = v1::map_record(record, ctx.session, ctx.version, &mut state);
-            events.extend(v1::flush(&mut state));
+            events.extend(v1::flush(&mut state, ctx.session));
             events
         }
     }
@@ -110,6 +122,19 @@ impl Mapper {
         match &mut self.state {
             State::V1(state) => v1::map_record(record, &self.session, self.version, state),
         }
+    }
+
+    /// The `turn.usage` event of a turn of this session, in the phase the session is in now.
+    pub fn map_usage(&mut self, turn: &UsageTurn) -> Event {
+        match &self.state {
+            State::V1(state) => v1::turn_usage(turn, &self.session, self.version, state),
+        }
+    }
+
+    /// Replaces the usage reported by `finish`: a live session's sidecar is only final once the
+    /// session has ended, long after the mapper was created.
+    pub fn set_usage(&mut self, usage: Option<TokenUsage>) {
+        self.session.usage = usage;
     }
 
     /// The events of the end of the session file: lines still waiting for a time, the child's
@@ -164,6 +189,16 @@ impl TreeMapper {
                 Mapper::new(session, version)
             })
             .map(record)
+    }
+
+    /// The `turn.usage` event of a turn of one of the tree's sessions. `None` for a turn with
+    /// no session or of a session this tree does not hold: the caller counts those.
+    pub fn map_usage(&mut self, turn: &UsageTurn) -> Option<Event> {
+        let session = turn.session_id.as_ref()?;
+        self.mappers
+            .get_mut(session)
+            .filter(|_| self.order.contains(session))
+            .map(|mapper| mapper.map_usage(turn))
     }
 
     /// `Mapper::finish` for every session: the tree's own first, in tree order, then any

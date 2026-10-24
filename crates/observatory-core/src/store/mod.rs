@@ -3,7 +3,9 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod read;
 mod record;
+mod replay;
 mod rows;
 mod schema;
 
@@ -12,11 +14,18 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
+pub use read::{EventScope, TimeRange};
 pub use record::CaptureInfo;
 
 use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
-use crate::model::{Event, EventId, EventKind, MissionId, SourcePtr, Timestamp};
+use crate::model::{
+    Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp, TokenUsage,
+};
+
+/// How long a writer waits for another connection's write (the ingest thread and a command
+/// share the file); an ingest step or an `open_replay` is far shorter.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub struct Store {
     conn: Connection,
@@ -42,6 +51,7 @@ impl Store {
         let mut conn = Connection::open(path).map_err(open)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(open)?;
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(open)?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))
             .map_err(open)?;
         schema::migrate(&mut conn).map_err(open)?;
@@ -68,11 +78,11 @@ impl Store {
         let mut added = 0;
         {
             let mut insert = tx.prepare_cached(
-                "INSERT INTO events (id, mission_id, session_id, milestone_id, feature_id, lane, kind, \
+                "INSERT INTO events (id, mission_id, session_id, milestone_id, feature_id, lane, overlay, kind, \
                  raw_type, mapping_version, role, model, at, duration_ms, source, path, byte_offset, \
                  byte_len, sub, repo, sha, url, action_id) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-                 ?18, ?19, ?20, ?21, ?22) ON CONFLICT (id) DO NOTHING",
+                 ?18, ?19, ?20, ?21, ?22, ?23) ON CONFLICT (id) DO NOTHING",
             )?;
             let mut insert_usage = tx.prepare_cached(
                 "INSERT INTO usage (event_id, input, output, cache_read, cache_write, credits) \
@@ -91,6 +101,7 @@ impl Store {
                     event.milestone_id.as_ref().map(ToString::to_string),
                     event.feature_id.as_ref().map(ToString::to_string),
                     event.lane.number(),
+                    event.overlay.map(Overlay::as_str),
                     event.kind.prd_name(),
                     raw_type(&event.kind),
                     event.mapping_version.to_string(),
@@ -108,7 +119,25 @@ impl Store {
                     ptr.url,
                     ptr.action_id,
                 ])?;
-                if let (1, Some(usage)) = (new, event.usage) {
+                // The three counts of a turn.usage go to the usage table too, the one place a
+                // count lives besides the pointer; a session's reported total stays on its own
+                // usage_reported row.
+                let turn_counts = match &event.kind {
+                    EventKind::TurnUsage {
+                        input,
+                        output,
+                        cache_read,
+                        ..
+                    } => Some(TokenUsage {
+                        input: *input,
+                        output: *output,
+                        cache_read: *cache_read,
+                        cache_write: 0,
+                        credits: None,
+                    }),
+                    _ => None,
+                };
+                if let (1, Some(usage)) = (new, event.usage.or(turn_counts)) {
                     insert_usage.execute(params![
                         id,
                         to_i64(usage.input),

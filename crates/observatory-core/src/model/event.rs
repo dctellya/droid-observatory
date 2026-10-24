@@ -8,6 +8,7 @@ use crate::mapping::MappingVersion;
 use super::ids::{EventId, FeatureId, MilestoneId, MissionId, ModelId, SessionId};
 use super::kind::EventKind;
 use super::lane::Lane;
+use super::overlay::Overlay;
 use super::role::Role;
 use super::timestamp::Timestamp;
 use super::usage::TokenUsage;
@@ -30,6 +31,13 @@ pub enum SourcePtr {
         byte_offset: u64,
         byte_len: u32,
     },
+    /// A `[Agent] Streaming result` line of the Droid CLI log (the usage-log source, §4.7).
+    /// Offsets are those of the file the line was read from.
+    UsageLog {
+        path: PathBuf,
+        byte_offset: u64,
+        byte_len: u32,
+    },
     Git {
         repo: PathBuf,
         sha: String,
@@ -38,7 +46,7 @@ pub enum SourcePtr {
     GitHub {
         url: String,
     },
-    /// Row id of a lane-7 action (`human_actions.id`).
+    /// Row id of an app action (`human_actions.id`).
     App {
         action_id: u64,
     },
@@ -52,8 +60,10 @@ pub struct Event {
     pub mission_id: MissionId,
     pub milestone_id: Option<MilestoneId>,
     pub feature_id: Option<FeatureId>,
-    /// Never `Lane::TimeWasteCost`: that lane is computed, not evented.
     pub lane: Lane,
+    /// Set for events a person caused; serialised only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay: Option<Overlay>,
     pub kind: EventKind,
     pub role: Role,
     pub session_id: Option<SessionId>,

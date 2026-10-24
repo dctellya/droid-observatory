@@ -1,7 +1,7 @@
 # D-021: The tool-call hook logs a `script` field
 
 **Date:** 2026-10-23
-**Status:** accepted (owner decision 2026-10-23 at the S to M0 boundary)
+**Status:** accepted (owner decision 2026-10-23 at the S to M0 boundary); addendum 2026-10-23 (orchestrator, rule 24, D-025 duty 5): the hook also runs on PreToolUse and appends `call_id` (hash of tool name and input; the payload has no tool_use_id), `ts_ms` (UTC milliseconds) and, on PostToolUse, `duration_ms` (end minus the matching start, `null` without one); the nine fields above are unchanged, `scripts/compile-share.sh` sums them
 
 ## Context
 

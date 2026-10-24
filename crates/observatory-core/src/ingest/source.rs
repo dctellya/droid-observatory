@@ -21,6 +21,7 @@ pub enum SourceKind {
     Rpc,
     Git,
     GitHub,
+    UsageLog,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +42,17 @@ pub enum IngestError {
     },
     #[error("{} is shorter than what was already read (moved, rotated or rewritten)", path.display())]
     FileMoved { path: PathBuf },
+    /// Above `[ingest].max_session_file_mb`: the lines present when the file was found are
+    /// indexed, the file is not followed. Raised once per file.
+    #[error(
+        "{} is {mb} MB, above [ingest].max_session_file_mb: it is indexed as it is now and not followed",
+        path.display()
+    )]
+    TooLarge { path: PathBuf, mb: u64 },
+    #[error(
+        "no session file among the {files} files selected (a session starts with a `session_start` line)"
+    )]
+    NoSession { files: usize },
     #[error("{} is not a valid capture header: {message}", path.display())]
     BadCapture { path: PathBuf, message: String },
     #[error("{} is not a valid session settings file: {message}", path.display())]
