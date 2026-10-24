@@ -24,7 +24,9 @@ other ids and the events handed out before point into bytes that are gone.
    the events of lines after the first that start before the offset the tail had reached.
 3. **The first line keeps its ids.** It is the line rewritten in place, so offset 0 does not move. The tail
    remembers the ids of the first-line events it handed out and does not hand them out again. No id leaves
-   the ingest twice.
+   the ingest twice. The line is longer after the rewrite, so the tail hands the events read again to
+   `AttachBatch.repointed` and `LiveIngest::step` refreshes their stored pointer with `Store::update_pointer`
+   (`byte_len` and `path` change, the id does not).
 4. **Store:** `Store::retract_events(session, below_offset)` deletes the covered events and their usage rows
    in one transaction, before the new events are inserted. `insert_events` stays `ON CONFLICT (id) DO NOTHING`.
 5. **Batcher:** `EventBatcher::retract` removes the covered events still pending and adds the retraction to the
@@ -53,5 +55,7 @@ other ids and the events handed out before point into bytes that are gone.
   --root-only` of the finished file, with `unknown events: 0`.
 - Every poll reads a few more bytes (the last newline and the held-back line) to verify the prefix.
 - The tail keeps the ids of the first-line events (a handful) for the session's life.
+- The stored pointer of a first-line event follows the rewrite, so `inspect` and Details read the whole new
+  line, not the first bytes of it (VAL-BOARD-038). The store schema is unchanged.
 - A retraction costs the UI one pass over its held events.
 - Usage-log events (`turn.usage`) are not file-based and are never retracted.

@@ -60,6 +60,11 @@ owner's machine (Haiku for all roles, scratch repo under `target/scratch`).
   sends it and holds the first message until it is acknowledged. Point 3 above now follows that update.
 - `droid.add_user_message` for resume yields no `mission.resumed` event: Droid does not announce one, so the ack of
   the message is the visible reaction. A denied proposal leaves Droid idle until a message asks for a new one.
+- Approve and Deny are the host's response to `droid.request_permission`. Droid announces no `permission.granted` or
+  `permission.denied` in the stream (`permission_resolved` is counted as protocol, not mapped), so the hosted mapper
+  emits none in M2. Their M2 evidence is the request leaving the `host-permissions` waiting list plus the
+  `host_control` log line (round 2 `b9cdd45`, scratch mission `386a27bd`); `m3-control-core` records the host's own
+  acks as overlay events.
 - The process group is reaped on window close: SIGTERM goes to the group, then SIGKILL after
   `[mission].reap_grace_ms` if members remain; `host_reaped` is logged. The process is stopped by the host, not
   left to finish.
