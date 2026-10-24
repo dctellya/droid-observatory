@@ -992,3 +992,79 @@ fn host_controls_travel_as_tagged_json() {
         HostControl::Pause
     );
 }
+
+fn at_millis(timestamp: Timestamp) -> i64 {
+    i64::try_from(timestamp.0.unix_timestamp_nanos() / 1_000_000).unwrap()
+}
+
+fn now_millis() -> i64 {
+    at_millis(Timestamp(time::OffsetDateTime::now_utc()))
+}
+
+fn cancelled_turn() -> Value {
+    notification(
+        "s-1",
+        json!({ "type": "agent_turn_completed", "reason": "cancelled", "turnId": "t-1" }),
+    )
+}
+
+fn of_kind(events: &[Event], kind: EventKind) -> &Event {
+    events
+        .iter()
+        .find(|event| event.kind == kind)
+        .unwrap_or_else(|| panic!("no {kind:?} in {events:?}"))
+}
+
+#[test]
+fn a_pause_and_an_answer_carry_the_arrival_time_of_their_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = answered_question_stream(false);
+    stream.extend(line(&cancelled_turn()));
+
+    let before = now_millis();
+    let hosted = host(dir.path(), &stream);
+    let after = now_millis();
+
+    let question = of_kind(&hosted.events, EventKind::QuestionAsked).at;
+    assert_eq!(at_millis(question), millis("2026-10-24T05:39:01.000Z"));
+    for kind in [EventKind::IntentAnswered, EventKind::MissionPaused] {
+        let at = at_millis(of_kind(&hosted.events, kind.clone()).at);
+        assert!(
+            at > at_millis(question),
+            "{kind:?} inherited the question's time"
+        );
+        assert!(
+            (before..=after).contains(&at),
+            "{kind:?} at {at} outside {before}..{after}"
+        );
+    }
+}
+
+#[test]
+fn lines_that_arrive_apart_get_different_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = observatory_core::ingest::rpc::spool_path(dir.path(), LAUNCH);
+    let mut spool = Spool::create(&path).unwrap();
+    let mut source = RpcSource::open(&path, &IngestConfig::default()).unwrap();
+    let mut mapper = RpcMapper::new(LAUNCH, MappingVersion::LATEST);
+    let mut events = Vec::new();
+    let mut step = |spool_line: Vec<u8>, spool: &mut Spool| {
+        spool.append_line(spool_line.trim_ascii_end()).unwrap();
+        for record in source.next_batch().unwrap() {
+            events.extend(mapper.map(&record));
+        }
+    };
+
+    for stream_line in answered_question_stream(false).split_inclusive(|byte| *byte == b'\n') {
+        step(stream_line.to_vec(), &mut spool);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    step(line(&cancelled_turn()), &mut spool);
+
+    let answered = at_millis(of_kind(&events, EventKind::IntentAnswered).at);
+    let paused = at_millis(of_kind(&events, EventKind::MissionPaused).at);
+    assert!(
+        paused - answered >= 55,
+        "answered {answered}, paused {paused}"
+    );
+}
