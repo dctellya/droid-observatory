@@ -26,6 +26,9 @@ spool_base = "~/.droid-observatory"
 # How long a hosted `droid exec` gets to exit after SIGTERM when the window closes before its
 # process group is killed. Droid flushes its session file on SIGTERM; 2 s is ample and bounds the close.
 reap_grace_ms = 2000
+# The Droid executable a hosted mission starts. A bare name is looked up on PATH, which a
+# Finder-launched app does not inherit from the shell: give the absolute path there.
+droid_bin = "droid"
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).

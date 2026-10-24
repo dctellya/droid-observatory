@@ -102,6 +102,7 @@ pub struct MissionConfig {
     pub branch_pattern: String,
     pub spool_base: String,
     pub reap_grace_ms: u64,
+    pub droid_bin: String,
 }
 
 impl MissionConfig {
@@ -124,6 +125,7 @@ impl Default for MissionConfig {
             branch_pattern: "mission/<name>".into(),
             spool_base: "~/.droid-observatory".into(),
             reap_grace_ms: 2000,
+            droid_bin: "droid".into(),
         }
     }
 }
@@ -432,6 +434,7 @@ mod tests {
         ("mission", "branch_pattern"),
         ("mission", "spool_base"),
         ("mission", "reap_grace_ms"),
+        ("mission", "droid_bin"),
         ("ingest", "factory_sessions_dir"),
         ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),
