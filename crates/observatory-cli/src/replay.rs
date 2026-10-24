@@ -127,7 +127,7 @@ fn is_spool(file: &Path) -> Result<bool, Box<dyn Error>> {
 fn replay_spool(
     file: &Path,
     cfg: &IngestConfig,
-    mut store: Option<&mut Store>,
+    store: Option<&mut Store>,
     out: &mut impl Write,
     warnings: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
@@ -160,9 +160,7 @@ fn replay_spool(
             break;
         }
     }
-    if let (Some(store), Some(session), Some(first)) =
-        (store.as_deref_mut(), mapper.session_id(), all.first())
-    {
+    if let (Some(store), Some(session), Some(first)) = (store, mapper.session_id(), all.first()) {
         store.record_hosted(&HostedRun {
             mission_name: launch_id.to_owned(),
             session: session.clone(),
