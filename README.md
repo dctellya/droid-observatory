@@ -58,6 +58,31 @@ cargo run -p observatory-cli -- replay fixtures/streams/2026-10-22-observatory-v
 `make help` lists all targets. The same targets run in CI, so a documented command is a
 command the gate runs.
 
+### The board (UI)
+
+The Leptos UI is a Trunk/WASM build in `apps/observatory-app/ui`. From a clean clone, with the
+toolchain above and `trunk` installed (`make doctor` lists it):
+
+```sh
+cd apps/observatory-app && trunk build --config ui/Trunk.toml
+                 # writes apps/observatory-app/ui/dist/: index.html, one *_bg.wasm, one *.js
+                 # (M1 go/no-go, D-030: 56.95 s on a clean clone with its own target directory)
+```
+
+Two ways to see the board (SPEC §6):
+
+- Browser host: `make ui-serve` (or `trunk serve --config apps/observatory-app/ui/Trunk.toml --port 3141
+  --open false` from the repository root), then open <http://localhost:3141> and pick the M0 capture
+  `fixtures/streams/2026-10-22-observatory-v1-m0.jsonl` (the root file; its `.children/` come with it)
+  in the file picker: seven phase lanes, the Panel, the unmapped tray and Details. The browser host
+  replays files only.
+- Tauri window: `make app-dev`. The window replays the same way and adds Attach: at start it scans
+  `~/.factory/sessions` (the files that grew in the last `[ingest].startup_scan_hours`, 24) and tails
+  them, so a mission running in a terminal appears on the board within a second. A session is
+  named by the first `--tag` you gave it, else by its session id. The library has an open-by-path
+  field for a replay file (there is no native file dialog yet, B-044). Events go to the SQLite
+  index at `[store].path` (`~/.droid-observatory/observatory.sqlite` by default), pointers only.
+
 ## Commands
 
 | Target | What it does | Where it runs |
