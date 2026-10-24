@@ -63,6 +63,11 @@ impl LiveIngest {
         })
     }
 
+    /// Skips the session file of `id`: its events come from another source (a hosted spool).
+    pub fn exclude_session(&mut self, id: &SessionId) {
+        self.attach.exclude_session(id);
+    }
+
     /// Waits for a file change, a poll interval or the next batch deadline, whichever is
     /// first, then reads what the watched files gained.
     pub fn step(&mut self) -> LiveStep {

@@ -177,6 +177,7 @@ pub struct Attach {
     unwatched: Vec<DiscoveredSession>,
     warned: HashSet<PathBuf>,
     polled: bool,
+    excluded: HashSet<SessionId>,
 }
 
 impl Attach {
@@ -191,7 +192,16 @@ impl Attach {
             unwatched: Vec::new(),
             warned: HashSet::new(),
             polled: false,
+            excluded: HashSet::new(),
         })
+    }
+
+    /// Never attach the session `id`, and drop its tail if it is attached: a hosted mission's
+    /// orchestrator is read from its spool, and reading its session file too would count every
+    /// event twice. Its children are attached as usual.
+    pub fn exclude_session(&mut self, id: &SessionId) {
+        self.excluded.insert(id.clone());
+        self.tails.retain(|tail| tail.found.session_id != *id);
     }
 
     /// Blocks until a session file changes or one poll interval passes.
@@ -310,6 +320,7 @@ impl Attach {
     fn admit(&mut self, found: Vec<DiscoveredSession>, batch: &mut AttachBatch) {
         let found: Vec<_> = found
             .into_iter()
+            .filter(|new| !self.excluded.contains(&new.session_id))
             .filter(|new| {
                 self.tails
                     .iter()
