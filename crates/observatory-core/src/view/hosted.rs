@@ -34,6 +34,15 @@ pub struct QuestionRow {
     pub prompts: Vec<String>,
 }
 
+/// A `droid.request_permission` request that waits, with the answers Droid accepts for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionRow {
+    pub request_id: String,
+    pub tools: Vec<String>,
+    pub can_approve: bool,
+    pub can_deny: bool,
+}
+
 /// The answer of `host_launch`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Launched {
@@ -59,6 +68,7 @@ pub struct HostedStatus {
     pub launch_id: String,
     pub state: HostedState,
     pub questions: Vec<QuestionRow>,
+    pub permissions: Vec<PermissionRow>,
     pub acks: Vec<AckRow>,
 }
 
@@ -68,6 +78,7 @@ impl HostedStatus {
             launch_id: launch_id.to_owned(),
             state: HostedState::Starting,
             questions: Vec::new(),
+            permissions: Vec::new(),
             acks: Vec::new(),
         }
     }

@@ -51,6 +51,16 @@ pub struct AskedQuestion {
     pub prompts: Vec<Prompt>,
 }
 
+/// A permission request that waits, as the panel offers it: what it runs and which of the two
+/// answers Droid accepts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitingPermission {
+    pub request_id: String,
+    pub tools: Vec<String>,
+    pub can_approve: bool,
+    pub can_deny: bool,
+}
+
 /// The requests of Droid's that wait for the human. A question is known by the id of its
 /// `QuestionAsked` event, which the mapper binds to the tool call; a request that was answered,
 /// or whose tool call already has a result, is closed and cannot be answered again.
@@ -129,6 +139,23 @@ impl OpenRequests {
                         event_id: event.clone(),
                         prompts: open.prompts.clone(),
                     })
+            })
+            .collect()
+    }
+
+    /// The permission requests still open, in the order they came. A request that lists no
+    /// options accepts either answer, as the control channel does.
+    pub fn waiting_permissions(&self) -> Vec<WaitingPermission> {
+        let offers = |open: &OpenPermission, option: &str| {
+            open.options.is_empty() || open.options.iter().any(|offered| offered == option)
+        };
+        self.permissions
+            .iter()
+            .map(|open| WaitingPermission {
+                request_id: open.request_id.clone(),
+                tools: open.tools.clone(),
+                can_approve: offers(open, super::protocol::OPTION_APPROVE),
+                can_deny: offers(open, super::protocol::OPTION_DENY),
             })
             .collect()
     }
