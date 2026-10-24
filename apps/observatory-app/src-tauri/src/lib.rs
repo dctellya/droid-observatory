@@ -4,6 +4,7 @@
 mod commands;
 mod ingest;
 mod logging;
+mod process;
 
 use std::sync::{Arc, Mutex};
 
