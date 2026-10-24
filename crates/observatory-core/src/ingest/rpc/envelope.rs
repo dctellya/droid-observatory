@@ -33,6 +33,8 @@ const PROTOCOL_NOTIFICATIONS: &[&str] = &[
     // `tool_use` and `tool_result` parts, which is what maps to lane events.
     "tool_call",
     "tool_result",
+    // A message written while a turn runs is queued; a pause discards the queue and says so.
+    "queued_messages_discarded",
 ];
 
 /// Keys of a notification's message that the session file keeps beside it, not inside it.
