@@ -29,10 +29,9 @@ const PROTOCOL_NOTIFICATIONS: &[&str] = &[
     "mission_progress_entry",
     "mission_worker_started",
     "mission_worker_completed",
-    // The tool call and its result are also in the `create_message` notifications that carry the
-    // `tool_use` and `tool_result` parts, which is what maps to lane events.
+    // The tool call is also in the `create_message` that carries its `tool_use` part, which is
+    // what maps to lane events. A `tool_result` without a call id has nothing to map.
     "tool_call",
-    "tool_result",
     // A message written while a turn runs is queued; a pause discards the queue and says so.
     "queued_messages_discarded",
 ];
@@ -60,6 +59,14 @@ pub(super) enum Incoming {
     },
     Outcome {
         record: Vec<u8>,
+    },
+    /// A `tool_result` notification as the `tool_result` part of a user message. Droid streams
+    /// the result this way and sends the user message that carries it in the file with empty
+    /// content; a result that arrives both ways maps once, because the mapper forgets a call
+    /// when its first result is read.
+    ToolResult {
+        record: Vec<u8>,
+        call: String,
     },
     Question(OpenQuestion),
     Permission(OpenPermission),
@@ -180,6 +187,21 @@ fn notification(line: &Map<String, Value>) -> Incoming {
             })
             .to_string()
             .into_bytes(),
+        },
+        "tool_result" => match body["toolUseId"].as_str() {
+            Some(call) => Incoming::ToolResult {
+                record: json!({
+                    "type": "message",
+                    "message": { "role": "user", "content": [{
+                        "type": "tool_result", "tool_use_id": call,
+                        "content": body["content"], "is_error": body["isError"].as_bool().unwrap_or(false),
+                    }] },
+                })
+                .to_string()
+                .into_bytes(),
+                call: call.to_owned(),
+            },
+            None => Incoming::Protocol(kind.to_owned()),
         },
         "permission_resolved" => match body["requestId"].as_str() {
             Some(id) => Incoming::PermissionResolved {

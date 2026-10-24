@@ -78,6 +78,11 @@ impl RpcMapper {
                 events
             }
             Incoming::Outcome { record: line } => self.feed(record, line),
+            Incoming::ToolResult { record: line, call } => {
+                let events = self.feed(record, line);
+                self.open.close_call(&call);
+                events
+            }
             Incoming::Question(question) => {
                 self.open.observe_question(question);
                 self.count("request/droid.ask_user")
