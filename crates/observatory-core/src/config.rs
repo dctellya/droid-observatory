@@ -95,7 +95,20 @@ pub struct MissionConfig {
     pub orchestrator_model: String,
     pub worker_model: String,
     pub validator_model: String,
+    pub orchestrator_reasoning_effort: String,
+    pub worker_reasoning_effort: String,
+    pub validator_reasoning_effort: String,
+    pub autonomy: String,
     pub branch_pattern: String,
+    pub spool_base: String,
+    pub reap_grace_ms: u64,
+}
+
+impl MissionConfig {
+    /// `spool_base` with a leading `~/` replaced by `$HOME`; hosted spools live under `hosted/`.
+    pub fn resolved_spool_base(&self) -> PathBuf {
+        expand_home(&self.spool_base, std::env::var_os("HOME").as_deref())
+    }
 }
 
 impl Default for MissionConfig {
@@ -104,7 +117,13 @@ impl Default for MissionConfig {
             orchestrator_model: "claude-fable-5.1".into(),
             worker_model: "claude-sonnet-5-5".into(),
             validator_model: "claude-opus-5-5".into(),
+            orchestrator_reasoning_effort: "high".into(),
+            worker_reasoning_effort: "high".into(),
+            validator_reasoning_effort: "high".into(),
+            autonomy: "high".into(),
             branch_pattern: "mission/<name>".into(),
+            spool_base: "~/.droid-observatory".into(),
+            reap_grace_ms: 2000,
         }
     }
 }
@@ -404,7 +423,13 @@ mod tests {
         ("mission", "orchestrator_model"),
         ("mission", "worker_model"),
         ("mission", "validator_model"),
+        ("mission", "orchestrator_reasoning_effort"),
+        ("mission", "worker_reasoning_effort"),
+        ("mission", "validator_reasoning_effort"),
+        ("mission", "autonomy"),
         ("mission", "branch_pattern"),
+        ("mission", "spool_base"),
+        ("mission", "reap_grace_ms"),
         ("ingest", "factory_sessions_dir"),
         ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),

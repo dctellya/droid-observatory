@@ -12,8 +12,20 @@
 orchestrator_model = "claude-fable-5.1"
 worker_model = "claude-sonnet-5-5"
 validator_model = "claude-opus-5-5"
+# Reasoning effort per role, as the launch screen pre-fills it (SPEC §2: high for every role).
+orchestrator_reasoning_effort = "high"
+worker_reasoning_effort = "high"
+validator_reasoning_effort = "high"
+# Autonomy of a hosted mission. Droid's mission mode needs `high` (D-033).
+autonomy = "high"
 # Branch the mission integrates into (PRD §2). "<name>" is the mission name.
 branch_pattern = "mission/<name>"
+# Directory under which the app keeps the spool of a hosted mission (`hosted/<launch-id>.jsonl`):
+# the child's stdout exists nowhere else, and events point into it (architecture §4.5).
+spool_base = "~/.droid-observatory"
+# How long a hosted `droid exec` gets to exit after SIGTERM when the window closes before its
+# process group is killed. Droid flushes its session file on SIGTERM; 2 s is ample and bounds the close.
+reap_grace_ms = 2000
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
