@@ -25,6 +25,10 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                         <th>"Output"</th>
                         <th>"Cache read"</th>
                         <th>"Cache write"</th>
+                        <th>"Turns"</th>
+                        <th>"Turn input"</th>
+                        <th>"Turn output"</th>
+                        <th>"Turn cache read"</th>
                         <th>"Declared model"</th>
                         <th>"Observed models"</th>
                         <th>"Drift"</th>
@@ -52,6 +56,10 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                                                 <td>{row.tokens.output}</td>
                                                 <td>{row.tokens.cache_read}</td>
                                                 <td>{row.tokens.cache_write}</td>
+                                                <td aria-label=format!("panel-turns-{}", row.role.as_str())>{row.turns}</td>
+                                                <td>{row.turn_input}</td>
+                                                <td>{row.turn_output}</td>
+                                                <td>{row.turn_cache_read}</td>
                                                 <td aria-label="declared-model">{row.declared.0.clone()}</td>
                                                 <td aria-label="observed-models">{observed}</td>
                                                 <td aria-label="model-drift">
