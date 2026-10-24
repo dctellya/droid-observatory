@@ -34,6 +34,25 @@ pub struct QuestionRow {
     pub prompts: Vec<String>,
 }
 
+/// The answer of `host_launch`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Launched {
+    pub launch_id: String,
+    /// The session Droid is told to use; the mission id of the board is the same string.
+    pub session_id: String,
+    pub spool: String,
+    pub pid: u32,
+    /// `droid` and its arguments as spawned.
+    pub command: String,
+}
+
+/// The answer of `host_control`: the id of the JSON-RPC message written to the process.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControlSent {
+    pub request_id: String,
+    pub method: String,
+}
+
 /// The `hosted_status` payload and the `host_status` answer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostedStatus {

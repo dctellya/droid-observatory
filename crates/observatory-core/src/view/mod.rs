@@ -27,7 +27,7 @@ pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
-pub use hosted::{AckRow, HostedState, HostedStatus, QuestionRow};
+pub use hosted::{AckRow, ControlSent, HostedState, HostedStatus, Launched, QuestionRow};
 pub use launch::{
     AUTONOMY_LEVELS, LaunchConfig, LaunchError, LaunchField, LaunchForm, PerRole, session_uuid,
 };
