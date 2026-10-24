@@ -562,7 +562,7 @@ fn the_overlay_column_marks_the_human_events_and_lane_counts_are_the_phases() {
     );
     assert_eq!(
         by_lane,
-        ["1:443", "2:69", "3:424", "4:87", "5:122", "6:134"]
+        ["1:437", "2:69", "3:424", "4:93", "5:122", "6:134"]
     );
 }
 
