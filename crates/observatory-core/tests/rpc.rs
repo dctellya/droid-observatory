@@ -1143,3 +1143,37 @@ fn a_permission_request_that_waits_says_what_the_human_can_choose() {
         ]
     );
 }
+
+fn initialize_params(mission: &MissionConfig) -> Value {
+    let mut form = LaunchForm::defaults(mission);
+    form.repo = "/work/repo".into();
+    form.mission_file = "/work/repo/mission.md".into();
+    form.branch = "mission/hello".into();
+    let config = form.validate().unwrap();
+    serde_json::to_value(encode_initialize(&config, "s-1", 1)).unwrap()["params"].clone()
+}
+
+#[test]
+fn session_tags_and_skipped_validation_travel_in_the_initialize_request() {
+    let mission = MissionConfig {
+        session_tags: vec!["scratch".into()],
+        skip_scrutiny: true,
+        skip_user_testing: true,
+        ..MissionConfig::default()
+    };
+
+    let params = initialize_params(&mission);
+
+    assert_eq!(params["tags"], json!([{ "name": "scratch" }]));
+    assert_eq!(params["missionSettings"]["skipScrutiny"], true);
+    assert_eq!(params["missionSettings"]["skipUserTesting"], true);
+}
+
+#[test]
+fn the_default_config_adds_no_tags_and_skips_no_validation() {
+    let params = initialize_params(&MissionConfig::default());
+
+    assert!(params.get("tags").is_none(), "{params}");
+    assert!(params["missionSettings"].get("skipScrutiny").is_none());
+    assert!(params["missionSettings"].get("skipUserTesting").is_none());
+}
