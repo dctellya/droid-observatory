@@ -1,16 +1,21 @@
 //! `replay <file>`: attach that stops at the end of the file (D-008).
 
 use std::error::Error;
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use observatory_core::config::IngestConfig;
+use observatory_core::ingest::rpc::{RpcMapper, RpcSource};
 use observatory_core::ingest::{
     JsonlSource, RawRecord, SessionTree, Source, UsageLogSource, UsageTurn, select_mapping_of,
 };
-use observatory_core::mapping::{Mapper, TreeMapper};
+use observatory_core::mapping::{Mapper, MappingVersion, TreeMapper};
 use observatory_core::model::{Event, EventKind, Role, SessionId};
-use observatory_core::store::{CaptureInfo, Store};
+use observatory_core::store::{CaptureInfo, HostedRun, Store};
+
+/// A spool line is a JSON-RPC envelope; a session line never carries this key first.
+const SPOOL_FIRST_KEY: &str = r#"{"jsonrpc":"#;
 
 /// Writes `<time>\t<lane>\t<kind>\t<session>` per event, then `unknown events: N`.
 /// Child sessions found beside `file` or in `<slug>.children/` are replayed with it unless
@@ -30,6 +35,12 @@ pub fn replay(
     out: &mut impl Write,
     warnings: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
+    if is_spool(file)? {
+        if !usage_logs.is_empty() {
+            return Err("--usage-log joins turns to session files, not to a hosted spool".into());
+        }
+        return replay_spool(file, cfg, store, out, warnings);
+    }
     let (version, warning) = select_mapping_of(file)?;
     let tree = SessionTree::discover(file, cfg)?;
     if let Some(warning) = warning {
@@ -97,6 +108,81 @@ pub fn replay(
     }
     if let Some(store) = store {
         store.mark_tailed(tree.mission_id())?;
+    }
+    writeln!(out, "unknown events: {unknown}")?;
+    Ok(())
+}
+
+/// Whether `file` is the spool of a hosted mission (its first line is a JSON-RPC envelope).
+fn is_spool(file: &Path) -> Result<bool, Box<dyn Error>> {
+    let mut head = Vec::new();
+    let mut reader =
+        BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
+    reader.read_until(b'\n', &mut head)?;
+    Ok(head.starts_with(SPOOL_FIRST_KEY.as_bytes()))
+}
+
+/// The hosted run's events through the RPC source, the way the app maps them live. The launch
+/// id is the spool's file stem. Protocol chatter is counted on `warnings`, not dropped.
+fn replay_spool(
+    file: &Path,
+    cfg: &IngestConfig,
+    mut store: Option<&mut Store>,
+    out: &mut impl Write,
+    warnings: &mut impl Write,
+) -> Result<(), Box<dyn Error>> {
+    let launch_id = file
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or("the spool has no file name")?;
+    let mut source = RpcSource::open(file, cfg)?;
+    let mut mapper = RpcMapper::new(launch_id, MappingVersion::LATEST);
+    let mut unknown = 0_u64;
+    let mut all = Vec::new();
+    loop {
+        let batch = source.next_batch()?;
+        let at_eof = source.at_eof();
+        let records: Vec<RawRecord> = if at_eof {
+            batch.into_iter().chain(source.drain_partial()).collect()
+        } else {
+            batch
+        };
+        let mut events: Vec<Event> = records
+            .iter()
+            .flat_map(|record| mapper.map(record))
+            .collect();
+        if at_eof {
+            events.extend(mapper.finish());
+        }
+        print_events(&events, &mut unknown, out)?;
+        all.extend(events);
+        if at_eof {
+            break;
+        }
+    }
+    if let (Some(store), Some(session), Some(first)) =
+        (store.as_deref_mut(), mapper.session_id(), all.first())
+    {
+        store.record_hosted(&HostedRun {
+            mission_name: launch_id.to_owned(),
+            session: session.clone(),
+            spool: file.to_owned(),
+            droid_version: None,
+            started_at: first.at.to_rfc3339_millis(),
+        })?;
+        store.insert_events(&all)?;
+    }
+    let chatter: Vec<String> = mapper
+        .protocol_counts()
+        .iter()
+        .map(|(kind, count)| format!("{kind}={count}"))
+        .collect();
+    if !chatter.is_empty() {
+        writeln!(
+            warnings,
+            "observatory-cli: protocol chatter: {}",
+            chatter.join(" ")
+        )?;
     }
     writeln!(out, "unknown events: {unknown}")?;
     Ok(())
