@@ -878,6 +878,69 @@ fn a_message_discarded_by_a_pause_is_counted_not_unknown() {
     );
 }
 
+/// What Droid 0.247.0 streams for an answered question: the assistant message with the call, the
+/// request, and the result as a `tool_result` notification (the user message that carries it
+/// in the session file arrives with empty content).
+fn answered_question_stream(result_also_in_message: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    out.extend(line(&create_message(
+        "s-1",
+        &json!({
+            "id": "msg-A", "timestamp": "2026-10-24T05:39:01.000Z",
+            "message": { "role": "assistant", "content": [
+                { "type": "tool_use", "id": "toolu_A", "name": "AskUser",
+                  "input": { "questions": [{ "question": "Which one?" }] } } ] },
+        }),
+    )));
+    out.extend(line(&notification(
+        "s-1",
+        json!({ "type": "tool_result", "toolUseId": "toolu_A", "isError": false,
+                "content": "1. [question] Which one?\n[answer] salute" }),
+    )));
+    if result_also_in_message {
+        out.extend(line(&create_message(
+            "s-1",
+            &json!({
+                "id": "msg-B", "timestamp": "2026-10-24T05:39:02.000Z",
+                "message": { "role": "user", "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_A", "content": "salute" } ] },
+            }),
+        )));
+    }
+    out
+}
+
+fn answered(hosted: &Hosted) -> usize {
+    hosted
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::IntentAnswered)
+        .count()
+}
+
+#[test]
+fn a_tool_result_notification_maps_like_the_result_in_the_session_file() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let hosted = host(dir.path(), &answered_question_stream(false));
+
+    assert_eq!(answered(&hosted), 1, "{:?}", hosted.events);
+    assert!(hosted.mapper.open_requests().open_questions().is_empty());
+}
+
+#[test]
+fn a_result_delivered_twice_maps_once() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let hosted = host(dir.path(), &answered_question_stream(true));
+
+    assert_eq!(answered(&hosted), 1, "{:?}", hosted.events);
+}
+
 #[test]
 fn host_controls_travel_as_tagged_json() {
     let control: HostControl =
