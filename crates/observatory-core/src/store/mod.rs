@@ -20,7 +20,7 @@ pub use record::CaptureInfo;
 use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
 use crate::model::{
-    Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp, TokenUsage,
+    Event, EventId, EventKind, MissionId, Overlay, SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 
 /// How long a writer waits for another connection's write (the ingest thread and a command
@@ -152,6 +152,29 @@ impl Store {
         }
         tx.commit()?;
         Ok(added)
+    }
+
+    /// Deletes the events read from the lines of a session file after its first that start
+    /// before `below_offset` (with their usage rows): the file was rewritten and those
+    /// pointers name bytes that moved. The first line keeps its events, see `Retraction`.
+    pub fn retract_events(
+        &mut self,
+        session: &SessionId,
+        below_offset: u64,
+    ) -> Result<usize, StoreError> {
+        let tx = self.conn.transaction()?;
+        let stale = "SELECT id FROM events WHERE session_id = ?1 AND source = 'jsonl' \
+                     AND byte_offset > 0 AND byte_offset < ?2";
+        tx.execute(
+            &format!("DELETE FROM usage WHERE event_id IN ({stale})"),
+            params![session.to_string(), to_i64(below_offset)],
+        )?;
+        let removed = tx.execute(
+            &format!("DELETE FROM events WHERE id IN ({stale})"),
+            params![session.to_string(), to_i64(below_offset)],
+        )?;
+        tx.commit()?;
+        Ok(removed)
     }
 
     /// Where the raw material of event `id` lives.

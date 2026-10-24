@@ -124,6 +124,10 @@ impl Mapper {
         }
     }
 
+    pub fn session(&self) -> &SessionMeta {
+        &self.session
+    }
+
     /// Forgets every record seen, as when the file is read again from its first line.
     pub fn restart(&mut self) {
         self.state = match self.version {

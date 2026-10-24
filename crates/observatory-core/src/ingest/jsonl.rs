@@ -22,8 +22,8 @@ struct TailState {
     /// Bytes after the last newline: a line the writer has not finished.
     partial: Vec<u8>,
     /// The bytes already consumed changed under the tail and reading restarted at offset 0;
-    /// cleared by `JsonlSource::take_rewritten`.
-    rewritten: bool,
+    /// cleared by `JsonlSource::take_rewritten`. Holds the offset reached before.
+    rewritten: Option<u64>,
 }
 
 impl TailState {
@@ -44,9 +44,9 @@ impl TailState {
             });
         }
         if !self.consumed_bytes_unchanged(&mut handle)? {
+            self.rewritten = Some(self.rewritten.unwrap_or(0).max(self.offset));
             self.offset = 0;
             self.partial.clear();
-            self.rewritten = true;
         }
         handle
             .seek(SeekFrom::Start(self.offset))
@@ -146,26 +146,30 @@ impl JsonlSource {
             session_id: session_id.clone(),
             offset: 0,
             partial: Vec::new(),
-            rewritten: false,
+            rewritten: None,
         });
         Ok(session_id)
     }
 
-    /// Starts every file again from its first byte, as after a rewrite.
-    pub fn rewind(&mut self) {
+    /// Starts every file again from its first byte, as after a rewrite. Returns the offset the
+    /// files had reached.
+    pub fn rewind(&mut self) -> u64 {
+        let reached = self.consumed();
         for file in &mut self.files {
             file.offset = 0;
             file.partial.clear();
         }
+        reached
     }
 
-    /// True once since the last call when a file changed in the bytes already read and was
-    /// read again from its start: the records returned since then are the whole file, with
-    /// the offsets of its new content.
-    pub fn take_rewritten(&mut self) -> bool {
-        self.files.iter_mut().fold(false, |any, file| {
-            std::mem::take(&mut file.rewritten) || any
-        })
+    /// The offset reached before a file changed in the bytes already read and was read again
+    /// from its start, once; `None` when that has not happened since the last call. The
+    /// records returned since then are the whole file, with the offsets of its new content.
+    pub fn take_rewritten(&mut self) -> Option<u64> {
+        self.files
+            .iter_mut()
+            .filter_map(|file| file.rewritten.take())
+            .max()
     }
 
     /// The session of the file `open` was given.

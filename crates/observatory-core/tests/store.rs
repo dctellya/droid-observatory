@@ -767,3 +767,29 @@ fn store_records_mission_and_session_names_by_user_tag_not_runner_tag() {
         ("plain-id".to_owned(), "plain-id".to_owned())
     );
 }
+
+#[test]
+fn retracting_a_session_file_deletes_its_stale_events_but_keeps_the_first_line() {
+    let (_dir, db, events) = indexed_m0();
+    let session = events[0].session_id.clone().unwrap();
+    let offset = |event: &Event| jsonl_pointer(event).1;
+    let below = events.iter().map(offset).max().unwrap();
+    let stale = events
+        .iter()
+        .filter(|e| e.session_id.as_ref() == Some(&session) && offset(e) > 0 && offset(e) < below)
+        .count();
+    assert!(stale > 0);
+
+    let mut store = Store::open(&db).unwrap();
+    let before = query_count(&db, "SELECT COUNT(*) FROM events");
+    assert_eq!(store.retract_events(&session, below).unwrap(), stale);
+    assert_eq!(
+        query_count(&db, "SELECT COUNT(*) FROM events"),
+        before - stale as i64
+    );
+    assert_eq!(
+        query_count(&db, "SELECT COUNT(*) FROM events WHERE byte_offset = 0"),
+        events.iter().filter(|e| offset(e) == 0).count() as i64,
+        "the rewritten first line keeps its events"
+    );
+}

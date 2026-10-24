@@ -8,10 +8,11 @@ use std::time::SystemTime;
 use super::watcher::{DiscoveredSession, SessionWatcher, session_name};
 use crate::config::IngestConfig;
 use crate::ingest::{
-    IngestError, JsonlSource, SessionTree, Source, UsageLogSource, mapping_version_of, read_sidecar,
+    IngestError, JsonlSource, Retraction, SessionTree, Source, UsageLogSource, mapping_version_of,
+    read_sidecar,
 };
 use crate::mapping::{Mapper, SessionMeta};
-use crate::model::{Event, Role, SessionId};
+use crate::model::{Event, EventId, MissionId, Role, SessionId};
 
 const MB: u64 = 1024 * 1024;
 /// Parent links followed while looking for a session's root, so a cycle in the files ends.
@@ -28,6 +29,9 @@ pub struct AttachBatch {
     /// an event names its session and mission.
     pub trees: Vec<SessionTree>,
     pub warnings: Vec<IngestError>,
+    /// Events already handed out whose file was rewritten in this poll. Apply them before
+    /// `events`, which holds the lines read again.
+    pub retractions: Vec<(MissionId, Retraction)>,
     /// Sessions found but not watched because of `max_watched_sessions`.
     pub unwatched: usize,
 }
@@ -55,6 +59,9 @@ struct Tail {
     failed: bool,
     /// The mapper has yielded an event from the file as it was read so far.
     emitted: bool,
+    /// Ids of the events of the first line handed out: that line is rewritten in place and
+    /// its events keep their ids, so they are not handed out again.
+    first_line: HashSet<EventId>,
 }
 
 impl Tail {
@@ -70,12 +77,8 @@ impl Tail {
         }
         match self.source.next_batch() {
             Ok(records) => {
-                if self.source.take_rewritten() {
-                    if self.emitted {
-                        self.fail_rewritten(batch);
-                        return;
-                    }
-                    self.mapper.restart();
+                if let Some(reached) = self.source.take_rewritten() {
+                    self.restart(reached, batch);
                 }
                 if !records.is_empty() {
                     self.modified = std::fs::metadata(&self.found.path)
@@ -84,18 +87,18 @@ impl Tail {
                 }
                 batch.records += records.len();
                 for record in &records {
-                    let events = self.mapper.map(record);
-                    self.emitted |= !events.is_empty();
-                    batch.events.extend(events);
+                    for event in self.mapper.map(record) {
+                        if self.hand_out(&event) {
+                            batch.events.push(event);
+                        }
+                    }
                 }
             }
-            // Droid truncates a file before it writes the longer first line: nothing mapped
-            // yet means nothing is stale, so the file is read again from its start.
-            Err(IngestError::FileMoved { .. }) if !self.emitted => {
-                self.source.rewind();
-                self.mapper.restart();
+            // Droid truncates a file before it writes the rewritten one.
+            Err(IngestError::FileMoved { .. }) => {
+                let reached = self.source.rewind();
+                self.restart(reached, batch);
             }
-            Err(IngestError::FileMoved { .. }) => self.fail_rewritten(batch),
             Err(err) => {
                 self.failed = true;
                 batch.warnings.push(err);
@@ -103,13 +106,29 @@ impl Tail {
         }
     }
 
-    /// The events already out carry offsets of bytes that are gone and nothing here replaces
-    /// them, so the file is reported rather than doubled.
-    fn fail_rewritten(&mut self, batch: &mut AttachBatch) {
-        self.failed = true;
-        batch.warnings.push(IngestError::FileMoved {
-            path: self.found.path.clone(),
-        });
+    /// False for an event of the first line that went out before the rewrite.
+    fn hand_out(&mut self, event: &Event) -> bool {
+        self.emitted = true;
+        let first_line = matches!(
+            &event.source,
+            crate::model::SourcePtr::Jsonl { byte_offset: 0, .. }
+        );
+        !first_line || self.first_line.insert(event.id.clone())
+    }
+
+    /// The file is read again from its start: the mapper forgets it, and the events handed
+    /// out from the lines after the first, whose offsets moved, are retracted.
+    fn restart(&mut self, reached: u64, batch: &mut AttachBatch) {
+        self.mapper.restart();
+        if std::mem::take(&mut self.emitted) {
+            batch.retractions.push((
+                self.mapper.session().mission_id.clone(),
+                Retraction {
+                    session_id: self.found.session_id.clone(),
+                    below_offset: reached,
+                },
+            ));
+        }
     }
 
     fn at_eof(&self) -> bool {
@@ -394,6 +413,7 @@ impl Attach {
             finished: false,
             failed: false,
             emitted: false,
+            first_line: HashSet::new(),
             found,
         })
     }

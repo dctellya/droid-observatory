@@ -90,6 +90,17 @@ impl LiveIngest {
                 step.errors.push(err);
             }
         }
+        for (mission, retraction) in batch.retractions {
+            if let Err(err) = self
+                .store
+                .retract_events(&retraction.session_id, retraction.below_offset)
+            {
+                step.errors.push(err);
+            }
+            let unknown = self.store.unknown_count(&mission).unwrap_or(0);
+            self.batcher
+                .retract(&mission, retraction, unknown, Instant::now());
+        }
         self.store_and_queue(batch.events, &mut step);
         for warning in &batch.warnings {
             self.warnings.push(match warning {

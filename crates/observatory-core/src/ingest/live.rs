@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use super::{SessionInfo, order_key};
-use crate::model::{Event, MissionId, SessionId};
+use crate::model::{Event, MissionId, SessionId, SourcePtr};
 use crate::view::MissionSummary;
 
 /// The `events_appended` payload.
@@ -20,6 +20,40 @@ pub struct EventBatch {
     pub events: Vec<Event>,
     /// Unknown events of the mission in the store after this batch (rule 18: the tray count).
     pub unknown_total: u64,
+    /// Events the UI holds that a rewrite of their session file made stale; drop them before
+    /// adding `events`.
+    #[serde(default)]
+    pub retracted: Vec<Retraction>,
+}
+
+/// The lines of a session file that Droid rewrote in place moved, so the events read from them
+/// have pointers into bytes that are gone. They are replaced by the events of the same lines
+/// read again, under their new offsets.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Retraction {
+    pub session_id: SessionId,
+    /// Everything the tail had read: the lines that started before this offset.
+    pub below_offset: u64,
+}
+
+impl Retraction {
+    /// A line of the session file after the first. The first line is the one rewritten in
+    /// place, its events keep their ids and are not emitted again.
+    pub fn covers(&self, event: &Event) -> bool {
+        event.session_id.as_ref() == Some(&self.session_id)
+            && matches!(
+                &event.source,
+                SourcePtr::Jsonl { byte_offset, .. }
+                    if *byte_offset > 0 && *byte_offset < self.below_offset
+            )
+    }
+}
+
+/// Drops from `held` the events a retraction covers. Returns how many were dropped.
+pub fn retract_stale(held: &mut Vec<Event>, retracted: &[Retraction]) -> usize {
+    let before = held.len();
+    held.retain(|event| !retracted.iter().any(|r| r.covers(event)));
+    before - held.len()
 }
 
 /// One session file: the `session_discovered` payload and a row of the watched list.
@@ -77,6 +111,7 @@ struct Pending {
     mission: MissionId,
     events: Vec<Event>,
     unknown_total: u64,
+    retracted: Vec<Retraction>,
     /// When the oldest event of this batch arrived.
     since: Instant,
 }
@@ -118,9 +153,40 @@ impl EventBatcher {
                 mission: mission.clone(),
                 events,
                 unknown_total,
+                retracted: Vec::new(),
                 since: now,
             }),
         }
+    }
+
+    /// Takes back what a rewrite made stale: the pending events it covers never leave, and the
+    /// next batch tells the UI to drop the ones it already holds. Events pushed after this call
+    /// are the lines read again.
+    pub fn retract(
+        &mut self,
+        mission: &MissionId,
+        retraction: Retraction,
+        unknown_total: u64,
+        now: Instant,
+    ) {
+        let index = self
+            .pending
+            .iter()
+            .position(|p| p.mission == *mission)
+            .unwrap_or_else(|| {
+                self.pending.push(Pending {
+                    mission: mission.clone(),
+                    events: Vec::new(),
+                    unknown_total,
+                    retracted: Vec::new(),
+                    since: now,
+                });
+                self.pending.len() - 1
+            });
+        let pending = &mut self.pending[index];
+        pending.events.retain(|event| !retraction.covers(event));
+        pending.unknown_total = unknown_total;
+        pending.retracted.push(retraction);
     }
 
     /// How long until the next batch is due; `None` when nothing is pending.
@@ -159,6 +225,7 @@ impl Pending {
             mission_id: self.mission,
             events: self.events,
             unknown_total: self.unknown_total,
+            retracted: self.retracted,
         }
     }
 }
