@@ -156,13 +156,54 @@ fn tail_renders_appended_lines_in_order() {
     assert_eq!(event_ids(&collected), replayed_ids(&path, "tail"));
 }
 
+/// The names `SessionWatcher` and `Attach` give a session whose sidecar carries `tags_json`.
+fn names_for_tags(tags_json: &str) -> (String, String) {
+    let dir = TempDir::new().unwrap();
+    let path = write_session(dir.path(), "probe-id", 1);
+    std::fs::write(
+        path.with_extension("settings.json"),
+        format!(r#"{{"tags":{tags_json}}}"#),
+    )
+    .unwrap();
+    let mut watcher = SessionWatcher::start(&config(dir.path(), POLL_MS)).unwrap();
+    let discovered = watcher.next_discovered().remove(0).name;
+    let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
+    attach.poll();
+    (discovered, attach.watched().remove(0).name)
+}
+
+#[test]
+fn name_skips_runner_generated_tags_and_prefers_the_user_tag() {
+    // Droid 0.247 writes `exec` first and the `--tag` value after it.
+    let (discovered, shown) = names_for_tags(r#"[{"name":"exec"},{"name":"probe-m1"}]"#);
+    assert_eq!(discovered, "probe-m1");
+    assert_eq!(shown, "probe-m1");
+}
+
+#[test]
+fn name_skips_a_tag_whose_metadata_names_the_runner() {
+    let tags = r#"[{"name":"exec"},{"name":"orchestrator-run","metadata":{"missionId":"m-1"}},
+        {"name":"helper","metadata":{"callingSessionId":"p-1"}},{"name":"user-tag"}]"#;
+    let (discovered, shown) = names_for_tags(tags);
+    assert_eq!(discovered, "user-tag");
+    assert_eq!(shown, "user-tag");
+}
+
+#[test]
+fn name_falls_back_to_the_session_id_when_only_runner_tags_exist() {
+    let tags = r#"[{"name":"exec"},{"name":"mission-worker"},{"name":"mission-session"}]"#;
+    let (discovered, shown) = names_for_tags(tags);
+    assert_eq!(discovered, "probe-id");
+    assert_eq!(shown, "probe-id");
+}
+
 #[test]
 fn name_prefers_tag_over_session_id() {
     let dir = TempDir::new().unwrap();
     let tagged = write_session(dir.path(), "tagged-id", 1);
     std::fs::write(
         tagged.with_extension("settings.json"),
-        r#"{"tags":[{"name":"release-hardening"},{"name":"read-only"}]}"#,
+        r#"{"tags":[{"name":"exec"},{"name":"release-hardening"},{"name":"read-only"}]}"#,
     )
     .unwrap();
     write_session(dir.path(), "plain-id", 1);
