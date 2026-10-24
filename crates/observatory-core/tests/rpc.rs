@@ -850,6 +850,35 @@ fn tool_call_and_tool_result_notifications_are_counted_not_unknown() {
 }
 
 #[test]
+fn a_message_discarded_by_a_pause_is_counted_not_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = Vec::new();
+    stream.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    stream.extend(line(&notification(
+        "s-1",
+        json!({ "type": "queued_messages_discarded", "text": "hi", "requestId": "3" }),
+    )));
+
+    let hosted = host(dir.path(), &stream);
+
+    assert!(
+        hosted
+            .events
+            .iter()
+            .all(|event| !matches!(event.kind, EventKind::Unknown { .. })),
+        "{:?}",
+        hosted.events
+    );
+    assert_eq!(
+        hosted.mapper.protocol_counts()["queued_messages_discarded"],
+        1
+    );
+}
+
+#[test]
 fn host_controls_travel_as_tagged_json() {
     let control: HostControl =
         serde_json::from_value(json!({ "kind": "answer", "question_id": "q", "text": "t" }))
