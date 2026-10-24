@@ -1219,3 +1219,16 @@ fn chatter_that_carries_no_prd_event_maps_to_no_event() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_system_note_such_as_request_interrupted_by_user_maps_to_no_event() {
+    let mut session = Session::new(meta(Role::Orchestrator));
+    let note = json!({"type": "message", "id": "m", "seq": 1, "timestamp": at(1),
+        "message": {"role": "system", "visibility": "llm_only",
+            "content": [{"type": "text", "text": "Request interrupted by user"}]}});
+
+    assert!(
+        session.feed(&note).is_empty(),
+        "a message of the system role is Droid's own annotation, not an unknown line"
+    );
+}
