@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use observatory_core::config::MissionConfig;
+use observatory_core::config::{Config, MissionConfig};
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{EventId, MissionId, SessionId, Timestamp};
@@ -144,10 +144,11 @@ pub async fn host_status(
     hosts.status(&launch_id)
 }
 
-/// The launch form's defaults: models, efforts and autonomy from `[mission]`.
+/// The configuration in effect: the launch form pre-fills from `[mission]` and the live
+/// output keeps `[ui].live_output_lines`.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn mission_defaults(shell: State<'_, Shell>) -> Result<MissionConfig, String> {
-    Ok(shell.cfg.mission.clone())
+pub async fn app_config(shell: State<'_, Shell>) -> Result<Config, String> {
+    Ok(shell.cfg.clone())
 }
 
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {

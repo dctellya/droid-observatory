@@ -4,13 +4,14 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
 use observatory_core::model::SessionId;
-use observatory_core::view::MissionRow;
+use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
 use crate::backend;
 use crate::board::Board;
 use crate::capture::Capture;
+use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
 use crate::shell;
 
@@ -63,6 +64,9 @@ pub fn App() -> impl IntoView {
     let status = RwSignal::new(None::<String>);
     let failure = RwSignal::new(None::<String>);
     let attach_status = RwSignal::new(AttachStatus::default());
+    let hosted = HostedCtx::new();
+    provide_context(hosted);
+    let launching = RwSignal::new(false);
 
     let open_shell = Callback::new(move |(command, args): (&'static str, Value)| {
         failure.set(None);
@@ -105,6 +109,21 @@ pub fn App() -> impl IntoView {
             if let Ok(now) = shell::invoke::<_, AttachStatus>("list_sessions", &json!({})).await {
                 attach_status.set(now);
             }
+        });
+        spawn_local(async move {
+            if let Ok(config) =
+                shell::invoke::<_, observatory_core::config::Config>("app_config", &json!({})).await
+            {
+                hosted
+                    .output
+                    .set(LiveOutput::new(config.ui.live_output_lines));
+            }
+        });
+        shell::listen::<HostedStatus>("hosted_status", move |now| {
+            hosted.status.set(Some(now));
+        });
+        shell::listen::<OutputLines>("live_output", move |lines| {
+            hosted.output.update(|output| output.push(lines));
         });
         shell::listen::<AttachStatus>("attach_status", move |now| attach_status.set(now));
         shell::listen::<SessionRow>("session_discovered", move |_| {
@@ -191,6 +210,10 @@ pub fn App() -> impl IntoView {
     view! {
         <main class="app" aria-label="observatory">
             {move || match current.get() {
+                None if launching.get() => {
+                    view! { <LaunchScreen on_close=Callback::new(move |()| launching.set(false)) /> }
+                        .into_any()
+                }
                 Some(capture) => view! { <Board capture=capture on_close=close /> }.into_any(),
                 None => {
                     view! {
@@ -203,6 +226,7 @@ pub fn App() -> impl IntoView {
                             on_pick=pick
                             on_open=reopen
                             on_open_path=open_path
+                            on_launch=Callback::new(move |()| launching.set(true))
                         />
                     }
                         .into_any()

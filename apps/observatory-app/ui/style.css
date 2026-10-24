@@ -82,3 +82,12 @@ html, body { margin: 0; font-family: -apple-system, system-ui, sans-serif; font-
 .details header { display: flex; align-items: center; gap: 16px; }
 .details .event-id { font-family: ui-monospace, monospace; font-size: 11px; }
 .details tr.unmapped { background: #fff0f0; }
+
+.launch, .hosted { border: 1px solid #c8ccd0; border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+.launch-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 6px 16px; margin: 8px 0; }
+.launch-form .field label { display: flex; gap: 8px; align-items: center; }
+.launch-form .field-label { min-width: 190px; }
+.launch-form input[type=text], .launch-form select { flex: 1; }
+.launch-form button[type=submit] { grid-column: 1 / -1; justify-self: start; }
+.hosted .controls { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.live-output pre { max-height: 30vh; overflow: auto; background: #f1f2f4; padding: 6px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }

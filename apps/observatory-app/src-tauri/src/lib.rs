@@ -79,7 +79,7 @@ pub fn run() {
             commands::host_launch,
             commands::host_control,
             commands::host_status,
-            commands::mission_defaults,
+            commands::app_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
