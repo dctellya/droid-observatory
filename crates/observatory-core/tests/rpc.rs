@@ -1093,3 +1093,53 @@ fn lines_that_arrive_apart_get_different_times() {
         "answered {answered}, paused {paused}"
     );
 }
+
+#[test]
+fn a_permission_request_that_waits_says_what_the_human_can_choose() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    ));
+    stream.extend(line(&request(
+        "perm-1",
+        "droid.request_permission",
+        json!({
+            "toolUses": [{ "toolUse": { "id": "toolu_P", "name": "Execute" } }],
+            "options": [{ "value": "proceed_once" }, { "value": "cancel" }],
+        }),
+    )));
+    stream.extend(line(&request(
+        "perm-2",
+        "droid.request_permission",
+        json!({ "toolUses": [], "options": [{ "value": "cancel" }] }),
+    )));
+    stream.extend(line(&request(
+        "perm-3",
+        "droid.request_permission",
+        json!({ "toolUses": [{ "toolUse": { "name": "Edit" } }] }),
+    )));
+    let hosted = host(dir.path(), &stream);
+
+    let waiting = hosted.mapper.open_requests().waiting_permissions();
+
+    let summary: Vec<_> = waiting
+        .iter()
+        .map(|permission| {
+            (
+                permission.request_id.as_str(),
+                permission.tools.join(","),
+                permission.can_approve,
+                permission.can_deny,
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("perm-1", "Execute".to_owned(), true, true),
+            ("perm-2", String::new(), false, true),
+            ("perm-3", "Edit".to_owned(), true, true),
+        ]
+    );
+}

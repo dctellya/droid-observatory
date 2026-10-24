@@ -1,7 +1,9 @@
 //! What the hosted run shows the human: the first message the orchestrator reads and the state
 //! of the run as controls are acknowledged.
 
-use observatory_core::view::{AckRow, HostedState, HostedStatus, LaunchConfig, PerRole};
+use observatory_core::view::{
+    AckRow, HostedState, HostedStatus, LaunchConfig, PerRole, PermissionRow,
+};
 
 fn config(budget: Option<f64>) -> LaunchConfig {
     let same = |text: &str| PerRole {
@@ -75,4 +77,23 @@ fn an_exited_run_keeps_its_exit_code_and_is_not_restarted_by_a_late_ack() {
     status.initialised();
 
     assert_eq!(status.state, HostedState::Exited { code: Some(0) });
+}
+
+#[test]
+fn a_status_lists_the_permission_requests_that_wait() {
+    let mut status = HostedStatus::starting("l1");
+    assert!(status.permissions.is_empty());
+
+    status.permissions = vec![PermissionRow {
+        request_id: "perm-1".into(),
+        tools: vec!["Execute".into()],
+        can_approve: true,
+        can_deny: false,
+    }];
+
+    let wire = serde_json::to_value(&status).unwrap();
+    assert_eq!(wire["permissions"][0]["request_id"], "perm-1");
+    assert_eq!(wire["permissions"][0]["can_deny"], false);
+    let back: HostedStatus = serde_json::from_value(wire).unwrap();
+    assert_eq!(back, status);
 }
