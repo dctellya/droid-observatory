@@ -21,7 +21,7 @@ pub use open::{
 };
 pub use protocol::{
     FACTORY_API_VERSION, HostControl, RESUME_TEXT, RpcRequest, RpcResponse, encode,
-    encode_initialize, method,
+    encode_initialize, encode_mission_settings, method,
 };
 pub use source::RpcSource;
 pub use spool::{Spool, spool_path};

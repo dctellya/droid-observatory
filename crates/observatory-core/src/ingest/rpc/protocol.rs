@@ -12,6 +12,9 @@ pub mod method {
     pub const INTERRUPT_SESSION: &str = "droid.interrupt_session";
     /// Host to Droid: a user message. The message and resume controls.
     pub const ADD_USER_MESSAGE: &str = "droid.add_user_message";
+    /// Host to Droid: changes the session's settings. Its `missionSettings` are what the
+    /// mission's model-settings.json is written from.
+    pub const UPDATE_SESSION_SETTINGS: &str = "droid.update_session_settings";
     /// Droid to host, in a response to `droid.initialize_session`: the session id.
     pub const INITIALIZE_SESSION: &str = "droid.initialize_session";
     /// Droid to host: every event of the session, `params.notification.type` says which.
@@ -118,7 +121,7 @@ const MACHINE_ID: &str = "droid-observatory";
 /// `missionSettings` those of the workers and validators, `decompSessionType` makes the session
 /// an orchestrator (what `--mission` does on the command line). `session_id` is chosen by the
 /// host, so the session file is known before Droid writes it.
-pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> RpcRequest {
+fn mission_settings(config: &LaunchConfig) -> Value {
     let mut mission_settings = json!({
         "workerModel": config.models.worker,
         "workerReasoningEffort": config.efforts.worker,
@@ -134,6 +137,19 @@ pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> Rp
             mission_settings[key] = json!(true);
         }
     }
+    mission_settings
+}
+
+/// The request that gives the mission its worker and validator models and its skipped phases.
+pub fn encode_mission_settings(config: &LaunchConfig, id: u64) -> RpcRequest {
+    RpcRequest::new(
+        id,
+        method::UPDATE_SESSION_SETTINGS,
+        json!({ "missionSettings": mission_settings(config) }),
+    )
+}
+
+pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> RpcRequest {
     let mut params = json!({
         "machineId": MACHINE_ID,
         "cwd": config.repo,
@@ -143,7 +159,7 @@ pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> Rp
         "autonomyLevel": config.autonomy,
         "interactionMode": "mission",
         "decompSessionType": "orchestrator",
-        "missionSettings": mission_settings,
+        "missionSettings": mission_settings(config),
     });
     if !config.tags.is_empty() {
         params["tags"] = config

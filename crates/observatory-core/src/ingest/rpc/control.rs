@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use super::open::OpenRequests;
 use super::protocol::{
     HostControl, OPTION_APPROVE, OPTION_DENY, RpcResponse, encode, encode_initialize,
+    encode_mission_settings,
 };
 use crate::view::LaunchConfig;
 
@@ -77,6 +78,19 @@ impl<W: Write> ControlChannel<W> {
         session_id: &str,
     ) -> Result<Sent, ControlError> {
         let request = encode_initialize(config, session_id, self.next_id);
+        self.write(&request)?;
+        self.next_id += 1;
+        self.pending.insert(request.id.clone(), request.method);
+        Ok(Sent {
+            id: request.id,
+            method: request.method,
+        })
+    }
+
+    /// Writes the request that sets the mission's models: Droid reads them from this, not from
+    /// `droid.initialize_session`, when it writes the mission's settings.
+    pub fn mission_settings(&mut self, config: &LaunchConfig) -> Result<Sent, ControlError> {
+        let request = encode_mission_settings(config, self.next_id);
         self.write(&request)?;
         self.next_id += 1;
         self.pending.insert(request.id.clone(), request.method);
