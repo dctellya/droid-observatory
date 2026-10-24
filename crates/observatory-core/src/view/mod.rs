@@ -7,6 +7,7 @@ mod card;
 mod details;
 mod filter;
 mod gate;
+mod hosted;
 mod launch;
 mod library;
 mod live_output;
@@ -26,6 +27,7 @@ pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
+pub use hosted::{AckRow, HostedState, HostedStatus, QuestionRow};
 pub use launch::{
     AUTONOMY_LEVELS, LaunchConfig, LaunchError, LaunchField, LaunchForm, PerRole, session_uuid,
 };
