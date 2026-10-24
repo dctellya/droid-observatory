@@ -232,6 +232,7 @@ mod tests {
             request_id: "p1".into(),
             options: vec!["cancel".into()],
             confirmation: None,
+            tools: Vec::new(),
         });
         let mut channel = ControlChannel::new(Vec::new());
 

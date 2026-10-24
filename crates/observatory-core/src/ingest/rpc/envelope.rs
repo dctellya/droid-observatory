@@ -149,6 +149,14 @@ fn incoming_request(line: &Map<String, Value>) -> Incoming {
                 })
                 .unwrap_or_default(),
             confirmation: params["confirmationType"].as_str().map(str::to_owned),
+            tools: params["toolUses"]
+                .as_array()
+                .map(|uses| {
+                    uses.iter()
+                        .filter_map(|entry| entry["toolUse"]["name"].as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }),
         other => unrecognised(other),
     }

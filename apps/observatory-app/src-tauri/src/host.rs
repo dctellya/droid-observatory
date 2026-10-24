@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use observatory_core::config::Config;
 use observatory_core::ingest::rpc::{
-    Ack, AckOutcome, ControlChannel, HostControl, RpcMapper, RpcSource, Spool, method, spool_path,
+    Ack, AckOutcome, ControlChannel, HostControl, RpcMapper, RpcSource, Spool, encode_initialize,
+    method, spool_path,
 };
 use observatory_core::ingest::{EventBatch, RawRecord, Source};
 use observatory_core::mapping::MappingVersion;
@@ -200,7 +201,13 @@ pub async fn launch(
         spool = %spool_file.display(),
         "host_launch"
     );
-    tracing::info!(launch_id, request_id = %sent.id, method = sent.method, "host_control");
+    tracing::info!(
+        launch_id,
+        request_id = %sent.id,
+        method = sent.method,
+        params = %encode_initialize(&config, &session_id, 1).params,
+        "host_control"
+    );
 
     let run = Arc::new(Run {
         group: spawned.group,

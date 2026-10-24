@@ -25,16 +25,22 @@ pub struct OpenPermission {
     pub options: Vec<String>,
     /// `confirmationType` of the request: what is being confirmed.
     pub confirmation: Option<String>,
+    /// The names of the tools the request asks to run (`toolUses[].toolUse.name`).
+    pub tools: Vec<String>,
 }
 
-/// `confirmationType` of the permission request for a mission proposal.
+/// `confirmationType` of the permission request for a mission proposal, when Droid sets one.
 const PROPOSE_MISSION: &str = "propose_mission";
+/// The tool the orchestrator calls to propose its plan; Droid 0.247.0 names the request by it
+/// and sets no `confirmationType`.
+const PROPOSE_MISSION_TOOL: &str = "ProposeMission";
 
 impl OpenPermission {
     /// The orchestrator proposes its plan and waits. `droid exec --mission` accepts the
     /// proposal without asking; a hosted session has to answer it.
     pub fn is_mission_proposal(&self) -> bool {
         self.confirmation.as_deref() == Some(PROPOSE_MISSION)
+            || self.tools.iter().any(|tool| tool == PROPOSE_MISSION_TOOL)
     }
 }
 
@@ -180,6 +186,7 @@ mod tests {
             request_id: "p1".into(),
             options: vec!["cancel".into()],
             confirmation: None,
+            tools: Vec::new(),
         };
         open.observe_permission(permission.clone());
         open.observe_permission(permission.clone());
