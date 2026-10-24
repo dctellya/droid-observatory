@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use common::{Collected, append, config, m0_lines, pump, replayed_ids, session_start};
 use observatory_core::config::Config;
 use observatory_core::ingest::watch::{Attach, LiveIngest};
+use observatory_core::ingest::{Retraction, merge_ordered, retract_stale};
 use observatory_core::model::{Event, EventKind, SessionId};
 use observatory_core::store::{EventScope, Store, TimeRange};
 use tempfile::TempDir;
@@ -22,6 +23,7 @@ const LIMIT: Duration = Duration::from_secs(10);
 /// How much longer the rewritten first line is (the growth seen on `droid exec` 0.247).
 const GROWTH: usize = 34;
 const LINES: usize = 40;
+const LINES_BEFORE: usize = 4;
 
 fn session_path(dir: &Path) -> PathBuf {
     dir.join("-home-user-project")
@@ -46,6 +48,22 @@ fn rewritten_file() -> Vec<u8> {
         bytes.extend(line);
     }
     bytes
+}
+
+/// The file as the tail first finds it: the short first line and the lines Droid wrote
+/// straight after it, so events are out before the rewrite.
+fn file_before_the_rewrite() -> Vec<u8> {
+    let mut bytes = first_lines().0;
+    for line in m0_lines(LINES_BEFORE).into_iter().skip(1) {
+        bytes.extend(line);
+    }
+    bytes
+}
+
+/// What the board does with a batch: drop what it retracts, then add what is new.
+fn fold(held: &mut Vec<Event>, retracted: &[Retraction], incoming: Vec<Event>) {
+    retract_stale(held, retracted);
+    merge_ordered(held, incoming);
 }
 
 fn unknown_count(events: &[Event]) -> usize {
@@ -112,39 +130,59 @@ fn resync_does_not_duplicate_events_in_the_store_or_the_batches() {
     let store_dir = TempDir::new().unwrap();
     let store_path = store_dir.path().join("resync.sqlite");
     let path = session_path(dir.path());
-    append(&path, &first_lines().0);
+    append(&path, &file_before_the_rewrite());
 
     let store = Store::open(&store_path).unwrap();
     let mut live = LiveIngest::start(&live_config(dir.path()), store).unwrap();
-    let mut batched: Vec<Event> = Vec::new();
+    let mut batches = Vec::new();
     let started = Instant::now();
     let mut discovered = false;
-    while !discovered && started.elapsed() < LIMIT {
+    while started.elapsed() < LIMIT && !(discovered && !batches.is_empty()) {
         let step = live.step();
-        discovered = !step.discovered.is_empty();
-        batched.extend(step.batches.into_iter().flat_map(|batch| batch.events));
+        discovered |= !step.discovered.is_empty();
+        batches.extend(step.batches);
     }
-    assert!(discovered, "the session was found");
+    assert!(!batches.is_empty(), "events were out before the rewrite");
 
     std::fs::write(&path, rewritten_file()).unwrap();
     let expected = replayed_ids(&path, SESSION);
-    while batched.len() < expected.len() && started.elapsed() < LIMIT {
+    let mut board: Vec<Event> = Vec::new();
+    let mut seen = 0;
+    while started.elapsed() < LIMIT {
         let step = live.step();
         assert!(step.errors.is_empty(), "{:?}", step.errors);
-        batched.extend(step.batches.into_iter().flat_map(|batch| batch.events));
+        assert!(step.warnings.is_empty(), "{:?}", step.warnings);
+        batches.extend(step.batches);
+        board.clear();
+        for batch in &batches {
+            fold(&mut board, &batch.retracted, batch.events.clone());
+        }
+        seen = board.len();
+        if seen >= expected.len() {
+            break;
+        }
     }
-    batched.extend(live.finish().into_iter().flat_map(|batch| batch.events));
+    batches.extend(live.finish());
     drop(live);
+    assert_eq!(seen, expected.len(), "the board reached the replay");
 
-    let batch_ids = ids(&batched);
+    let batch_ids: Vec<String> = batches.iter().flat_map(|b| ids(&b.events)).collect();
     let distinct: BTreeSet<_> = batch_ids.iter().collect();
     assert_eq!(
         batch_ids.len(),
         distinct.len(),
         "an id is batched twice: {batch_ids:?}"
     );
-    assert_eq!(batch_ids, expected);
-    assert_eq!(unknown_count(&batched), 0);
+    board.clear();
+    for batch in &batches {
+        fold(&mut board, &batch.retracted, batch.events.clone());
+    }
+    assert_eq!(
+        ids(&board),
+        expected,
+        "the board after retractions is the replay"
+    );
+    assert_eq!(unknown_count(&board), 0);
 
     let store = Store::open_existing(&store_path).unwrap();
     let stored = store
@@ -159,40 +197,54 @@ fn resync_does_not_duplicate_events_in_the_store_or_the_batches() {
     expected_sorted.sort();
     assert_eq!(
         stored_ids, expected_sorted,
-        "the store holds each event once"
+        "the store holds each event once, none stale"
     );
 }
 
 #[test]
-fn a_rewrite_after_events_were_emitted_is_reported_and_nothing_is_doubled() {
+fn a_rewrite_after_events_were_emitted_retracts_them_and_reads_the_file_again() {
     let dir = TempDir::new().unwrap();
     let path = session_path(dir.path());
     let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
     let mut collected = Collected::default();
-    append(&path, &first_lines().0);
-    for line in m0_lines(LINES).into_iter().skip(1) {
-        append(&path, &line);
-    }
+    append(&path, &file_before_the_rewrite());
     pump(&mut attach, &mut collected, LIMIT, |attach, _| {
         attach.at_eof()
     });
-    let before = ids(&collected.events);
-    assert!(!before.is_empty());
+    let mut board = std::mem::take(&mut collected.events);
+    board.sort_by_cached_key(observatory_core::ingest::order_key);
+    assert!(board.len() > 1, "events were out before the rewrite");
 
     std::fs::write(&path, rewritten_file()).unwrap();
-    pump(&mut attach, &mut collected, LIMIT, |_, collected| {
-        !collected.warnings.is_empty()
+    pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+        attach.at_eof()
     });
+    collected.events.extend(attach.finish());
 
-    assert!(
-        matches!(
-            collected.warnings.as_slice(),
-            [observatory_core::ingest::IngestError::FileMoved { .. }]
-        ),
-        "{:?}",
-        collected.warnings
+    assert!(collected.warnings.is_empty(), "{:?}", collected.warnings);
+    let retracted: Vec<Retraction> = collected
+        .retractions
+        .iter()
+        .map(|(_, r)| r.clone())
+        .collect();
+    assert_eq!(retracted.len(), 1, "{retracted:?}");
+    assert_eq!(retracted[0].session_id, SessionId(SESSION.to_owned()));
+    assert_eq!(
+        retracted[0].below_offset,
+        file_before_the_rewrite().len() as u64,
+        "everything the tail had read"
     );
-    assert_eq!(ids(&collected.events), before, "no event is emitted twice");
+    let first_line_ids: BTreeSet<String> = ids(&board)
+        .into_iter()
+        .filter(|id| id.contains(":0:"))
+        .collect();
+    let again = ids(&collected.events);
+    assert!(
+        again.iter().all(|id| !first_line_ids.contains(id)),
+        "an event of the unmoved first line is not emitted twice: {again:?}"
+    );
+    fold(&mut board, &retracted, collected.events);
+    assert_eq!(ids(&board), replayed_ids(&path, SESSION));
 }
 
 #[test]
@@ -204,7 +256,7 @@ fn an_unfinished_line_that_changed_under_the_tail_is_read_again() {
     std::fs::write(&path, "{\"a\":1}\n{\"b\"").unwrap();
     let mut source = JsonlSource::open(&path, &Default::default()).unwrap();
     assert_eq!(source.next_batch().unwrap().len(), 1);
-    assert!(!source.take_rewritten());
+    assert!(source.take_rewritten().is_none());
 
     std::fs::write(&path, "{\"a\":1}\n{\"c\":2}\n").unwrap();
     let lines: Vec<Vec<u8>> = source
@@ -213,8 +265,8 @@ fn an_unfinished_line_that_changed_under_the_tail_is_read_again() {
         .into_iter()
         .map(|record| record.bytes)
         .collect();
-    assert!(source.take_rewritten());
-    assert!(!source.take_rewritten(), "reported once");
+    assert!(source.take_rewritten().is_some());
+    assert!(source.take_rewritten().is_none(), "reported once");
     assert_eq!(lines, [b"{\"a\":1}".to_vec(), b"{\"c\":2}".to_vec()]);
 }
 
