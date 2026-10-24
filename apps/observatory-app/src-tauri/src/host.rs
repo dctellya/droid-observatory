@@ -22,7 +22,7 @@ use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
     QuestionRow, session_uuid,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc as async_mpsc, watch};
@@ -160,8 +160,8 @@ impl Run {
 
 /// Starts the hosted mission described by `config` and returns at once; the pump task streams
 /// from there on.
-pub async fn launch(
-    app: &AppHandle,
+pub async fn launch<R: Runtime>(
+    app: &AppHandle<R>,
     hosts: &Hosts,
     cfg: &Config,
     config: LaunchConfig,
@@ -291,8 +291,8 @@ async fn read_stdout(stdout: ChildStdout, lines: async_mpsc::UnboundedSender<Vec
     }
 }
 
-struct Pump {
-    app: AppHandle,
+struct Pump<R: Runtime> {
+    app: AppHandle<R>,
     run: Arc<Run>,
     launch_id: String,
     batch: Duration,
@@ -312,7 +312,7 @@ struct Pump {
 
 type ExitCode = watch::Receiver<Option<Option<i32>>>;
 
-impl Pump {
+impl<R: Runtime> Pump<R> {
     async fn run(mut self, mut lines: async_mpsc::UnboundedReceiver<Vec<u8>>, mut exit: ExitCode) {
         loop {
             let received = match self.flush_at {
