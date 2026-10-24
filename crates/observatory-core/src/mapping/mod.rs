@@ -124,6 +124,13 @@ impl Mapper {
         }
     }
 
+    /// Forgets every record seen, as when the file is read again from its first line.
+    pub fn restart(&mut self) {
+        self.state = match self.version {
+            MappingVersion::V1 => State::V1(v1::State::new(&self.session)),
+        };
+    }
+
     /// The `turn.usage` event of a turn of this session, in the phase the session is in now.
     pub fn map_usage(&mut self, turn: &UsageTurn) -> Event {
         match &self.state {

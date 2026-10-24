@@ -53,6 +53,8 @@ struct Tail {
     index_to: Option<u64>,
     finished: bool,
     failed: bool,
+    /// The mapper has yielded an event from the file as it was read so far.
+    emitted: bool,
 }
 
 impl Tail {
@@ -68,6 +70,18 @@ impl Tail {
         }
         match self.source.next_batch() {
             Ok(records) => {
+                if self.source.take_rewritten() {
+                    if self.emitted {
+                        // Events with offsets of the old bytes are out; this rule has no
+                        // way to replace them, so the file is reported rather than doubled.
+                        self.failed = true;
+                        batch.warnings.push(IngestError::FileMoved {
+                            path: self.found.path.clone(),
+                        });
+                        return;
+                    }
+                    self.mapper.restart();
+                }
                 if !records.is_empty() {
                     self.modified = std::fs::metadata(&self.found.path)
                         .and_then(|meta| meta.modified())
@@ -75,7 +89,9 @@ impl Tail {
                 }
                 batch.records += records.len();
                 for record in &records {
-                    batch.events.extend(self.mapper.map(record));
+                    let events = self.mapper.map(record);
+                    self.emitted |= !events.is_empty();
+                    batch.events.extend(events);
                 }
             }
             Err(err) => {
@@ -366,6 +382,7 @@ impl Attach {
             index_to,
             finished: false,
             failed: false,
+            emitted: false,
             found,
         })
     }

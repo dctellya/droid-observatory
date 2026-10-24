@@ -21,6 +21,9 @@ struct TailState {
     offset: u64,
     /// Bytes after the last newline: a line the writer has not finished.
     partial: Vec<u8>,
+    /// The bytes already consumed changed under the tail and reading restarted at offset 0;
+    /// cleared by `JsonlSource::take_rewritten`.
+    rewritten: bool,
 }
 
 impl TailState {
@@ -39,6 +42,11 @@ impl TailState {
             return Err(IngestError::FileMoved {
                 path: self.path.clone(),
             });
+        }
+        if !self.consumed_bytes_unchanged(&mut handle)? {
+            self.offset = 0;
+            self.partial.clear();
+            self.rewritten = true;
         }
         handle
             .seek(SeekFrom::Start(self.offset))
@@ -71,6 +79,21 @@ impl TailState {
         self.offset += read as u64;
         self.partial = buffer.split_off(consumed);
         Ok(records)
+    }
+
+    /// Whether the file still has, right before `offset`, what the tail consumed there: the
+    /// newline that ended the last line and the unfinished line held back. Droid rewrites the
+    /// `session_start` line of a live file in place, which moves every later byte; the tail
+    /// would then resume in the middle of a line.
+    fn consumed_bytes_unchanged(&self, handle: &mut File) -> Result<bool, IngestError> {
+        let line_start = self.offset - self.partial.len() as u64;
+        let newline = usize::from(line_start > 0);
+        let mut found = vec![0; newline + self.partial.len()];
+        handle
+            .seek(SeekFrom::Start(line_start - newline as u64))
+            .and_then(|_| handle.read_exact(&mut found))
+            .map_err(|source| self.io_error(source))?;
+        Ok(found[..newline].iter().all(|byte| *byte == b'\n') && found[newline..] == self.partial)
     }
 
     fn record(&self, byte_offset: u64, bytes: Vec<u8>) -> RawRecord {
@@ -123,8 +146,18 @@ impl JsonlSource {
             session_id: session_id.clone(),
             offset: 0,
             partial: Vec::new(),
+            rewritten: false,
         });
         Ok(session_id)
+    }
+
+    /// True once since the last call when a file changed in the bytes already read and was
+    /// read again from its start: the records returned since then are the whole file, with
+    /// the offsets of its new content.
+    pub fn take_rewritten(&mut self) -> bool {
+        self.files.iter_mut().fold(false, |any, file| {
+            std::mem::take(&mut file.rewritten) || any
+        })
     }
 
     /// The session of the file `open` was given.

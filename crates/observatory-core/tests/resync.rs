@@ -162,3 +162,58 @@ fn resync_does_not_duplicate_events_in_the_store_or_the_batches() {
         "the store holds each event once"
     );
 }
+
+#[test]
+fn a_rewrite_after_events_were_emitted_is_reported_and_nothing_is_doubled() {
+    let dir = TempDir::new().unwrap();
+    let path = session_path(dir.path());
+    let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
+    let mut collected = Collected::default();
+    append(&path, &first_lines().0);
+    for line in m0_lines(LINES).into_iter().skip(1) {
+        append(&path, &line);
+    }
+    pump(&mut attach, &mut collected, LIMIT, |attach, _| {
+        attach.at_eof()
+    });
+    let before = ids(&collected.events);
+    assert!(!before.is_empty());
+
+    std::fs::write(&path, rewritten_file()).unwrap();
+    pump(&mut attach, &mut collected, LIMIT, |_, collected| {
+        !collected.warnings.is_empty()
+    });
+
+    assert!(
+        matches!(
+            collected.warnings.as_slice(),
+            [observatory_core::ingest::IngestError::FileMoved { .. }]
+        ),
+        "{:?}",
+        collected.warnings
+    );
+    assert_eq!(ids(&collected.events), before, "no event is emitted twice");
+}
+
+#[test]
+fn an_unfinished_line_that_changed_under_the_tail_is_read_again() {
+    use observatory_core::ingest::{JsonlSource, Source};
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("unfinished.jsonl");
+    std::fs::write(&path, "{\"a\":1}\n{\"b\"").unwrap();
+    let mut source = JsonlSource::open(&path, &Default::default()).unwrap();
+    assert_eq!(source.next_batch().unwrap().len(), 1);
+    assert!(!source.take_rewritten());
+
+    std::fs::write(&path, "{\"a\":1}\n{\"c\":2}\n").unwrap();
+    let lines: Vec<Vec<u8>> = source
+        .next_batch()
+        .unwrap()
+        .into_iter()
+        .map(|record| record.bytes)
+        .collect();
+    assert!(source.take_rewritten());
+    assert!(!source.take_rewritten(), "reported once");
+    assert_eq!(lines, [b"{\"a\":1}".to_vec(), b"{\"c\":2}".to_vec()]);
+}
