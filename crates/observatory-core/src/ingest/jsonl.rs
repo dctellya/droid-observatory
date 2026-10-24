@@ -151,6 +151,14 @@ impl JsonlSource {
         Ok(session_id)
     }
 
+    /// Starts every file again from its first byte, as after a rewrite.
+    pub fn rewind(&mut self) {
+        for file in &mut self.files {
+            file.offset = 0;
+            file.partial.clear();
+        }
+    }
+
     /// True once since the last call when a file changed in the bytes already read and was
     /// read again from its start: the records returned since then are the whole file, with
     /// the offsets of its new content.

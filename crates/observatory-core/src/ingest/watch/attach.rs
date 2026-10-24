@@ -72,12 +72,7 @@ impl Tail {
             Ok(records) => {
                 if self.source.take_rewritten() {
                     if self.emitted {
-                        // Events with offsets of the old bytes are out; this rule has no
-                        // way to replace them, so the file is reported rather than doubled.
-                        self.failed = true;
-                        batch.warnings.push(IngestError::FileMoved {
-                            path: self.found.path.clone(),
-                        });
+                        self.fail_rewritten(batch);
                         return;
                     }
                     self.mapper.restart();
@@ -94,11 +89,27 @@ impl Tail {
                     batch.events.extend(events);
                 }
             }
+            // Droid truncates a file before it writes the longer first line: nothing mapped
+            // yet means nothing is stale, so the file is read again from its start.
+            Err(IngestError::FileMoved { .. }) if !self.emitted => {
+                self.source.rewind();
+                self.mapper.restart();
+            }
+            Err(IngestError::FileMoved { .. }) => self.fail_rewritten(batch),
             Err(err) => {
                 self.failed = true;
                 batch.warnings.push(err);
             }
         }
+    }
+
+    /// The events already out carry offsets of bytes that are gone and nothing here replaces
+    /// them, so the file is reported rather than doubled.
+    fn fail_rewritten(&mut self, batch: &mut AttachBatch) {
+        self.failed = true;
+        batch.warnings.push(IngestError::FileMoved {
+            path: self.found.path.clone(),
+        });
     }
 
     fn at_eof(&self) -> bool {
