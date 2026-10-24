@@ -1,8 +1,10 @@
 //! The wire format of `droid exec --input-format stream-jsonrpc --output-format
 //! stream-jsonrpc` (Droid 0.247.0, D-033): names, the envelope and what the host writes.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+use crate::view::LaunchConfig;
 
 /// Method names, as printed by Droid or accepted by it. Confirmed against 0.247.0 on 2026-10-24.
 pub mod method {
@@ -32,8 +34,10 @@ pub const OPTION_DENY: &str = "cancel";
 /// What a resume sends: an interrupted session continues on its next user message.
 pub const RESUME_TEXT: &str = "Resume the mission from where it was paused.";
 
-/// What the app asks of the hosted orchestrator.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// What the app asks of the hosted orchestrator. Travels from the UI as `{"kind": "pause"}`,
+/// `{"kind": "answer", "question_id": ..., "text": ...}` and so on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HostControl {
     Pause,
     Resume,
@@ -103,6 +107,38 @@ impl RpcResponse {
             result,
         }
     }
+}
+
+/// `machineId` of the initialize request: any non-empty name; Droid keeps it with the session.
+const MACHINE_ID: &str = "droid-observatory";
+
+/// The `droid.initialize_session` request that makes a hosted session the orchestrator of a
+/// mission. In stream-jsonrpc mode the launch flags have no effect (D-033, D-034), so models,
+/// efforts and autonomy travel here: `modelId` and `reasoningEffort` are the orchestrator's,
+/// `missionSettings` those of the workers and validators, `decompSessionType` makes the session
+/// an orchestrator (what `--mission` does on the command line). `session_id` is chosen by the
+/// host, so the session file is known before Droid writes it.
+pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> RpcRequest {
+    RpcRequest::new(
+        id,
+        method::INITIALIZE_SESSION,
+        json!({
+            "machineId": MACHINE_ID,
+            "cwd": config.repo,
+            "sessionId": session_id,
+            "modelId": config.models.orchestrator,
+            "reasoningEffort": config.efforts.orchestrator,
+            "autonomyLevel": config.autonomy,
+            "interactionMode": "mission",
+            "decompSessionType": "orchestrator",
+            "missionSettings": {
+                "workerModel": config.models.worker,
+                "workerReasoningEffort": config.efforts.worker,
+                "validationWorkerModel": config.models.validator,
+                "validationWorkerReasoningEffort": config.efforts.validator,
+            },
+        }),
+    )
 }
 
 /// The request a control sends, or `None` for the controls that answer a request of Droid's.

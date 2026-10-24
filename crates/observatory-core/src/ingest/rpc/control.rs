@@ -5,7 +5,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::open::OpenRequests;
-use super::protocol::{HostControl, OPTION_APPROVE, OPTION_DENY, RpcResponse, encode};
+use super::protocol::{
+    HostControl, OPTION_APPROVE, OPTION_DENY, RpcResponse, encode, encode_initialize,
+};
+use crate::view::LaunchConfig;
 
 /// What `send` wrote.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,6 +67,23 @@ impl<W: Write> ControlChannel<W> {
     /// Requests written and not yet acknowledged.
     pub fn pending(&self) -> usize {
         self.pending.len()
+    }
+
+    /// Writes the `droid.initialize_session` request that starts the hosted mission; Droid
+    /// answers it with the session id.
+    pub fn initialize(
+        &mut self,
+        config: &LaunchConfig,
+        session_id: &str,
+    ) -> Result<Sent, ControlError> {
+        let request = encode_initialize(config, session_id, self.next_id);
+        self.write(&request)?;
+        self.next_id += 1;
+        self.pending.insert(request.id.clone(), request.method);
+        Ok(Sent {
+            id: request.id,
+            method: request.method,
+        })
     }
 
     /// Writes the control as one line. Pause, resume and message are requests, acknowledged by
@@ -211,6 +231,7 @@ mod tests {
         open.observe_permission(OpenPermission {
             request_id: "p1".into(),
             options: vec!["cancel".into()],
+            confirmation: None,
         });
         let mut channel = ControlChannel::new(Vec::new());
 

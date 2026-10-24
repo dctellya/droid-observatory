@@ -16,9 +16,10 @@ mod spool;
 
 pub use control::{Ack, AckOutcome, ControlChannel, ControlError, Sent};
 pub use mapper::RpcMapper;
-pub use open::{OpenPermission, OpenQuestion, OpenRequests, Prompt};
+pub use open::{AskedQuestion, OpenPermission, OpenQuestion, OpenRequests, Prompt};
 pub use protocol::{
-    FACTORY_API_VERSION, HostControl, RESUME_TEXT, RpcRequest, RpcResponse, encode, method,
+    FACTORY_API_VERSION, HostControl, RESUME_TEXT, RpcRequest, RpcResponse, encode,
+    encode_initialize, method,
 };
 pub use source::RpcSource;
 pub use spool::{Spool, spool_path};

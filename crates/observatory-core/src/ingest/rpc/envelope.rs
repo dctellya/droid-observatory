@@ -29,6 +29,10 @@ const PROTOCOL_NOTIFICATIONS: &[&str] = &[
     "mission_progress_entry",
     "mission_worker_started",
     "mission_worker_completed",
+    // The tool call and its result are also in the `create_message` notifications that carry the
+    // `tool_use` and `tool_result` parts, which is what maps to lane events.
+    "tool_call",
+    "tool_result",
 ];
 
 /// Keys of a notification's message that the session file keeps beside it, not inside it.
@@ -144,6 +148,7 @@ fn incoming_request(line: &Map<String, Value>) -> Incoming {
                         .collect()
                 })
                 .unwrap_or_default(),
+            confirmation: params["confirmationType"].as_str().map(str::to_owned),
         }),
         other => unrecognised(other),
     }

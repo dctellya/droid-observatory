@@ -23,6 +23,26 @@ pub struct OpenPermission {
     pub request_id: String,
     /// The `value` of each option Droid offers; empty when the request lists none.
     pub options: Vec<String>,
+    /// `confirmationType` of the request: what is being confirmed.
+    pub confirmation: Option<String>,
+}
+
+/// `confirmationType` of the permission request for a mission proposal.
+const PROPOSE_MISSION: &str = "propose_mission";
+
+impl OpenPermission {
+    /// The orchestrator proposes its plan and waits. `droid exec --mission` accepts the
+    /// proposal without asking; a hosted session has to answer it.
+    pub fn is_mission_proposal(&self) -> bool {
+        self.confirmation.as_deref() == Some(PROPOSE_MISSION)
+    }
+}
+
+/// A question that waits for an answer, with the id of the `QuestionAsked` event to answer it by.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AskedQuestion {
+    pub event_id: String,
+    pub prompts: Vec<Prompt>,
 }
 
 /// The requests of Droid's that wait for the human. A question is known by the id of its
@@ -91,6 +111,22 @@ impl OpenRequests {
             .find(|open| &open.tool_call_id == call)
     }
 
+    /// The questions still open, in the order they were asked, each by its event id.
+    pub fn open_questions(&self) -> Vec<AskedQuestion> {
+        self.questions
+            .iter()
+            .flat_map(|open| {
+                self.event_calls
+                    .iter()
+                    .filter(|(_, call)| **call == open.tool_call_id)
+                    .map(|(event, _)| AskedQuestion {
+                        event_id: event.clone(),
+                        prompts: open.prompts.clone(),
+                    })
+            })
+            .collect()
+    }
+
     pub fn permission(&self, request_id: &str) -> Option<&OpenPermission> {
         self.permissions
             .iter()
@@ -143,6 +179,7 @@ mod tests {
         let permission = OpenPermission {
             request_id: "p1".into(),
             options: vec!["cancel".into()],
+            confirmation: None,
         };
         open.observe_permission(permission.clone());
         open.observe_permission(permission.clone());

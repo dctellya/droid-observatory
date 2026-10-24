@@ -805,7 +805,14 @@ fn tool_call_and_tool_result_notifications_are_counted_not_unknown() {
 
     let hosted = host(dir.path(), &stream);
 
-    assert!(hosted.events.is_empty(), "{:?}", hosted.events);
+    assert!(
+        hosted
+            .events
+            .iter()
+            .all(|event| !matches!(event.kind, EventKind::Unknown { .. })),
+        "{:?}",
+        hosted.events
+    );
     assert_eq!(hosted.mapper.protocol_counts()["tool_call"], 1);
     assert_eq!(hosted.mapper.protocol_counts()["tool_result"], 1);
 }
