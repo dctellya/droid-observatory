@@ -34,6 +34,9 @@ const PROTOCOL_NOTIFICATIONS: &[&str] = &[
     "tool_call",
     // A message written while a turn runs is queued; a pause discards the queue and says so.
     "queued_messages_discarded",
+    // Seen in a hosted run: a provider timeout retried, and a streamed message taken back.
+    "llm_retry",
+    "assistant_message_retracted",
 ];
 
 /// Keys of a notification's message that the session file keeps beside it, not inside it.
