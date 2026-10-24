@@ -65,6 +65,9 @@ event_batch_ms = 100
 # Port of `trunk serve` for the browser host and `devUrl` of the Tauri shell. 3141 was free at
 # planning; services.yaml and Trunk.toml carry the same number.
 dev_port = 3141
+# Lines of a hosted agent's output the window keeps (FR-A3). The spool holds every line; this only
+# bounds the DOM. 500 lines is a few screens of the latest activity.
+live_output_lines = 500
 
 [store]
 # SQLite index of events by pointer (path, byte offset, length). One index per user; raw lines

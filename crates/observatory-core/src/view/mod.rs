@@ -9,6 +9,7 @@ mod filter;
 mod gate;
 mod launch;
 mod library;
+mod live_output;
 mod scrub;
 mod scrubber;
 mod state;
@@ -29,6 +30,7 @@ pub use launch::{
     AUTONOMY_LEVELS, LaunchConfig, LaunchError, LaunchField, LaunchForm, PerRole, session_uuid,
 };
 pub use library::{LibraryEntry, MissionRow, library};
+pub use live_output::{LiveOutput, OutputLines};
 pub use scrub::{ScrubbedLine, scrub};
 pub use scrubber::{
     OverlayMarker, Scrubber, lane_counts, overlay_marker_rows, overlay_markers, scrub_to,

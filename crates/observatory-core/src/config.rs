@@ -186,6 +186,7 @@ impl Default for IngestConfig {
 pub struct UiConfig {
     pub event_batch_ms: u64,
     pub dev_port: u16,
+    pub live_output_lines: usize,
 }
 
 impl Default for UiConfig {
@@ -193,6 +194,7 @@ impl Default for UiConfig {
         Self {
             event_batch_ms: 100,
             dev_port: 3141,
+            live_output_lines: 500,
         }
     }
 }
@@ -441,6 +443,7 @@ mod tests {
         ("ingest", "runner_tags"),
         ("ui", "event_batch_ms"),
         ("ui", "dev_port"),
+        ("ui", "live_output_lines"),
         ("store", "path"),
         ("github", "poll_interval_s"),
         ("github", "merge_policy"),
