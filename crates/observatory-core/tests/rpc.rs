@@ -1065,6 +1065,60 @@ fn a_pause_and_an_answer_carry_the_arrival_time_of_their_lines() {
     }
 }
 
+/// The notification Droid 0.247.0 writes when the host closes the window and reaps the child
+/// (spool 2036e3c5, line at byte 585173, `sessionId` replaced).
+fn process_exit_turn() -> Value {
+    notification(
+        "s-1",
+        json!({
+            "type": "agent_turn_completed", "reason": "process_exit",
+            "turnId": "d6e6ec5f-e50e-41da-8266-747ff8942a4f",
+            "tokenUsage": {
+                "inputTokens": 10, "outputTokens": 201, "cacheCreationTokens": 363,
+                "cacheReadTokens": 35035, "thinkingTokens": 74, "factoryCredits": 1989,
+            },
+            "childTokenUsage": {
+                "inputTokens": 0, "outputTokens": 0, "cacheCreationTokens": 0,
+                "cacheReadTokens": 0, "thinkingTokens": 0, "factoryCredits": 0,
+            },
+            "durationMs": 4655,
+        }),
+    )
+}
+
+#[test]
+fn a_turn_ended_by_the_host_reaping_the_child_is_a_known_pause_that_keeps_its_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = answered_question_stream(false);
+    stream.extend(line(&process_exit_turn()));
+
+    let hosted = host(dir.path(), &stream);
+
+    let unknown: Vec<_> = hosted
+        .events
+        .iter()
+        .filter(|event| matches!(event.kind, EventKind::Unknown { .. }))
+        .collect();
+    assert!(unknown.is_empty(), "unknown events: {unknown:?}");
+    let paused = of_kind(&hosted.events, EventKind::MissionPaused);
+    let SourcePtr::Rpc {
+        path,
+        byte_offset,
+        byte_len,
+    } = &paused.source
+    else {
+        panic!("not a spool pointer: {:?}", paused.source);
+    };
+    let spooled = std::fs::read(path).unwrap();
+    let start = usize::try_from(*byte_offset).unwrap();
+    let raw = &spooled[start..start + usize::try_from(*byte_len).unwrap()];
+    assert!(
+        String::from_utf8_lossy(raw).contains("\"reason\":\"process_exit\""),
+        "the pointer shows a host kill, not a user cancel: {}",
+        String::from_utf8_lossy(raw)
+    );
+}
+
 #[test]
 fn lines_that_arrive_apart_get_different_times() {
     let dir = tempfile::tempdir().unwrap();

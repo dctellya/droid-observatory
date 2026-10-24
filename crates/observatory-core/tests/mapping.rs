@@ -992,6 +992,19 @@ fn root_turn_outcomes_pause_or_escalate_and_a_finished_turn_is_quiet() {
 }
 
 #[test]
+fn a_turn_the_host_ended_with_process_exit_maps_like_a_cancel_in_child_and_root() {
+    let outcome = json!({"type": "agent_turn_outcome", "turnId": "t", "reason": "process_exit"});
+
+    let mut child = Session::new(meta(Role::Worker));
+    child.feed(&user(1, json!([{"type": "text", "text": "start"}])));
+    assert_eq!(kinds(&child.feed(&outcome)), ["task.skipped"]);
+
+    let mut root = Session::new(meta(Role::Orchestrator));
+    root.feed(&user(1, json!([])));
+    assert_eq!(kinds(&root.feed(&outcome)), ["mission.paused"]);
+}
+
+#[test]
 fn the_plan_the_questions_and_the_features_come_from_the_orchestrators_tool_calls() {
     let mut session = Session::new(meta(Role::Orchestrator));
     let proposal =
