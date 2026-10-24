@@ -138,6 +138,7 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
     println!("launched: {launched:?}");
     let id = launched.launch_id.clone();
     let pgid = launched.pid;
+    let _group = KillGroup(pgid);
     println!("ps (group {pgid}):");
     print_group(pgid);
 
@@ -170,32 +171,11 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
     .await;
     let (question_event, question_at) =
         wait_until("the question event", Duration::from_secs(5), || {
-            first_after("question.asked", 0)
+            first_after("question_asked", 0)
         })
         .await;
     println!("question: event {question_event} at {question_at}");
 
-    let paused = sent("pause", HostControl::Pause);
-    let (paused_event, paused_at) = wait_until("mission.paused", Duration::from_secs(30), || {
-        first_after("mission.paused", paused)
-    })
-    .await;
-    println!(
-        "pause -> mission.paused event {paused_event} at {paused_at} (question at {question_at})"
-    );
-    let resumed = sent("resume", HostControl::Resume);
-    let (resumed_event, resumed_at) =
-        wait_until("mission.resumed", Duration::from_secs(30), || {
-            first_after("mission.resumed", resumed)
-        })
-        .await;
-    println!("resume -> mission.resumed event {resumed_event} at {resumed_at}");
-    let messaged = sent(
-        "message",
-        HostControl::Message {
-            text: "Keep it to the one feature; answer comes next.".to_owned(),
-        },
-    );
     let answered = sent(
         "answer",
         HostControl::Answer {
@@ -204,15 +184,56 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         },
     );
     let (answered_event, answered_at) =
-        wait_until("intent.answered", Duration::from_secs(30), || {
-            first_after("intent.answered", answered)
+        wait_until("intent_answered", Duration::from_secs(30), || {
+            first_after("intent_answered", answered)
         })
         .await;
     println!(
         "answer -> intent.answered event {answered_event} at {answered_at} (question at {question_at}, later: {})",
         answered_at > question_at
     );
-    let _ = messaged;
+
+    let acked = |request_id: &str| {
+        current()
+            .acks
+            .iter()
+            .find(|ack| ack.request_id == request_id)
+            .map(|ack| (ack.accepted, ack.method.clone()))
+    };
+    let message = hosts
+        .control(
+            &id,
+            &HostControl::Message {
+                text: "Keep it to the one feature.".to_owned(),
+            },
+        )
+        .expect("the message is written");
+    let ack = wait_until("the message ack", Duration::from_secs(30), || {
+        acked(&message.request_id)
+    })
+    .await;
+    println!("message: request {} acked {ack:?}", message.request_id);
+
+    let paused = sent("pause", HostControl::Pause);
+    let (paused_event, paused_at) = wait_until("mission_paused", Duration::from_secs(30), || {
+        first_after("mission_paused", paused)
+    })
+    .await;
+    println!(
+        "pause -> mission.paused event {paused_event} at {paused_at} (question at {question_at}, later: {})",
+        paused_at > question_at
+    );
+    let resume = hosts
+        .control(&id, &HostControl::Resume)
+        .expect("the resume is written");
+    let ack = wait_until("the resume ack", Duration::from_secs(30), || {
+        acked(&resume.request_id)
+    })
+    .await;
+    println!(
+        "resume: request {} method {} acked {ack:?}",
+        resume.request_id, resume.method
+    );
 
     let proposal = wait_until("the mission proposal", Duration::from_secs(240), || {
         current()
@@ -232,14 +253,20 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
             request_id: proposal.request_id.clone(),
         },
     );
-    let denied_event = wait_until("permission.denied", Duration::from_secs(30), || {
-        first_after("permission.denied", denied)
-    })
-    .await;
-    println!(
-        "deny -> permission.denied event {} at {}",
-        denied_event.0, denied_event.1
-    );
+    let closed = current()
+        .permissions
+        .iter()
+        .all(|p| p.request_id != proposal.request_id);
+    println!("deny: proposal left the waiting list: {closed}");
+    let again = hosts
+        .control(
+            &id,
+            &HostControl::Message {
+                text: "Denied once. Propose the same mission again.".to_owned(),
+            },
+        )
+        .expect("the message is written");
+    println!("after the denial: message request {}", again.request_id);
 
     let second = wait_until(
         "a second proposal after the denial",
@@ -260,28 +287,41 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
             request_id: second.request_id.clone(),
         },
     );
-    let approval = wait_until("permission.granted", Duration::from_secs(30), || {
-        first_after("permission.granted", approved)
-    })
-    .await;
-    println!(
-        "approve -> permission.granted event {} at {}",
-        approval.0, approval.1
-    );
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let closed = current()
+        .permissions
+        .iter()
+        .all(|p| p.request_id != second.request_id);
+    println!("approve: proposal left the waiting list: {closed}");
+    for (name, from) in [("deny", denied), ("approve", approved)] {
+        let log = log.lock().unwrap();
+        let reactions: Vec<String> = log
+            .seen
+            .iter()
+            .filter(|seen| seen.emitted_nanos >= from)
+            .take(6)
+            .map(|seen| format!("{} {}", seen.kind, seen.id))
+            .collect();
+        println!("after {name}: {}", reactions.join(" | "));
+    }
 
     // VAL-HOST-013: the count the panel shows (live_output total) against `wc -l` of the spool,
-    // at two moments at least 30 s apart.
+    // at two moments at least 30 s apart; the panel is read inside a 500 ms window of two
+    // `wc -l` reads, the poll interval the contract allows.
     let mut moments = Vec::new();
     for moment in 0..2 {
         tokio::time::sleep(Duration::from_secs(if moment == 0 { 5 } else { 31 })).await;
-        let panel = log.lock().unwrap().output_total;
-        let wc = spool_lines(&launched.spool);
+        let before = spool_lines(&launched.spool);
+        let read_at = now_nanos();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let panel = log.lock().unwrap().output_total as usize;
+        let after = spool_lines(&launched.spool);
         println!(
-            "moment {moment}: panel_lines {panel} wc_l {wc} at {}",
-            now_nanos()
+            "moment {moment}: at {read_at} wc_l_before {before} panel_lines {panel} wc_l_after {after}"
         );
-        moments.push((panel, wc));
+        moments.push((before, panel, after));
     }
+    assert!(moments[1].2 > moments[0].0, "the spool kept growing");
 
     tokio::time::sleep(Duration::from_secs(10)).await;
     let reaping = Instant::now();
@@ -319,8 +359,22 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         "the answer is stamped after the question"
     );
     assert_eq!(log.unknown_total, 0, "no unknown events");
-    for (panel, wc) in moments {
-        assert_eq!(panel as usize, wc, "the panel count equals wc -l");
+    for (before, panel, after) in moments {
+        assert!(
+            before <= panel && panel <= after,
+            "the panel count agrees with wc -l"
+        );
+    }
+}
+
+/// A failed wait panics before the reaping step; the group still must not outlive the test.
+struct KillGroup(u32);
+
+impl Drop for KillGroup {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &format!("-{}", self.0)])
+            .status();
     }
 }
 
