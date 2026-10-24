@@ -19,7 +19,7 @@ pub fn tray_count(events: &[Event]) -> u64 {
 /// Events per phase, in lane order. Must equal the per-phase counts of the CLI replay.
 pub fn lane_counts(events: &[Event]) -> [u64; Lane::ALL.len()] {
     let mut counts = [0; Lane::ALL.len()];
-    for event in events {
+    for event in events.iter().filter(|event| !event.kind.is_panel_only()) {
         counts[lane_index(event.lane)] += 1;
     }
     counts
@@ -81,7 +81,11 @@ pub struct Scrubber {
 impl Scrubber {
     /// `events` must be in time order.
     pub fn new(events: &[Event]) -> Self {
-        let mut stops: Vec<Timestamp> = events.iter().map(|event| event.at).collect();
+        let mut stops: Vec<Timestamp> = events
+            .iter()
+            .filter(|event| !event.kind.is_panel_only())
+            .map(|event| event.at)
+            .collect();
         stops.dedup();
         Self { stops }
     }

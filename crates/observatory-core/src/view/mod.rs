@@ -30,5 +30,5 @@ pub use scrubber::{
     OverlayMarker, Scrubber, lane_counts, overlay_marker_rows, overlay_markers, scrub_to,
     tray_count,
 };
-pub use state::{BoardState, SubLane, TrayEntry};
+pub use state::{BoardState, RoleTurns, SubLane, TrayEntry};
 pub use summary::MissionSummary;

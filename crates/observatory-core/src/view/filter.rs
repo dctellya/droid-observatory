@@ -123,6 +123,11 @@ pub struct FilterOptions {
 
 impl FilterOptions {
     pub fn of(events: &[Event]) -> Self {
+        let events: Vec<&Event> = events
+            .iter()
+            .filter(|event| !event.kind.is_panel_only())
+            .collect();
+        let events = events.as_slice();
         let milestones: BTreeSet<&str> = events
             .iter()
             .filter_map(|e| e.milestone_id.as_ref().map(|m| m.0.as_str()))

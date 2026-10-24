@@ -108,6 +108,12 @@ impl EventKind {
             _ => self.fixed_lane().unwrap_or_else(|| Lane::home(role)),
         }
     }
+
+    /// True for the kinds that only the Panel reads (`turn.usage`): they are not lane rows,
+    /// card activity, agent activity, tray entries or scrubber stops (rule 24, 2026-10-24).
+    pub fn is_panel_only(&self) -> bool {
+        matches!(self, EventKind::TurnUsage { .. })
+    }
 }
 
 event_kinds! {

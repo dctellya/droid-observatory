@@ -70,6 +70,7 @@ pub fn details(events: &[Event], milestone: &MilestoneId) -> Details {
     let mut timeline: Vec<TimelineRow> = events
         .iter()
         .filter(|event| event.milestone_id.as_ref() == Some(milestone))
+        .filter(|event| !event.kind.is_panel_only())
         .map(TimelineRow::of)
         .collect();
     timeline.sort_by_key(|row| row.at);

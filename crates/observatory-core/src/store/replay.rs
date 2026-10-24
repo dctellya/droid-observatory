@@ -90,7 +90,10 @@ impl Store {
             mission_id: mission.clone(),
             name,
             started_at,
-            event_count: events.len() as u64,
+            event_count: events
+                .iter()
+                .filter(|event| !event.kind.is_panel_only())
+                .count() as u64,
             unknown_count: events
                 .iter()
                 .filter(|event| matches!(event.kind, EventKind::Unknown { .. }))

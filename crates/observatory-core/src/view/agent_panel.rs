@@ -92,6 +92,7 @@ pub fn agent_stream(events: &[Event], session: &SessionId, at: Option<Timestamp>
     let own: Vec<Event> = events
         .iter()
         .filter(|event| event.session_id.as_ref() == Some(session))
+        .filter(|event| !event.kind.is_panel_only())
         .filter(|event| at.is_none_or(|at| event.at <= at))
         .cloned()
         .collect();

@@ -155,7 +155,10 @@ fn is_open(event: &Event) -> bool {
 /// milestone with no events waits in Plan.
 pub fn card_lane(events_of_milestone: &[Event]) -> Lane {
     let mut tracker = LaneTracker::default();
-    for event in events_of_milestone {
+    for event in events_of_milestone
+        .iter()
+        .filter(|event| !event.kind.is_panel_only())
+    {
         tracker.apply(event);
     }
     tracker.lane()

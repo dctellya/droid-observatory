@@ -32,6 +32,16 @@ pub struct SubLane {
     pub last_at: Timestamp,
 }
 
+/// The `turn.usage` tokens of one role, which only the Panel reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoleTurns {
+    pub role: Role,
+    pub turns: u64,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+}
+
 /// The board for one filter and scrubber position (architecture §7).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoardState {
@@ -50,6 +60,8 @@ pub struct BoardState {
     pub lane_counts: [u64; Lane::ALL.len()],
     pub human_overlays: u64,
     pub commander_overlays: u64,
+    /// Per role, in order of the role's first turn; nothing else of the board counts a turn.
+    pub turn_tokens: Vec<RoleTurns>,
     /// The scrubber position, or the time of the last event when live.
     pub now: Option<Timestamp>,
 }
@@ -105,11 +117,22 @@ impl BoardState {
             state = build(&kept);
         }
         state.now = cfg.at.or(state.now);
+        kept.retain(|event| !event.kind.is_panel_only());
         (state, kept)
     }
 
     /// Folds one more event, in time order, into the board.
     pub fn apply(&mut self, event: &Event) {
+        if let EventKind::TurnUsage {
+            input,
+            output,
+            cache_read,
+            ..
+        } = &event.kind
+        {
+            self.add_turn(event.role, *input, *output, *cache_read);
+            return;
+        }
         self.event_count += 1;
         self.lane_counts[lane_index(event.lane)] += 1;
         match event.overlay {
@@ -148,6 +171,27 @@ impl BoardState {
         if event.lane == Lane::Build {
             self.apply_to_sublane(event);
         }
+    }
+
+    fn add_turn(&mut self, role: Role, input: u64, output: u64, cache_read: u64) {
+        let index = match self.turn_tokens.iter().position(|t| t.role == role) {
+            Some(index) => index,
+            None => {
+                self.turn_tokens.push(RoleTurns {
+                    role,
+                    turns: 0,
+                    input: 0,
+                    output: 0,
+                    cache_read: 0,
+                });
+                self.turn_tokens.len() - 1
+            }
+        };
+        let turns = &mut self.turn_tokens[index];
+        turns.turns += 1;
+        turns.input += input;
+        turns.output += output;
+        turns.cache_read += cache_read;
     }
 
     pub fn with_now(mut self, now: Option<Timestamp>) -> Self {

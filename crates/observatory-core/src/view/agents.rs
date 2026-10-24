@@ -117,7 +117,10 @@ fn next_status(current: AgentStatus, kind: &EventKind) -> AgentStatus {
         | EventKind::PermissionDenied
         | EventKind::ApprovalGiven => AgentStatus::Active,
         EventKind::TaskDone => AgentStatus::Idle,
-        EventKind::UsageReported | EventKind::ModelChanged | EventKind::ContextCompacted => current,
+        EventKind::UsageReported
+        | EventKind::TurnUsage { .. }
+        | EventKind::ModelChanged
+        | EventKind::ContextCompacted => current,
         _ if current == AgentStatus::Idle => AgentStatus::Active,
         _ => current,
     }

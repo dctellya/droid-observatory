@@ -102,6 +102,12 @@ pub struct PanelRole {
     pub role: Role,
     pub sessions: u64,
     pub tokens: RoleTokens,
+    /// Model turns of the usage log (`turn.usage`) and their tokens, apart from `tokens`
+    /// (the sidecar totals); all zero while no usage log is loaded.
+    pub turns: u64,
+    pub turn_input: u64,
+    pub turn_output: u64,
+    pub turn_cache_read: u64,
     pub declared: ModelId,
     /// Sorted by model id.
     pub observed: Vec<ObservedModel>,
@@ -142,11 +148,16 @@ impl PanelView {
                 {
                     *seen.entry(model).or_default() += 1;
                 }
+                let turn = state.turn_tokens.iter().find(|t| t.role == role);
                 let drifted = seen.keys().any(|model| **model != declared);
                 Some(PanelRole {
                     role,
                     sessions: agents().count() as u64,
                     tokens,
+                    turns: turn.map_or(0, |t| t.turns),
+                    turn_input: turn.map_or(0, |t| t.input),
+                    turn_output: turn.map_or(0, |t| t.output),
+                    turn_cache_read: turn.map_or(0, |t| t.cache_read),
                     declared,
                     observed: seen
                         .into_iter()
@@ -391,7 +402,10 @@ pub struct IntegrateGroup {
 /// rows oldest first.
 pub fn integrate_timeline(events: &[Event]) -> Vec<IntegrateGroup> {
     let mut groups: Vec<IntegrateGroup> = Vec::new();
-    for event in events.iter().filter(|event| event.lane == Lane::Integrate) {
+    for event in events
+        .iter()
+        .filter(|event| event.lane == Lane::Integrate && !event.kind.is_panel_only())
+    {
         let index = match groups
             .iter()
             .position(|group| group.milestone == event.milestone_id)

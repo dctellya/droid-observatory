@@ -172,7 +172,10 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
         mission_id: tree.mission_id().clone(),
         name,
         started_at,
-        event_count: events.len() as u64,
+        event_count: events
+            .iter()
+            .filter(|event| !event.kind.is_panel_only())
+            .count() as u64,
         unknown_count: unknown,
         record_count: records,
         session_count: tree.sessions().len() as u64,

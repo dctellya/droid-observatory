@@ -115,7 +115,7 @@ impl Store {
     pub fn missions(&self) -> Result<Vec<MissionRow>, StoreError> {
         let mut statement = self.conn.prepare_cached(
             "SELECT m.id, m.name, m.state, m.started_at, m.completed_at, \
-             (SELECT count(*) FROM events e WHERE e.mission_id = m.id) \
+             (SELECT count(*) FROM events e WHERE e.mission_id = m.id AND e.kind <> 'turn.usage') \
              FROM missions m ORDER BY m.started_at DESC, m.id",
         )?;
         let rows = statement.query_map([], |row| {
