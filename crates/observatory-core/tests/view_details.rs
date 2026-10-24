@@ -262,6 +262,7 @@ fn the_agent_stream_lists_one_session_in_time_order_with_its_markers() {
     let expected: Vec<&Event> = events
         .iter()
         .filter(|e| e.session_id.as_ref() == Some(&session))
+        .filter(|e| !e.kind.is_panel_only())
         .collect();
 
     let stream = agent_stream(&events, &session, None);

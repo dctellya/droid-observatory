@@ -33,7 +33,12 @@ fn board_digest_reports_lane_events_card_lanes_and_the_tray() {
 
     let digest = board.digest();
 
-    assert_eq!(digest.event_count, events.len() as u64);
+    let on_board = events
+        .iter()
+        .filter(|event| !event.kind.is_panel_only())
+        .count() as u64;
+    assert_eq!(digest.event_count, on_board, "turn.usage is Panel data");
+    assert_eq!(digest.event_count, 1279);
     assert_eq!(digest.tray_unknown, tray_count(&events));
     assert_eq!(digest.lane_events.to_vec(), lane_counts(&events).to_vec());
     assert_eq!(digest.lane_events.len(), Lane::ALL.len());
