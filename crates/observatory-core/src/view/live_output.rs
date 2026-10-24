@@ -68,7 +68,7 @@ impl LiveOutput {
         self.total
     }
 
-    pub fn lines(&self) -> Vec<ScrubbedLine> {
-        self.tail.iter().cloned().collect()
+    pub fn lines(&self) -> &VecDeque<ScrubbedLine> {
+        &self.tail
     }
 }
