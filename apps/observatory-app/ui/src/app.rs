@@ -21,6 +21,22 @@ const IDLE: u8 = 0;
 const READING: u8 = 1;
 const STALE: u8 = 2;
 
+/// Tells the shell, once the reactive graph has drawn it, that the events of a hosted run are
+/// on screen: the render half of the 1 s measurement.
+fn report_rendered(batch: &EventBatch, board_open: bool) {
+    let mission_id = batch.mission_id.to_string();
+    let event_ids: Vec<String> = batch
+        .events
+        .iter()
+        .map(|event| event.id.to_string())
+        .collect();
+    spawn_local(async move {
+        leptos::task::tick().await;
+        let args = json!({ "mission_id": mission_id, "event_ids": event_ids, "open": board_open });
+        let _ = shell::invoke::<_, ()>("panel_rendered", &args).await;
+    });
+}
+
 fn refresh_rows(rows: RwSignal<Vec<MissionRow>>, state: RwSignal<u8>) {
     if state.get_untracked() != IDLE {
         state.set(STALE);
@@ -137,6 +153,13 @@ pub fn App() -> impl IntoView {
             let open = current
                 .get_untracked()
                 .filter(|capture| *capture.mission_id() == batch.mission_id);
+            let hosted_here = hosted
+                .launched
+                .get_untracked()
+                .is_some_and(|launched| launched.session_id == batch.mission_id.to_string());
+            if hosted_here {
+                report_rendered(&batch, open.is_some());
+            }
             match open {
                 Some(capture) => {
                     if capture.merge(batch) {

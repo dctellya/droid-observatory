@@ -280,6 +280,20 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                     }
                 }
             </ul>
+            <h3>"Permission requests"</h3>
+            <ul aria-label="host-permissions">
+                {
+                    let launch_id = launch_id.clone();
+                    move || {
+                        status()
+                            .map(|s| s.permissions)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|permission| permission_view(hosted, launch_id.clone(), permission))
+                            .collect_view()
+                    }
+                }
+            </ul>
             <h3>"Written to the process"</h3>
             <ul aria-label="host-sent">
                 {move || {
@@ -362,6 +376,56 @@ fn question_view(
                 }
             >
                 "Answer"
+            </button>
+        </li>
+    }
+}
+
+fn permission_view(
+    hosted: HostedCtx,
+    launch_id: String,
+    permission: observatory_core::view::PermissionRow,
+) -> impl IntoView {
+    let (approve_id, deny_id) = (permission.request_id.clone(), permission.request_id.clone());
+    let (approve_launch, deny_launch) = (launch_id.clone(), launch_id);
+    let tools = if permission.tools.is_empty() {
+        "permission".to_owned()
+    } else {
+        permission.tools.join(", ")
+    };
+    view! {
+        <li aria-label="host-permission">
+            <code>{permission.request_id}</code>
+            " "
+            {tools}
+            " "
+            <button
+                type="button"
+                aria-label="host-approve"
+                disabled=!permission.can_approve
+                on:click=move |_| {
+                    send(
+                        hosted,
+                        approve_launch.clone(),
+                        json!({ "kind": "approve", "request_id": approve_id }),
+                    );
+                }
+            >
+                "Approve"
+            </button>
+            <button
+                type="button"
+                aria-label="host-deny"
+                disabled=!permission.can_deny
+                on:click=move |_| {
+                    send(
+                        hosted,
+                        deny_launch.clone(),
+                        json!({ "kind": "deny", "request_id": deny_id }),
+                    );
+                }
+            >
+                "Deny"
             </button>
         </li>
     }

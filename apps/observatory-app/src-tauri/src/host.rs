@@ -19,8 +19,8 @@ use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{Event, MissionId, SessionId};
 use observatory_core::store::HostedRun;
 use observatory_core::view::{
-    AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, QuestionRow,
-    session_uuid,
+    AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
+    QuestionRow, session_uuid,
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -113,7 +113,7 @@ impl Hosts {
         let sent = channel
             .send(control, mapper.open_requests_mut())
             .map_err(|err| err.to_string())?;
-        run.status_questions(mapper);
+        run.status_waiting(mapper);
         tracing::info!(
             launch_id,
             control = ?control,
@@ -133,14 +133,26 @@ impl Hosts {
 }
 
 impl Run {
-    fn status_questions(&self, mapper: &RpcMapper) {
-        lock(&self.status).questions = mapper
-            .open_requests()
+    /// What waits for the human: the open questions and permission requests.
+    fn status_waiting(&self, mapper: &RpcMapper) {
+        let open = mapper.open_requests();
+        let mut status = lock(&self.status);
+        status.questions = open
             .open_questions()
             .into_iter()
             .map(|asked| QuestionRow {
                 event_id: asked.event_id,
                 prompts: asked.prompts.into_iter().map(|p| p.question).collect(),
+            })
+            .collect();
+        status.permissions = open
+            .waiting_permissions()
+            .into_iter()
+            .map(|waiting| PermissionRow {
+                request_id: waiting.request_id,
+                tools: waiting.tools,
+                can_approve: waiting.can_approve,
+                can_deny: waiting.can_deny,
             })
             .collect();
     }
@@ -370,7 +382,7 @@ impl Pump {
             self.on_ack(&run, &mut inner, &ack);
         }
         self.approve_mission_proposals(&mut inner);
-        run.status_questions(&inner.mapper);
+        run.status_waiting(&inner.mapper);
         drop(inner);
         self.store(events);
     }
@@ -476,7 +488,13 @@ impl Pump {
                 unknown_total: self.unknown_total,
                 retracted: Vec::new(),
             };
-            crate::ingest::log_batch(&batch);
+            tracing::info!(
+                launch_id = %self.launch_id,
+                count = batch.events.len(),
+                unknown_total = batch.unknown_total,
+                event_ids = %batch.events.iter().map(|event| event.id.to_string()).collect::<Vec<_>>().join(","),
+                "events_appended"
+            );
             let _ = self.app.emit("events_appended", &batch);
         }
         if !self.output.is_empty() {

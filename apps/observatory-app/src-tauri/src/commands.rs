@@ -144,6 +144,20 @@ pub async fn host_status(
     hosts.status(&launch_id)
 }
 
+/// The panel has drawn these events: the render half of the 1 s latency measurement (the
+/// emit half is the `events_appended` line of the host). `open` says whether the board of
+/// their mission was on screen.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn panel_rendered(mission_id: String, event_ids: Vec<String>, open: bool) {
+    tracing::info!(
+        mission_id,
+        count = event_ids.len(),
+        open,
+        event_ids = %event_ids.join(","),
+        "panel_rendered"
+    );
+}
+
 /// The configuration in effect: the launch form pre-fills from `[mission]` and the live
 /// output keeps `[ui].live_output_lines`.
 #[tauri::command(rename_all = "snake_case")]
