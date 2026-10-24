@@ -395,8 +395,13 @@ fn message(rec: &mut Rec<'_>, state: &mut State, line: &Value) {
         return rec.unknown("message");
     };
     let role = message["role"].as_str();
-    if !matches!(role, Some("user" | "assistant")) {
+    if !matches!(role, Some("user" | "assistant" | "system")) {
         return rec.unknown("message");
+    }
+    // Droid's own annotations ("Request interrupted by user" after a pause): the pause is
+    // already an event of its own, the note carries no lane meaning.
+    if role == Some("system") {
+        return;
     }
     if role == Some("assistant") {
         model_of(rec, state, message);
