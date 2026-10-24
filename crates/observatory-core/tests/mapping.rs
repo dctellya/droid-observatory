@@ -291,6 +291,80 @@ fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
     );
 }
 
+/// The scrutiny validator that reads the feature list and names the features it reviews.
+const SCRUTINY_SESSION: &str = "6eb88099-278d-4ddb-9f5d-23f1255cdbc5";
+
+#[test]
+fn a_feature_defined_by_a_scrutiny_validator_lands_in_the_scrutiny_lane() {
+    let (_, events) = map_m0();
+    let defined: Vec<&Event> = events
+        .iter()
+        .filter(|event| event.kind == EventKind::FeatureDefined)
+        .collect();
+    let by_session = |event: &&Event| {
+        event
+            .session_id
+            .as_ref()
+            .is_some_and(|id| id.0 == SCRUTINY_SESSION)
+    };
+    let of_scrutiny: Vec<&Event> = defined.iter().copied().filter(by_session).collect();
+
+    assert_eq!(
+        of_scrutiny.len(),
+        6,
+        "the capture holds six, all of 6eb88099"
+    );
+    assert_eq!(defined.len(), 6, "no other session defines a feature");
+    assert!(
+        of_scrutiny
+            .iter()
+            .all(|event| event.role == Role::ScrutinyValidator && event.lane == Lane::Scrutiny),
+        "scrutiny: {:?}",
+        of_scrutiny.iter().map(|e| e.lane).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.lane == Lane::Plan && by_session(event))
+            .count(),
+        0,
+        "the session has no event in Plan"
+    );
+}
+
+#[test]
+fn a_feature_defined_follows_the_phase_of_the_session_that_emits_it() {
+    let task = assistant(
+        1,
+        "m1",
+        json!([tool_use(
+            "t",
+            "Task",
+            json!({"description": "Review m0-fixture-freeze", "subagent_type": "worker"})
+        )]),
+    );
+    let lanes = |role: Role| {
+        let mut session = Session::new(SessionMeta {
+            milestones: vec![MilestoneId("m0".to_owned())],
+            ..meta(role)
+        });
+        let events = session.feed(&task);
+        assert_eq!(kinds(&events), ["task.assigned", "feature.defined"]);
+        (events[0].lane, events[1].lane)
+    };
+
+    assert_eq!(lanes(Role::Orchestrator), (Lane::Plan, Lane::Plan));
+    assert_eq!(
+        lanes(Role::ScrutinyValidator),
+        (Lane::Scrutiny, Lane::Scrutiny)
+    );
+    assert_eq!(
+        lanes(Role::UserTestingValidator),
+        (Lane::UserTesting, Lane::UserTesting)
+    );
+    assert_eq!(lanes(Role::Worker), (Lane::Build, Lane::Plan));
+}
+
 #[test]
 fn mapping_version_is_selected_by_droid_version() {
     let header = read_capture(&fixture("jsonl"))
