@@ -447,3 +447,28 @@ fn tail_keeps_an_incomplete_last_line_until_its_newline_arrives() {
     );
     assert_eq!(event_ids(&collected), replayed_ids(&path, "short"));
 }
+
+#[test]
+fn an_excluded_session_file_is_not_attached() {
+    let dir = TempDir::new().unwrap();
+    let mut attach = Attach::start(&config(dir.path(), POLL_MS)).unwrap();
+    let mut collected = Collected::default();
+    attach.exclude_session(&id("hosted"));
+
+    write_session(dir.path(), "hosted", 4);
+    write_session(dir.path(), "other", 4);
+    pump(&mut attach, &mut collected, LIMIT, |_, c| {
+        c.events
+            .iter()
+            .any(|e| e.session_id.as_ref() == Some(&id("other")))
+    });
+
+    let names: Vec<SessionId> = attach.watched().into_iter().map(|w| w.id).collect();
+    assert_eq!(names, [id("other")]);
+    assert!(
+        collected
+            .events
+            .iter()
+            .all(|e| e.session_id.as_ref() != Some(&id("hosted")))
+    );
+}
