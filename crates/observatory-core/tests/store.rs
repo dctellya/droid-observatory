@@ -724,3 +724,46 @@ fn an_empty_store_has_no_missions_and_no_events() {
         .unwrap();
     assert!(nothing.is_empty());
 }
+
+/// A one-line session file with a sidecar whose tags are `tags_json`.
+fn tagged_session(dir: &Path, id: &str, tags_json: &str) -> PathBuf {
+    let path = dir.join(format!("{id}.jsonl"));
+    std::fs::write(
+        &path,
+        format!("{{\"type\":\"session_start\",\"id\":\"{id}\",\"title\":\"t\"}}\n"),
+    )
+    .unwrap();
+    std::fs::write(sidecar_path(&path), format!(r#"{{"tags":{tags_json}}}"#)).unwrap();
+    path
+}
+
+/// `(missions.name, sessions.tag)` the store holds after recording the session at `root`.
+fn recorded_names(root: &Path) -> (String, String) {
+    let db = root.with_extension("sqlite");
+    let mut store = Store::open(&db).unwrap();
+    let tree = SessionTree::discover(root, &IngestConfig::default()).expect("the session opens");
+    let capture = CaptureInfo::from_session_file(root).expect("no header is fine");
+    store.record_tree(&tree, &capture, false).unwrap();
+    let conn = Connection::open(&db).unwrap();
+    let mission = conn
+        .query_row("SELECT name FROM missions", [], |row| row.get(0))
+        .unwrap();
+    let tag = conn
+        .query_row("SELECT tag FROM sessions", [], |row| row.get(0))
+        .unwrap();
+    (mission, tag)
+}
+
+#[test]
+fn store_records_mission_and_session_names_by_user_tag_not_runner_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    let tagged = tagged_session(dir.path(), "exec-id", r#"[{"name":"exec"},{"name":"t"}]"#);
+    assert_eq!(recorded_names(&tagged), ("t".to_owned(), "t".to_owned()));
+
+    let other = tempfile::tempdir().unwrap();
+    let runner_only = tagged_session(other.path(), "plain-id", r#"[{"name":"exec"}]"#);
+    assert_eq!(
+        recorded_names(&runner_only),
+        ("plain-id".to_owned(), "plain-id".to_owned())
+    );
+}

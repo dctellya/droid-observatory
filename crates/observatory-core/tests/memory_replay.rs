@@ -169,3 +169,29 @@ fn a_capture_header_for_another_droid_version_warns_and_maps_with_the_latest() {
     assert_eq!(replay.summary.mapping_version, "v1");
     assert_eq!(replay.summary.unknown_count, 0);
 }
+
+/// The replay of one session file whose sidecar carries `tags_json`.
+fn replay_tagged(tags_json: &str) -> observatory_core::ingest::MemoryReplay {
+    let files = BTreeMap::from([
+        (
+            PathBuf::from("probe/p-1.jsonl"),
+            b"{\"type\":\"session_start\",\"id\":\"p-1\",\"title\":\"t\"}\n".to_vec(),
+        ),
+        (
+            PathBuf::from("probe/p-1.settings.json"),
+            format!(r#"{{"tags":{tags_json}}}"#).into_bytes(),
+        ),
+    ]);
+    replay_files(files).expect("the session opens")
+}
+
+#[test]
+fn memory_replay_names_sessions_by_the_same_rule() {
+    let tagged = replay_tagged(r#"[{"name":"exec"},{"name":"t"}]"#);
+    assert_eq!(tagged.summary.name, "t");
+    assert_eq!(tagged.sessions[0].tag.as_deref(), Some("t"));
+
+    let runner_only = replay_tagged(r#"[{"name":"exec"}]"#);
+    assert_eq!(runner_only.summary.name, "p-1");
+    assert_eq!(runner_only.sessions[0].tag.as_deref(), Some("p-1"));
+}
