@@ -93,7 +93,7 @@ impl Store {
         let name = capture
             .mission_name
             .clone()
-            .or_else(|| tree.root().first_tag().map(str::to_owned))
+            .or_else(|| tree.root().user_tag.clone())
             .unwrap_or_else(|| mission.clone());
         tx.execute(
             "INSERT INTO missions (id, name, capture_id, state, started_at) \
@@ -123,7 +123,7 @@ impl Store {
                     mission,
                     session.parent.as_ref().map(ToString::to_string),
                     super::rows::wire_text(&session.role),
-                    session.first_tag(),
+                    session.display_name(),
                     session.model(),
                     capture.droid_version,
                     i64::try_from(size).unwrap_or(i64::MAX),

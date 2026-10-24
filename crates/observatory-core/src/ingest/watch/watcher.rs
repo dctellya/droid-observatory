@@ -14,7 +14,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::scan::{Found, is_session_file, scan, stat};
 use crate::config::IngestConfig;
-use crate::ingest::{IngestError, SidecarTag, read_sidecar};
+use crate::ingest::{IngestError, display_name, read_sidecar};
 use crate::model::SessionId;
 
 const KB: u64 = 1024;
@@ -33,25 +33,14 @@ pub struct DiscoveredSession {
     pub size: u64,
 }
 
-/// Metadata keys only the runner sets on the tags it creates.
-const RUNNER_METADATA_KEYS: [&str; 3] = ["role", "missionId", "callingSessionId"];
-
-/// What the UI calls a session: the first sidecar tag that is not runner-generated (named in
-/// `runner_tags` or carrying runner metadata), else its id.
+/// What the UI calls a session: see [`display_name`]. Reads the sidecar beside `jsonl_path`.
 pub fn session_name(jsonl_path: &Path, id: &SessionId, runner_tags: &[String]) -> String {
-    let user_tag = |tag: &SidecarTag| {
-        !runner_tags.contains(&tag.name)
-            && !RUNNER_METADATA_KEYS.iter().any(|key| {
-                tag.metadata
-                    .as_ref()
-                    .is_some_and(|meta| meta.get(key).is_some())
-            })
-    };
-    read_sidecar(jsonl_path)
-        .ok()
-        .flatten()
-        .and_then(|sidecar| sidecar.tags?.into_iter().find(user_tag))
-        .map_or_else(|| id.0.clone(), |tag| tag.name)
+    let sidecar = read_sidecar(jsonl_path).ok().flatten();
+    let tags = sidecar
+        .as_ref()
+        .and_then(|sidecar| sidecar.tags.as_deref())
+        .unwrap_or_default();
+    display_name(tags, id, runner_tags)
 }
 
 pub struct SessionWatcher {

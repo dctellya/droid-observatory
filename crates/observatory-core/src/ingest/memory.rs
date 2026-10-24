@@ -11,6 +11,7 @@ use super::capture::CaptureHeader;
 use super::sessions::{Files, Head, Transcript, scan};
 use super::sidecar::{Sidecar, sidecar_path};
 use super::{IngestError, RawRecord, SessionTree, capture_path};
+use crate::config::IngestConfig;
 use crate::mapping::{TreeMapper, select_version};
 use crate::model::{Event, EventKind, ModelId, Role, SessionId, SourcePtr};
 use crate::view::MissionSummary;
@@ -25,7 +26,7 @@ pub struct SessionInfo {
     pub parent: Option<SessionId>,
     pub role: Role,
     pub model: Option<ModelId>,
-    /// Name of the first sidecar tag.
+    /// The session name: its first user tag, else its id.
     pub tag: Option<String>,
     /// Sidecar `reasoningEffort`.
     pub effort: Option<String>,
@@ -99,6 +100,14 @@ impl Files for MemoryFiles<'_> {
 /// with (a file name alone is enough). The root is the session with no `callingSessionId`; with
 /// several, the one with the largest tree.
 pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, IngestError> {
+    replay_files_with(files, &IngestConfig::default().runner_tags)
+}
+
+/// `replay_files` naming sessions with the `runner_tags` of the loaded configuration.
+pub fn replay_files_with(
+    files: BTreeMap<PathBuf, Vec<u8>>,
+    runner_tags: &[String],
+) -> Result<MemoryReplay, IngestError> {
     let source = MemoryFiles(&files);
     let sessions_files: Vec<PathBuf> = files
         .keys()
@@ -124,7 +133,7 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
     let mut best: Option<SessionTree> = None;
     for root in &roots {
         let candidates = sessions_files.clone();
-        let tree = SessionTree::assemble(&source, root, candidates, version)?;
+        let tree = SessionTree::assemble(&source, root, candidates, version, runner_tags)?;
         if best
             .as_ref()
             .is_none_or(|kept| tree.sessions().len() > kept.sessions().len())
@@ -154,7 +163,7 @@ pub fn replay_files(files: BTreeMap<PathBuf, Vec<u8>>) -> Result<MemoryReplay, I
     let name = header
         .as_ref()
         .and_then(|h| h.mission_name.clone())
-        .or_else(|| root.first_tag().map(str::to_owned))
+        .or_else(|| root.user_tag.clone())
         .unwrap_or_else(|| tree.mission_id().0.clone());
     let started_at = header
         .as_ref()
@@ -200,7 +209,7 @@ pub fn session_infos(tree: &SessionTree) -> Vec<SessionInfo> {
             parent: session.parent.clone(),
             role: session.role,
             model: session.model().map(|model| ModelId(model.to_owned())),
-            tag: session.first_tag().map(str::to_owned),
+            tag: Some(session.display_name()),
             effort: session
                 .sidecar
                 .as_ref()

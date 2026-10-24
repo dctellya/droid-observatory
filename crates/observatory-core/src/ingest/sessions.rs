@@ -23,6 +23,29 @@ const JSONL_EXTENSION: &str = "jsonl";
 /// them beside it.
 const CHILDREN_DIR_SUFFIX: &str = "children";
 
+/// Metadata keys only the runner sets on the tags it creates.
+const RUNNER_METADATA_KEYS: [&str; 3] = ["role", "missionId", "callingSessionId"];
+
+/// The first tag a user wrote: not named in `runner_tags` and not carrying runner metadata.
+pub fn user_tag<'a>(tags: &'a [SidecarTag], runner_tags: &[String]) -> Option<&'a str> {
+    tags.iter()
+        .find(|tag| {
+            !runner_tags.contains(&tag.name)
+                && !RUNNER_METADATA_KEYS.iter().any(|key| {
+                    tag.metadata
+                        .as_ref()
+                        .is_some_and(|meta| meta.get(key).is_some())
+                })
+        })
+        .map(|tag| tag.name.as_str())
+}
+
+/// What the UI calls a session (FR-L1): its first user tag, else its id. The watcher, the store
+/// and the in-memory replay all name sessions through this one rule.
+pub fn display_name(tags: &[SidecarTag], id: &SessionId, runner_tags: &[String]) -> String {
+    user_tag(tags, runner_tags).map_or_else(|| id.0.clone(), str::to_owned)
+}
+
 /// One session of a mission, with what its sidecar says.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Session {
@@ -35,6 +58,8 @@ pub struct Session {
     pub contract: bool,
     /// `None` when the sibling `settings.json` is absent.
     pub sidecar: Option<Sidecar>,
+    /// The first tag a user wrote, by the `runner_tags` the tree was assembled with.
+    pub user_tag: Option<String>,
 }
 
 impl Session {
@@ -58,7 +83,12 @@ impl Session {
             .unwrap_or_default()
     }
 
-    /// Name of the first tag: what the UI shows as the session name (FR-L1).
+    /// What the UI shows as the session name: its user tag, else its id.
+    pub fn display_name(&self) -> String {
+        self.user_tag.clone().unwrap_or_else(|| self.id.0.clone())
+    }
+
+    /// Name of the first tag, runner-generated or not.
     pub fn first_tag(&self) -> Option<&str> {
         self.tags().first().map(|tag| tag.name.as_str())
     }
@@ -85,6 +115,7 @@ impl SessionTree {
             root,
             candidate_paths(root)?,
             version,
+            &cfg.runner_tags,
         )
     }
 
@@ -94,6 +125,7 @@ impl SessionTree {
         root: &Path,
         candidates: Vec<PathBuf>,
         version: MappingVersion,
+        runner_tags: &[String],
     ) -> Result<Self, IngestError> {
         let root_head = files.head(root)?.unwrap_or_default();
         let root_id = SessionId(root_head.id.clone().unwrap_or_else(|| file_stem(root)));
@@ -172,6 +204,11 @@ impl SessionTree {
                 &attached[..],
                 &mut transcripts,
             )?;
+            let tags = sidecar
+                .as_ref()
+                .and_then(|sidecar| sidecar.tags.as_deref())
+                .unwrap_or_default();
+            let user_tag = user_tag(tags, runner_tags).map(str::to_owned);
             sessions.push(Session {
                 id: entry.id.clone(),
                 path: entry.path.clone(),
@@ -180,6 +217,7 @@ impl SessionTree {
                 role,
                 contract: is_contract(version, entry, &attached[..], &mut transcripts)?,
                 sidecar,
+                user_tag,
             });
         }
         Ok(Self {
