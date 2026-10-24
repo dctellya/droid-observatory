@@ -241,6 +241,7 @@ pub async fn launch(
         exit_wait: Duration::from_millis(cfg.mission.reap_grace_ms),
         spool,
         source,
+        auto_approve: cfg.mission.auto_approve_proposal,
         first_message: config.first_message(&mission_text),
         mission_name: config.branch.clone(),
         mission: None,
@@ -298,6 +299,7 @@ struct Pump {
     exit_wait: Duration,
     spool: Spool,
     source: RpcSource,
+    auto_approve: bool,
     first_message: String,
     mission_name: String,
     mission: Option<MissionId>,
@@ -421,6 +423,9 @@ impl Pump {
     /// `droid exec --mission` accepts the orchestrator's proposal without asking; a hosted
     /// session is asked, and the launch screen is the human's consent to run it.
     fn approve_mission_proposals(&self, inner: &mut Inner) {
+        if !self.auto_approve {
+            return;
+        }
         let proposals: Vec<String> = inner
             .mapper
             .open_requests()

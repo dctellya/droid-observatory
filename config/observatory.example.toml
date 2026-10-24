@@ -36,6 +36,10 @@ session_tags = []
 # A self-check mission turns both on so it never runs the validation path (it costs a model run).
 skip_scrutiny = false
 skip_user_testing = false
+# Answer the orchestrator's mission proposal with "proceed" when the mission starts: the launch
+# screen is the human's consent to run it (D-034). Off, the proposal waits in the panel for
+# Approve or Deny like any other permission request.
+auto_approve_proposal = true
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).

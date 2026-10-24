@@ -106,6 +106,7 @@ pub struct MissionConfig {
     pub session_tags: Vec<String>,
     pub skip_scrutiny: bool,
     pub skip_user_testing: bool,
+    pub auto_approve_proposal: bool,
 }
 
 impl MissionConfig {
@@ -132,6 +133,7 @@ impl Default for MissionConfig {
             session_tags: Vec::new(),
             skip_scrutiny: false,
             skip_user_testing: false,
+            auto_approve_proposal: true,
         }
     }
 }
@@ -444,6 +446,7 @@ mod tests {
         ("mission", "session_tags"),
         ("mission", "skip_scrutiny"),
         ("mission", "skip_user_testing"),
+        ("mission", "auto_approve_proposal"),
         ("ingest", "factory_sessions_dir"),
         ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),
