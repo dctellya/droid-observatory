@@ -1,7 +1,7 @@
 # D-034: A hosted mission is launched as an orchestrator session in mission mode, not with `--mission`
 
 **Date:** 2026-10-24
-**Status:** accepted and implemented in `m2-host-shell-and-launch` (`apps/observatory-app/src-tauri/src/{process,host}.rs`, core `view::{launch,hosted,live_output}`)
+**Status:** accepted and implemented in `m2-host-shell-and-launch` (`apps/observatory-app/src-tauri/src/{process,host}.rs`, core `view::{launch,hosted,live_output}`); merged at the M2 integration `7385b62`
 
 ## Context
 

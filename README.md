@@ -9,14 +9,15 @@ overlays; time, waste, cost and model drift are the Panel. What happens after th
 (release, observe, deploys, flags) belongs to the delivery platform and is out of scope: the
 last event the app records is `handed_to_cd`.
 
-**Status:** mission in progress. The walking skeleton (S), the stream capture and mapping milestone (M0) and the
-board in replay and attach (M1, ai/RULES.md rule 2, SPEC §3) are integrated on `mission/observatory-v1`: a Cargo
+**Status:** mission in progress. The walking skeleton (S), the stream capture and mapping milestone (M0), the
+board in replay and attach (M1, ai/RULES.md rule 2, SPEC §3) and the host (M2: launch form, hosted `droid exec` over
+stream-jsonrpc with pause, message and answer, live output per agent, D-033, D-034) are integrated on `mission/observatory-v1`: a Cargo
 workspace, the canonical `Event`, mapping v1 with its golden file (seven phase lanes, D-024), a SQLite pointer
 store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the usage-log source (D-029), a
 Leptos board with Details and agents views and a Tauri host that attaches to live sessions. The Leptos go/no-go at
 M1 is **go** (D-030). Dogfooding started at the M1 integration: `make app-dev` from this checkout lists this
 mission's own orchestrator session on the board (`reports/usage/m1.md`, session log entry 35). Host, intervention,
-gate and metrics follow in M2-M5 (SPEC §3).
+gate and metrics follow in M3-M5 (SPEC §3).
 
 ## What it will show
 
@@ -181,6 +182,7 @@ Rule 10: real time and usage per milestone, stated here as the work lands.
 | S walking skeleton | 63.9 min of assistant time in 8 parent sessions (first worker 2026-10-22 16:49Z, scrutiny done 17:39Z, user testing finished 2026-10-23 06:40Z after an overnight usage limit) | 6 workers, scrutiny and user-testing validators with their 10 children | 13.21 USD-eq of the 40 cap on workers and validators; the orchestrator's share is not exposed (`reports/usage/s.md`) |
 | M0 capture and mapping | 162.9 min of assistant time in 14 parent sessions (first worker 2026-10-23 07:41Z, user testing round 1 finished 12:50Z; a 5-hour usage limit paused the mission at 11:03Z) | 11 workers, scrutiny (two rounds) and user-testing validators with their children | 49.05 USD-eq of the 60 cap priced so far (workers, validators, orchestrator subagents); the orchestrator's own delta is 66.87 USD-eq against its cap of 32 (`reports/usage/m0.md`) |
 | M1 board, replay, attach | 342.0 min of assistant time in 23 parent sessions (first worker 2026-10-23 12:29Z, last validator finished 2026-10-24 04:08Z; a 4 h 13 min owner pause and two 5-hour usage limits, 255.4 min in total, are inside that wall time) | 17 workers (this integration included), scrutiny and user-testing validators with their 25 children | 110.38 USD-eq of the 110 cap on workers, validators and orchestrator subagents; the orchestrator's own delta is 115.74 USD-eq against its cap of 22 (`reports/usage/m1.md`) |
+| M2 host | 871.95 min of wall clock from the first worker (2026-10-24 05:04:43Z) to the report time 19:36:40Z, of which 121.3 min are one `unrecoverable_usage_402` throttle; episode 4 (Model-Router fallback to `kimi-k3`, SPEC §9 F-046) voided the sessions listed in that row | 9 workers (this integration included), validators in five scrutiny and four user-testing rounds | 120.61 USD-eq of the 50 cap on workers, validators and orchestrator subagents; the orchestrator's own M2 spend is over its 30 USD-eq stop (118.84 USD-eq on the log's fable turns); record mission-to-date 694.66 USD-eq, 110.3 % of the 630 hard stop (`reports/usage/m2.md`) |
 
 Token usage is pasted from the session sidecars into `reports/usage/<milestone>.md` at each
 integration; the observatory's first job is to make that number visible.

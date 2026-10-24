@@ -1,7 +1,7 @@
 # D-031: A session file rewritten under the tail is read again and its stale events are retracted
 
 **Date:** 2026-10-24
-**Status:** accepted and implemented in `m2-fix-rewritten-line-resync`
+**Status:** accepted and implemented in `m2-fix-rewritten-line-resync` (`2e48f92`); merged at the M2 integration `7385b62`
 
 ## Context
 

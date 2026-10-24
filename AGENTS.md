@@ -15,11 +15,12 @@ after the merge (release, observe, deploys, flags) is out of scope: the last eve
 PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by F-028 where noted).
 Spec: `SPEC.md` (approved 2026-10-22, amended v0.4 at the M0 to M1 boundary; the mission plans from it).
 
-Current state: the walking skeleton (S), the stream capture and mapping milestone (M0) and the board in replay and
-attach (M1) are integrated on `mission/observatory-v1` (M1 on 2026-10-24): core crate, canonical `Event`, mapping v1 with
+Current state: the walking skeleton (S), the stream capture and mapping milestone (M0), the board in replay and
+attach (M1) and the host (M2, on 2026-10-24: `RpcSource`, launch form, hosted launch recipe D-034, live output) are
+integrated on `mission/observatory-v1`: core crate, canonical `Event`, mapping v1 with
 its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the
 usage-log source (`turn.usage` is Panel data, D-029), a Leptos board with Details and agents views (D-030: go) and the
-Tauri host with live attach. Each later milestone deepens one area from it. From M2 on, a change to the store schema
+Tauri host with live attach and hosted launch. Each later milestone deepens one area from it. From M2 on, a change to the store schema
 is a new numbered migration (`0002_*.sql`); `0001_init.sql` is never edited in place again (a dogfooding store exists at
 `~/.droid-observatory/observatory.sqlite`).
 
@@ -113,6 +114,11 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Debt markers: `TODO(#123)` or `TODO(B-123)`; anything else fails `make check-todos`.
 - Markdown: `.markdownlint-cli2.yaml`; links must resolve (`make check-links`).
 - Files over 200 KB fail CI unless under `fixtures/streams/` or `build-log/`.
+- The cycle is data, not code (F-041, SPEC §9; decision file D-035 at M3): the lanes, their order, their owning roles, the final event
+  and the clocks are a cycle template read at start-up; code from M2 on adds no lane names and iterates the template.
+- Live self-checks that host a scratch mission (F-042): cheapest explicit models (`claude-haiku-4-5-20251001`), `skipScrutiny` and
+  `skipUserTesting`, R-050 namespacing (own working directory, session tag `scratch`), reaped before the test reports; their usage is
+  the `self-check missions` line of the usage report.
 
 ## Git
 
@@ -151,6 +157,7 @@ Models per role (rule 19; `.factory/settings.json`; D-006):
 | Orchestrator | `claude-fable-5.1` |
 | Workers | `claude-sonnet-5-5` |
 | Validators (scrutiny, user testing) | `claude-opus-5-5` |
+| Scratch missions (self-checks) | `claude-haiku-4-5-20251001`, effort `low` (F-042, SPEC §2) |
 
 Command: see README "Running it as a mission".
 Reasoning effort: orchestrator `high`, workers `high`, validators `high` (SPEC §2).

@@ -1,7 +1,7 @@
 # D-024: Lanes are the seven mission phases; human and commander actions are overlays; the cycle ends at `handed_to_cd`
 
 **Date:** 2026-10-23
-**Status:** accepted and implemented in `m1-view-models-core` (mapping::v1 lane rules, `Lane`, `Overlay`, `HandedToCd`, store 0001 amended, golden regenerated; M0 golden SHA-256 `c10b27ae67be62c6ace2d38d445a035d5c219a13b9ed38812cc0f27cffce635d`, refrozen in SPEC §10 at the M1 integration, merge commit `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2`: the golden is now `25d91c53b580f8f5f3f1a62ecaa977a24dca0b61f5caf86e296182e8f23a5750`, 2394 events)
+**Status:** accepted and implemented in `m1-view-models-core` (mapping::v1 lane rules, `Lane`, `Overlay`, `HandedToCd`, store 0001 amended, golden regenerated; M0 golden SHA-256 `c10b27ae67be62c6ace2d38d445a035d5c219a13b9ed38812cc0f27cffce635d`, refrozen in SPEC §10 at the M1 integration, merge commit `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2`: the golden was `25d91c53b580f8f5f3f1a62ecaa977a24dca0b61f5caf86e296182e8f23a5750`, 2394 events, and is `cecf727d0944ff7e8ddf306a8aeca6cbc32022bd2ff2eb7e22050fa7b72106c7` after D-032, refrozen at the M2 integration `7385b62`)
 
 ## Context
 
@@ -90,7 +90,7 @@ M0 golden expected at the M1 regeneration (`jq` over `fixtures/streams/2026-10-2
 | intent.answered | 1 Intent | 1 Plan fixed | Human | 12 | the human's answer |
 | spec.versioned | 1 Intent | 2 Contract fixed | none | 0 | a spec version is the contract's artefact |
 | plan.created | 2 Orch | 1 Plan fixed | none | 1 | decomposition |
-| feature.defined | 2 Orch | 1 Plan fixed | none | 6 | cycle start; all 6 on M0 come from the scrutiny validator session `6eb88099` at 17:35:44Z, none for `m0-*` (see the clocks in §1) |
+| feature.defined | 2 Orch | 1 Plan fixed | none | 6 | cycle start; all 6 on M0 come from the scrutiny validator session `6eb88099` at 17:35:44Z, none for `m0-*` (see the clocks in §1); D-032: from a scrutiny or user-testing validator, that validator's phase |
 | milestone.defined | 2 Orch | 1 Plan fixed | none | 7 | decomposition |
 | task.assigned | 2 Orch | R | none | 40 | orchestrator 27 → Plan; validators' own spawns 6 + 7 → Scrutiny / User testing |
 | task.skipped | 2 Orch | R | none | 18 | child outcome `cancelled`; child's role decides (10 Build, 1 Scrutiny, 4 UT, 3 Integrate) |
@@ -148,7 +148,7 @@ M0 golden expected at the M1 regeneration (`jq` over `fixtures/streams/2026-10-2
 | **handed_to_cd** (new) | — | 7 Gate fixed | none (role Human or External) | 0 | the cycle's last event: `merge_sha`, `pr_number`, `attestation_ids`; emitted once per PR when the required checks are green and `state = merged` is observed |
 
 Expected phase counts on the M0 golden after the change (state as "at the M1 golden"; `jq` of the committed
-golden is authoritative): Plan 443 / Contract 69 / Build 424 / Scrutiny 87 / User testing 122 / Integrate 134 /
+golden is authoritative; after D-032): Plan 437 / Contract 69 / Build 424 / Scrutiny 93 / User testing 122 / Integrate 134 /
 Gate 0 (sum 1279); 70 human overlays (1 created + 44 amended + 12 answered + 13 asked), all in Plan. Serde
 names `scrutiny` and `user_testing` are unchanged, so 57 golden events keep a byte-identical `lane`; the other
 1222 change string; 70 gain `"overlay":"human"`; ids, offsets, `at` and order are untouched. 7 Gate holds nothing on
@@ -165,7 +165,7 @@ D-023 amended by D-024).
 | 1b | How is the merger recorded? | One `handed_to_cd`, the merger attributed by role (human or external). `pr.merged_by_policy` is not kept beside it. |
 | 1c | What does M4 cut? | `deploy.completed` and branch-deletion detection. The `demo/*` cleanup stays a `gh` step of the run, not an observed event. |
 | 1d | Where do human-overlay events land? | In a fixed lane by kind in v1: `intent.*`, `question.*`, `approval.*` → Plan; `permission.*` → the asking session's phase; `review.outcome` → Gate; `approval.given` with `human_actions.kind = merge` → Gate. Placing them by the feature's phase at that instant is a v2 note (BACKLOG). |
-| 1e | When does the engineering cycle start? | `feature.defined`, else the feature's first `task.started`, with the count of fallbacks reported. On the M0 capture only 6 of 13 features have a `feature.defined`, all emitted at 17:35:44Z by the scrutiny validator session `6eb88099`; none of the runner-started `m0-*` features has one. |
+| 1e | When does the engineering cycle start? | `feature.defined`, else the feature's first `task.started`, with the count of fallbacks reported. On the M0 capture only 6 of 13 features have a `feature.defined`, all emitted at 17:35:44Z by the scrutiny validator session `6eb88099`; none of the runner-started `m0-*` features has one.; D-032: from a scrutiny or user-testing validator, that validator's phase |
 
 ### 5. Implementation note (`m1-view-models-core`, 2026-10-23)
 
@@ -177,8 +177,8 @@ D-023 amended by D-024).
   first prompt; the held `session_start` event (`subagent.spawned`) is placed when it is released.
 - `SessionMeta.contract` is set by `SessionTree` from the parent's `Task` `description`
   (`mapping::is_contract_task`).
-- Result on the M0 golden (`jq` over the committed file): Plan 443, Contract 69, Build 424,
-  Scrutiny 87, User testing 122, Integrate 134, Gate 0 (sum 1279); 70 `overlay: human`; 57 lane strings
+- Result on the M0 golden (`jq` over the committed file; after D-032, 443 / 87 before it): Plan 437, Contract 69, Build 424,
+  Scrutiny 93, User testing 122, Integrate 134, Gate 0 (sum 1279); 70 `overlay: human`; 57 lane strings
   unchanged; event count, kinds, ids, offsets, `at` and order unchanged.
 
 ## Alternatives considered
@@ -192,7 +192,7 @@ D-023 amended by D-024).
   keep a Human lane and an Outside lane that the owner's cycle does not have.
 - **Contract left empty on M0 until a capture has a contract-writer role (1a).** Rejected by the owner:
   no PRD kind and no role identifies contract writing, so Contract would be empty on the only capture
-  there is. Without the heuristic the counts are Plan 443, Build 493, Scrutiny 87, User testing 122,
+  there is. Without the heuristic the counts are (after D-032) Plan 437, Build 493, Scrutiny 93, User testing 122,
   Integrate 134, Contract 0.
 - **`pr.merged_by_policy` kept as a second Gate kind (1b).** Rejected: the distinction is who merged,
   which role attribution already carries, and a second kind doubles the final-event paths.
@@ -214,8 +214,8 @@ D-023 amended by D-024).
   The old golden hash `f055657a46af2713f50d1963dab684495d5f3770225f942adfcbb28e8331f3e1` is superseded
   at the M1 integration and the new SHA-256 goes to SPEC §10; the fixture `.jsonl`, `.capture.json` and
   `.settings.json` hashes stay.
-- **Expected phase counts on the M0 golden** (`jq` of the committed golden is authoritative): Plan 443,
-  Contract 69, Build 424, Scrutiny 87, User testing 122, Integrate 134, Gate 0 (sum 1279); 70 human
+- **Expected phase counts on the M0 golden** (`jq` of the committed golden is authoritative; after D-032): Plan 437,
+  Contract 69, Build 424, Scrutiny 93, User testing 122, Integrate 134, Gate 0 (sum 1279); 70 human
   overlays (1 created + 44 amended + 12 answered + 13 asked). Gate holds nothing on a session capture;
   until M4 the Gate header card shows `gate: pending (no PR)`, the mission branch, the last
   `gate_command.*` verdict from Integrate and the two clock labels, with no value.

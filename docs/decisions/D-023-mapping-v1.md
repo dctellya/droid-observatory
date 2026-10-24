@@ -1,7 +1,7 @@
 # D-023: mapping v1 is frozen, and the PRD §11.1 open items are answered
 
 **Date:** 2026-10-23
-**Status:** accepted (M0 exit criterion; v1 frozen at the M0 merge commit f66a9f5, rules first committed in 86df619); amended at the M1 integration `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2` (seven-phase lane column of D-024, `turn.usage` of D-029, golden refrozen; addendum at the end)
+**Status:** accepted (M0 exit criterion; v1 frozen at the M0 merge commit f66a9f5, rules first committed in 86df619); amended at the M1 integration `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2` (seven-phase lane column of D-024, `turn.usage` of D-029, golden refrozen; addendum at the end); amended again at the M2 integration (scrutiny `feature_defined` lane, [D-032](D-032-scrutiny-feature-defined-lane.md), golden refrozen; second addendum at the end)
 
 ## Context
 
@@ -39,7 +39,7 @@ person's words are told apart by the kind, not by a `Human` role.
 | `session_start` with `callingSessionId` | `subagent.spawned` | child's home phase (Build, Scrutiny, User testing; Contract or Integrate by rules 3 and 4) |
 | root user text typed by the person (`userMessageSource: cli_tui`) | `intent.amended` | Plan, overlay human, session role |
 | child user text that is a `Task` or runner assignment (first only) | `task.started` | home phase |
-| assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan |
+| assistant `tool_use` `Task` | `task.assigned`, plus `feature.defined` the first time a feature is named | `task.assigned`: home phase; `feature.defined`: Plan; D-032: from a scrutiny or user-testing validator, that validator's phase |
 | assistant `tool_use` `ProposeMission` | `plan.created`, plus `milestone.defined` per `\| **Mn** ...` row | Plan |
 | assistant `tool_use` `AskUser` | `question.asked` | Plan, overlay human |
 | `tool_result` of an `AskUser` | `intent.answered` | Plan, overlay human, session role |
@@ -272,3 +272,19 @@ this list in the same change.
 - **Session names:** a session is named by its `user` tag when there is one, else by its id
   (`m1-fix-session-name-user-tag`, `m1-fix-session-name-everywhere`); the first sidecar tag is not unique in the
   M0 capture (BACKLOG B-041).
+
+## Addendum 2026-10-24 (M2 integration, D-032)
+
+- **`feature.defined`:** the kinds table row for `Task` (§1) now ends `D-032: from a scrutiny or user-testing validator,
+  that validator's phase`. The 6 `feature.defined` events of the validator session `6eb88099` moved from Plan to
+  Scrutiny (BACKLOG B-042, closed by D-032; owner decision 31). The rule table stays in `kinds.rs`; `mapping_version`
+  stays `v1`.
+- **Golden at the M2 tip:** `fixtures/streams/2026-10-22-observatory-v1-m0.events.json`, still 2394 events (1279
+  session events + 1115 `turn.usage`), SHA-256 `cecf727d0944ff7e8ddf306a8aeca6cbc32022bd2ff2eb7e22050fa7b72106c7`. It
+  supersedes `25d91c53…` of the M1 tip. Lane totals of the 1279 session events: Plan 437, Contract 69, Build 424,
+  Scrutiny 93, User testing 122, Integrate 134, Gate 0 (were Plan 443, Scrutiny 87); whole golden with the turn events:
+  plan 744, scrutiny 157 (were 750 and 151). The `.jsonl` (`ab23da55…a58c`) and `.settings.json` (`efef27eb…76ec`)
+  hashes are unchanged.
+- **Other M2 mapping facts:** `role=system` messages are known and produce no event (`a4ed7c9`, golden unchanged);
+  `process_exit` maps like `cancelled` (child `task.skipped`, root `mission.paused`, `36a042e`, golden unchanged);
+  [D-031](D-031-rewritten-line-resync.md) covers the rewritten-line resync of the live tail.

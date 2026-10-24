@@ -1,7 +1,7 @@
 # D-033: The hosted lane speaks Droid's stream-jsonrpc; the spool is mapped by mapping v1
 
 **Date:** 2026-10-24
-**Status:** accepted and implemented in `m2-rpc-source-core` (`ingest::rpc`, feature `rpc`)
+**Status:** accepted and implemented in `m2-rpc-source-core` (`ingest::rpc`, feature `rpc`); merged at the M2 integration `7385b62`
 
 ## Context
 
