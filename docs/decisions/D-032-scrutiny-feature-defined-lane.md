@@ -1,8 +1,7 @@
 # D-032: A `feature.defined` emitted by a validator session sits in that validator's phase
 
 **Date:** 2026-10-24
-**Status:** accepted and implemented in `m2-mapping-scrutiny-feature-defined` (owner decision 31, from
-`m2-integrate-m1` item p; a `mapping::v1` addendum, `mapping_version` stays `v1`)
+**Status:** accepted and implemented in `m2-mapping-scrutiny-feature-defined` (owner decision 31, a `mapping::v1` addendum, `mapping_version` stays `v1`)
 
 ## Context
 
