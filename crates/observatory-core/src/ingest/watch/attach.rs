@@ -32,6 +32,9 @@ pub struct AttachBatch {
     /// Events already handed out whose file was rewritten in this poll. Apply them before
     /// `events`, which holds the lines read again.
     pub retractions: Vec<(MissionId, Retraction)>,
+    /// Events of a first line handed out before, read again after a rewrite: same ids, new
+    /// pointers. Apply them after `retractions`; they are not in `events`.
+    pub repointed: Vec<Event>,
     /// Sessions found but not watched because of `max_watched_sessions`.
     pub unwatched: usize,
 }
@@ -90,6 +93,8 @@ impl Tail {
                     for event in self.mapper.map(record) {
                         if self.hand_out(&event) {
                             batch.events.push(event);
+                        } else {
+                            batch.repointed.push(event);
                         }
                     }
                 }
@@ -106,7 +111,8 @@ impl Tail {
         }
     }
 
-    /// False for an event of the first line that went out before the rewrite.
+    /// False for an event of the first line that went out before the rewrite: the caller
+    /// repoints it instead of handing it out again.
     fn hand_out(&mut self, event: &Event) -> bool {
         self.emitted = true;
         let first_line = matches!(

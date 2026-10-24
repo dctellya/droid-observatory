@@ -179,6 +179,19 @@ impl Store {
         Ok(removed)
     }
 
+    /// Points the stored event `event.id` at the bytes `event.source` names now: the first
+    /// line of a session file is rewritten in place and its events keep their ids, so only
+    /// the length of the line moves. Returns false when the id is not stored.
+    pub fn update_pointer(&mut self, event: &Event) -> Result<bool, StoreError> {
+        let id = event.id.to_string();
+        let ptr = PointerColumns::of(&event.source, &id)?;
+        let changed = self.conn.execute(
+            "UPDATE events SET path = ?2, byte_offset = ?3, byte_len = ?4 WHERE id = ?1",
+            params![id, ptr.path, ptr.byte_offset, ptr.byte_len],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Where the raw material of event `id` lives.
     pub fn pointer(&self, id: &EventId) -> Result<SourcePtr, StoreError> {
         let columns = self

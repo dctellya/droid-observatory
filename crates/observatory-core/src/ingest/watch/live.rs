@@ -106,6 +106,11 @@ impl LiveIngest {
             self.batcher
                 .retract(&mission, retraction, unknown, Instant::now());
         }
+        for event in &batch.repointed {
+            if let Err(err) = self.store.update_pointer(event) {
+                step.errors.push(err);
+            }
+        }
         self.store_and_queue(batch.events, &mut step);
         for warning in &batch.warnings {
             self.warnings.push(match warning {
