@@ -103,6 +103,9 @@ pub struct MissionConfig {
     pub spool_base: String,
     pub reap_grace_ms: u64,
     pub droid_bin: String,
+    pub session_tags: Vec<String>,
+    pub skip_scrutiny: bool,
+    pub skip_user_testing: bool,
 }
 
 impl MissionConfig {
@@ -126,6 +129,9 @@ impl Default for MissionConfig {
             spool_base: "~/.droid-observatory".into(),
             reap_grace_ms: 2000,
             droid_bin: "droid".into(),
+            session_tags: Vec::new(),
+            skip_scrutiny: false,
+            skip_user_testing: false,
         }
     }
 }
@@ -435,6 +441,9 @@ mod tests {
         ("mission", "spool_base"),
         ("mission", "reap_grace_ms"),
         ("mission", "droid_bin"),
+        ("mission", "session_tags"),
+        ("mission", "skip_scrutiny"),
+        ("mission", "skip_user_testing"),
         ("ingest", "factory_sessions_dir"),
         ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),

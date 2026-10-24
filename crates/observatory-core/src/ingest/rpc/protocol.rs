@@ -119,26 +119,40 @@ const MACHINE_ID: &str = "droid-observatory";
 /// an orchestrator (what `--mission` does on the command line). `session_id` is chosen by the
 /// host, so the session file is known before Droid writes it.
 pub fn encode_initialize(config: &LaunchConfig, session_id: &str, id: u64) -> RpcRequest {
-    RpcRequest::new(
-        id,
-        method::INITIALIZE_SESSION,
-        json!({
-            "machineId": MACHINE_ID,
-            "cwd": config.repo,
-            "sessionId": session_id,
-            "modelId": config.models.orchestrator,
-            "reasoningEffort": config.efforts.orchestrator,
-            "autonomyLevel": config.autonomy,
-            "interactionMode": "mission",
-            "decompSessionType": "orchestrator",
-            "missionSettings": {
-                "workerModel": config.models.worker,
-                "workerReasoningEffort": config.efforts.worker,
-                "validationWorkerModel": config.models.validator,
-                "validationWorkerReasoningEffort": config.efforts.validator,
-            },
-        }),
-    )
+    let mut mission_settings = json!({
+        "workerModel": config.models.worker,
+        "workerReasoningEffort": config.efforts.worker,
+        "validationWorkerModel": config.models.validator,
+        "validationWorkerReasoningEffort": config.efforts.validator,
+    });
+    // Left out unless set, so a request without them is what Droid's own defaults answer to.
+    for (key, skipped) in [
+        ("skipScrutiny", config.skip_scrutiny),
+        ("skipUserTesting", config.skip_user_testing),
+    ] {
+        if skipped {
+            mission_settings[key] = json!(true);
+        }
+    }
+    let mut params = json!({
+        "machineId": MACHINE_ID,
+        "cwd": config.repo,
+        "sessionId": session_id,
+        "modelId": config.models.orchestrator,
+        "reasoningEffort": config.efforts.orchestrator,
+        "autonomyLevel": config.autonomy,
+        "interactionMode": "mission",
+        "decompSessionType": "orchestrator",
+        "missionSettings": mission_settings,
+    });
+    if !config.tags.is_empty() {
+        params["tags"] = config
+            .tags
+            .iter()
+            .map(|tag| json!({ "name": tag }))
+            .collect();
+    }
+    RpcRequest::new(id, method::INITIALIZE_SESSION, params)
 }
 
 /// The request a control sends, or `None` for the controls that answer a request of Droid's.

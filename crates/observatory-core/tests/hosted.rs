@@ -19,6 +19,9 @@ fn config(budget: Option<f64>) -> LaunchConfig {
         efforts: same("high"),
         autonomy: "high".into(),
         budget_usd: budget,
+        tags: Vec::new(),
+        skip_scrutiny: false,
+        skip_user_testing: false,
     }
 }
 

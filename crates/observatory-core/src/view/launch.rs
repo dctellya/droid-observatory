@@ -87,6 +87,10 @@ pub struct LaunchForm {
     pub validator_effort: String,
     pub autonomy: String,
     pub budget: String,
+    /// Not typed: `[mission]` settings the form carries to the launch.
+    pub tags: Vec<String>,
+    pub skip_scrutiny: bool,
+    pub skip_user_testing: bool,
 }
 
 /// A form that passed validation: what the shell launches.
@@ -99,6 +103,13 @@ pub struct LaunchConfig {
     pub efforts: PerRole<String>,
     pub autonomy: String,
     pub budget_usd: Option<f64>,
+    /// Session tags, and the validation phases to skip, from `[mission]`: not form fields.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub skip_scrutiny: bool,
+    #[serde(default)]
+    pub skip_user_testing: bool,
 }
 
 impl LaunchForm {
@@ -112,6 +123,9 @@ impl LaunchForm {
             worker_effort: mission.worker_reasoning_effort.clone(),
             validator_effort: mission.validator_reasoning_effort.clone(),
             autonomy: mission.autonomy.clone(),
+            tags: mission.session_tags.clone(),
+            skip_scrutiny: mission.skip_scrutiny,
+            skip_user_testing: mission.skip_user_testing,
             ..Self::default()
         }
     }
@@ -215,6 +229,9 @@ impl LaunchForm {
             },
             autonomy: text(LaunchField::Autonomy),
             budget_usd: budget,
+            tags: self.tags.clone(),
+            skip_scrutiny: self.skip_scrutiny,
+            skip_user_testing: self.skip_user_testing,
         })
     }
 }

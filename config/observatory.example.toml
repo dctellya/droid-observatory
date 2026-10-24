@@ -29,6 +29,13 @@ reap_grace_ms = 2000
 # The Droid executable a hosted mission starts. A bare name is looked up on PATH, which a
 # Finder-launched app does not inherit from the shell: give the absolute path there.
 droid_bin = "droid"
+# Tags the hosted session carries (`droid.initialize_session` `tags`), so a run can be told
+# apart in the session store. A self-check mission sets ["scratch"]; empty adds none.
+session_tags = []
+# Mission settings a hosted mission may skip. Off: a real mission validates every milestone.
+# A self-check mission turns both on so it never runs the validation path (it costs a model run).
+skip_scrutiny = false
+skip_user_testing = false
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
