@@ -1,7 +1,7 @@
 # D-029: The Droid CLI usage log is an input source
 
 **Date:** 2026-10-23
-**Status:** accepted (owner finding F-034 during M1; `ai/RULES.md` rule 7 amended)
+**Status:** accepted and implemented in `m1-usage-log-source-core` (owner finding F-034 during M1; `ai/RULES.md` rule 7 amended); merged in `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2`, addendum below
 
 ## Context
 
@@ -57,3 +57,28 @@ extraction; `reports/usage/<milestone>.md` carries its per-role table from M1 on
   (`cachedTokensWritten` is); the table sums `inputTokens`, `outputTokens` and `cacheReadInputTokens` only.
 - Reading the log is read-only; its lines carry session ids, local paths and host identifiers, so it stays out of
   the repository except as filtered, redacted extracts.
+
+## Addendum 2026-10-24 (M1 integration, `m1-usage-log-source-core`, `b600c8c`)
+
+- **Kind name:** `turn.usage` (`EventKind::TurnUsage`, serde `turn_usage`), one event per `[Agent] Streaming
+  result` line, with `input`, `output` and `cache_read` tokens, the join source (`usage_log`) and the
+  model id.
+- **Join as implemented:** the nearest preceding same-second `[metrics_log_*]` line that carries a
+  `sessionId`; the line's own `tags.sessionId` is the cross-check. On the M0 extract `join mismatches: 0`.
+- **Lane of a turn:** its session's current phase, not the lane of the session's `subagent_spawned`. 105
+  turns in 3 integration-feature sessions (2c04bd42 60, 36d06ed0 38, 82a61cf6 7) therefore sit in
+  `integrate` while their `subagent_spawned` sits in `build`; the contract wording was changed to match.
+- **Extract:** `fixtures/streams/2026-10-22-observatory-v1-m0.usage-log.jsonl`, written by
+  `scripts/extract-usage-log.py`: 2230 lines (1115 turns + 1115 neighbouring metrics lines), first_ts
+  `2026-10-22T10:18:19.200Z`, last_ts `2026-10-23T09:21:59.213Z`, SHA-256
+  `c9b5e2747b23aba4a8cf09f2e0e85cf1b85ef0cdd8f39c671b230deade91637d`. Machine ids are zeroed to
+  `00000000-0000-4000-8000-000000000000` (`usage_log.extra_redaction` in the M0 `.capture.json`). The early
+  lines carry Droid 0.245.0 tags.
+- **Golden:** 2394 events (1279 session events + 1115 `turn.usage`), SHA-256
+  `25d91c53b580f8f5f3f1a62ecaa977a24dca0b61f5caf86e296182e8f23a5750`, refrozen at the M1 integration.
+- **Rule 24 decision (orchestrator): `turn.usage` is Panel data.** It feeds tokens per role and per lane and is
+  excluded from lane rows, cards, the tray and the Details timeline. Alternatives: show turns as rows (inflates
+  the lane counts by 1115 on the M0 capture); a separate lane (D-024 has seven).
+- **Store:** the `source` CHECK was widened in place in `0001_init.sql` (scratch stores from before `b600c8c`
+  must be recreated). The store keeps `input`, `output` and `cache_read` of a turn only; `reasoning` and
+  `total_input` read back as 0 (BACKLOG B-043).

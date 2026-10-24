@@ -303,6 +303,9 @@ itself cannot be a row (the file holds its own table); it is in `SPEC.md` §10.
 
 Checks run at the M0 integration: gitleaks 8.30.1 (`detect --no-git --no-banner --redact`) over the
 redacted files reported no leaks (S 25.74 MB, M0 64.14 MB), recorded in each header `gitleaks` field.
+Re-run at the M1 integration over `fixtures/streams` (both captures and the usage-log extract): `scanned ~68213177
+bytes (68.21 MB) in 11.5s, no leaks found`, exit 0; the M0 header `gitleaks` field carries that line (the 64.14 MB
+figure predates the re-redaction of 8 children at `a3d4e9f`; a later run measured 64.83 MB at `f66a9f5`).
 
 ### Consequences of the addendum
 

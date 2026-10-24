@@ -15,10 +15,13 @@ after the merge (release, observe, deploys, flags) is out of scope: the last eve
 PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by F-028 where noted).
 Spec: `SPEC.md` (approved 2026-10-22, amended v0.4 at the M0 to M1 boundary; the mission plans from it).
 
-Current state: the walking skeleton (S) and the stream capture and mapping milestone (M0) are
-integrated on `mission/observatory-v1` (2026-10-23): core crate, canonical `Event`, mapping v1 with
-its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, and an empty board
-that starts. Each later milestone deepens one area from it.
+Current state: the walking skeleton (S), the stream capture and mapping milestone (M0) and the board in replay and
+attach (M1) are integrated on `mission/observatory-v1` (M1 on 2026-10-24): core crate, canonical `Event`, mapping v1 with
+its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the
+usage-log source (`turn.usage` is Panel data, D-029), a Leptos board with Details and agents views (D-030: go) and the
+Tauri host with live attach. Each later milestone deepens one area from it. From M2 on, a change to the store schema
+is a new numbered migration (`0002_*.sql`); `0001_init.sql` is never edited in place again (a dogfooding store exists at
+`~/.droid-observatory/observatory.sqlite`).
 
 ## Setup, build, test
 

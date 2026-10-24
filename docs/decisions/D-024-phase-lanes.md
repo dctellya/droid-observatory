@@ -1,7 +1,7 @@
 # D-024: Lanes are the seven mission phases; human and commander actions are overlays; the cycle ends at `handed_to_cd`
 
 **Date:** 2026-10-23
-**Status:** accepted and implemented in `m1-view-models-core` (mapping::v1 lane rules, `Lane`, `Overlay`, `HandedToCd`, store 0001 amended, golden regenerated; M0 golden SHA-256 `c10b27ae67be62c6ace2d38d445a035d5c219a13b9ed38812cc0f27cffce635d`, refrozen in SPEC §10 at the M1 integration)
+**Status:** accepted and implemented in `m1-view-models-core` (mapping::v1 lane rules, `Lane`, `Overlay`, `HandedToCd`, store 0001 amended, golden regenerated; M0 golden SHA-256 `c10b27ae67be62c6ace2d38d445a035d5c219a13b9ed38812cc0f27cffce635d`, refrozen in SPEC §10 at the M1 integration, merge commit `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2`: the golden is now `25d91c53b580f8f5f3f1a62ecaa977a24dca0b61f5caf86e296182e8f23a5750`, 2394 events)
 
 ## Context
 

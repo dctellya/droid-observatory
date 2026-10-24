@@ -288,7 +288,7 @@
     }
   ],
   "captured_with": "droid --version",
-  "gitleaks": "clean 2026-10-24 (gitleaks 8.30.1, detect --no-git --no-banner --redact, 67.47 MB scanned across fixtures/streams, no leaks found; run on the redacted files, usage-log extract included)",
+  "gitleaks": "clean 2026-10-24 (gitleaks 8.30.1, detect --no-git --no-banner --redact --source fixtures/streams: scanned ~68213177 bytes (68.21 MB) in 11.5s, no leaks found; run on the redacted files, usage-log extract included, at the m1 integration; supersedes 64.14 MB at m0, where 8 children were re-redacted at a3d4e9f and round 2 measured 64.83 MB at f66a9f5)",
   "usage_log": {
     "file": "2026-10-22-observatory-v1-m0.usage-log.jsonl",
     "sha256": "c9b5e2747b23aba4a8cf09f2e0e85cf1b85ef0cdd8f39c671b230deade91637d",

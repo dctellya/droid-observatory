@@ -1,7 +1,7 @@
 # D-023: mapping v1 is frozen, and the PRD §11.1 open items are answered
 
 **Date:** 2026-10-23
-**Status:** accepted (M0 exit criterion; v1 frozen at the M0 merge commit f66a9f5, rules first committed in 86df619)
+**Status:** accepted (M0 exit criterion; v1 frozen at the M0 merge commit f66a9f5, rules first committed in 86df619); amended at the M1 integration `c2fb42acf97883c1e1aa0458ebbc26fbc938bad2` (seven-phase lane column of D-024, `turn.usage` of D-029, golden refrozen; addendum at the end)
 
 ## Context
 
@@ -255,3 +255,20 @@ this list in the same change.
   Git, GitHub, the host channel or the app.
 - Validator report parsing depends on habitual Markdown; a change of validator style is a new
   mapping version.
+
+## Addendum 2026-10-24 (M1 integration)
+
+- **Lane column:** the kinds table in §1 matches the doc table in `crates/observatory-core/src/mapping/v1/kinds.rs`
+  line for line, in the seven-phase column of D-024 (checked at the M1 integration: `diff` of the two
+  26-line tables is empty, after `m1-fix-session-name-user-tag`). The rule did not change; `kinds.rs` stays the source.
+- **Kinds:** 60 known kinds (59 of D-024 plus `turn.usage`) and 31 observed on the M0 capture (30 session-file
+  kinds plus `turn.usage`). `turn.usage` is not a session-file shape and has no row in §1; it comes from the
+  Droid CLI log and is specified in [D-029](D-029-usage-log-source.md) (Panel data, not a lane row). The 29
+  defined-not-observed kinds of §3 are unchanged.
+- **Golden at the M1 tip:** `fixtures/streams/2026-10-22-observatory-v1-m0.events.json`, 2394 events (1279
+  session events + 1115 `turn.usage`), SHA-256 `25d91c53b580f8f5f3f1a62ecaa977a24dca0b61f5caf86e296182e8f23a5750`.
+  It supersedes `f055657a…` of the M0 freeze and the interim `c10b27ae…` of `m1-view-models-core`. The
+  `.jsonl` (`ab23da55…a58c`) and `.settings.json` (`efef27eb…76ec`) hashes are unchanged.
+- **Session names:** a session is named by its `user` tag when there is one, else by its id
+  (`m1-fix-session-name-user-tag`, `m1-fix-session-name-everywhere`); the first sidecar tag is not unique in the
+  M0 capture (BACKLOG B-041).
