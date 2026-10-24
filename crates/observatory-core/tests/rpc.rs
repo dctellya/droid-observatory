@@ -16,9 +16,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use observatory_core::config::IngestConfig;
+use observatory_core::config::MissionConfig;
 use observatory_core::ingest::rpc::{
     AckOutcome, ControlChannel, ControlError, HostControl, OpenRequests, RpcMapper, RpcSource,
-    Spool,
+    Spool, encode_initialize,
 };
 use observatory_core::ingest::{JsonlSource, RawRecord, Source};
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
@@ -26,6 +27,7 @@ use observatory_core::model::{
     Event, EventKind, Lane, Overlay, Role, SessionId, SourcePtr, Timestamp,
 };
 use observatory_core::store::{HostedRun, Store};
+use observatory_core::view::{LaunchConfig, LaunchForm};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -668,4 +670,160 @@ fn spool_appends_lines_as_given_and_refuses_to_clobber_a_launch() {
     assert_eq!(bytes, b"{\"a\":1}\n{\"b\":2}\n");
     assert_eq!(spool.bytes_written(), bytes.len() as u64);
     assert!(Spool::create(&path).is_err());
+}
+
+fn launch_config() -> LaunchConfig {
+    let mut form = LaunchForm::defaults(&MissionConfig::default());
+    form.repo = "/work/repo".into();
+    form.mission_file = "/work/repo/mission.md".into();
+    form.branch = "mission/hello".into();
+    form.worker_model = "worker-model".into();
+    form.validator_model = "validator-model".into();
+    form.validator_effort = "low".into();
+    form.validate().unwrap()
+}
+
+#[test]
+fn initialize_session_carries_the_launch_settings_and_is_acknowledged() {
+    let config = launch_config();
+
+    let request = encode_initialize(&config, "11111111-2222-4333-8444-555555555555", 1);
+
+    let wire = serde_json::to_value(&request).unwrap();
+    assert_eq!(wire["type"], "request");
+    assert_eq!(wire["method"], "droid.initialize_session");
+    assert_eq!(wire["id"], "1");
+    let params = &wire["params"];
+    assert_eq!(params["cwd"], "/work/repo");
+    assert_eq!(params["sessionId"], "11111111-2222-4333-8444-555555555555");
+    assert_eq!(params["modelId"], "claude-fable-5.1");
+    assert_eq!(params["reasoningEffort"], "high");
+    assert_eq!(params["autonomyLevel"], "high");
+    assert_eq!(params["interactionMode"], "mission");
+    assert_eq!(params["decompSessionType"], "orchestrator");
+    assert!(
+        params["machineId"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty())
+    );
+    assert_eq!(
+        params["missionSettings"],
+        json!({
+            "workerModel": "worker-model", "workerReasoningEffort": "high",
+            "validationWorkerModel": "validator-model", "validationWorkerReasoningEffort": "low",
+        })
+    );
+
+    let mut channel = ControlChannel::new(Vec::new());
+    let sent = channel
+        .initialize(&config, "11111111-2222-4333-8444-555555555555")
+        .unwrap();
+    assert_eq!(sent.method, "droid.initialize_session");
+    assert_eq!(written_lines(&channel)[0]["id"], sent.id);
+    let ack = channel
+        .observe(&line(&response(&sent.id, json!({ "sessionId": "x" }))))
+        .expect("the response acknowledges the initialize request");
+    assert_eq!(ack.outcome, AckOutcome::Accepted);
+}
+
+#[test]
+fn a_mission_proposal_is_told_from_other_permission_requests() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = Vec::new();
+    stream.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    for (id, confirmation) in [("p-1", "propose_mission"), ("p-2", "exec")] {
+        stream.extend(line(&request(
+            id,
+            "droid.request_permission",
+            json!({
+                "toolUses": [], "confirmationType": confirmation,
+                "options": [{ "value": "proceed_once" }, { "value": "cancel" }],
+            }),
+        )));
+    }
+
+    let hosted = host(dir.path(), &stream);
+
+    let proposals: Vec<&str> = hosted
+        .mapper
+        .open_requests()
+        .permissions()
+        .iter()
+        .filter(|permission| permission.is_mission_proposal())
+        .map(|permission| permission.request_id.as_str())
+        .collect();
+    assert_eq!(proposals, ["p-1"]);
+}
+
+#[test]
+fn open_questions_are_listed_by_the_event_that_asked_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hosted = host(dir.path(), &question_stream());
+    let asked = question_events(&hosted);
+    assert_eq!(
+        hosted
+            .mapper
+            .open_requests()
+            .open_questions()
+            .iter()
+            .map(|question| question.event_id.clone())
+            .collect::<Vec<_>>(),
+        asked
+    );
+    let mut channel = ControlChannel::new(Vec::new());
+    channel
+        .send(
+            &HostControl::Answer {
+                question_id: asked[0].clone(),
+                text: "a".into(),
+            },
+            hosted.mapper.open_requests_mut(),
+        )
+        .unwrap();
+
+    let left = hosted.mapper.open_requests().open_questions();
+
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].event_id, asked[1]);
+    assert_eq!(left[0].prompts[0].question, "Which one?");
+}
+
+#[test]
+fn tool_call_and_tool_result_notifications_are_counted_not_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stream = Vec::new();
+    stream.extend(line(&response(
+        "1",
+        json!({ "sessionId": "s-1", "settings": {} }),
+    )));
+    for kind in ["tool_call", "tool_result"] {
+        stream.extend(line(&notification("s-1", json!({ "type": kind }))));
+    }
+
+    let hosted = host(dir.path(), &stream);
+
+    assert!(hosted.events.is_empty(), "{:?}", hosted.events);
+    assert_eq!(hosted.mapper.protocol_counts()["tool_call"], 1);
+    assert_eq!(hosted.mapper.protocol_counts()["tool_result"], 1);
+}
+
+#[test]
+fn host_controls_travel_as_tagged_json() {
+    let control: HostControl =
+        serde_json::from_value(json!({ "kind": "answer", "question_id": "q", "text": "t" }))
+            .unwrap();
+    assert_eq!(
+        control,
+        HostControl::Answer {
+            question_id: "q".into(),
+            text: "t".into()
+        }
+    );
+    assert_eq!(
+        serde_json::from_value::<HostControl>(json!({ "kind": "pause" })).unwrap(),
+        HostControl::Pause
+    );
 }
