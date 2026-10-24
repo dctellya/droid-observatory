@@ -4,13 +4,14 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
 use observatory_core::model::SessionId;
-use observatory_core::view::MissionRow;
+use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
 use crate::backend;
 use crate::board::Board;
 use crate::capture::Capture;
+use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
 use crate::shell;
 
@@ -19,6 +20,22 @@ use crate::shell;
 const IDLE: u8 = 0;
 const READING: u8 = 1;
 const STALE: u8 = 2;
+
+/// Tells the shell, once the reactive graph has drawn it, that the events of a hosted run are
+/// on screen: the render half of the 1 s measurement.
+fn report_rendered(batch: &EventBatch, board_open: bool) {
+    let mission_id = batch.mission_id.to_string();
+    let event_ids: Vec<String> = batch
+        .events
+        .iter()
+        .map(|event| event.id.to_string())
+        .collect();
+    spawn_local(async move {
+        leptos::task::tick().await;
+        let args = json!({ "mission_id": mission_id, "event_ids": event_ids, "open": board_open });
+        let _ = shell::invoke::<_, ()>("panel_rendered", &args).await;
+    });
+}
 
 fn refresh_rows(rows: RwSignal<Vec<MissionRow>>, state: RwSignal<u8>) {
     if state.get_untracked() != IDLE {
@@ -63,6 +80,9 @@ pub fn App() -> impl IntoView {
     let status = RwSignal::new(None::<String>);
     let failure = RwSignal::new(None::<String>);
     let attach_status = RwSignal::new(AttachStatus::default());
+    let hosted = HostedCtx::new();
+    provide_context(hosted);
+    let launching = RwSignal::new(false);
 
     let open_shell = Callback::new(move |(command, args): (&'static str, Value)| {
         failure.set(None);
@@ -106,6 +126,21 @@ pub fn App() -> impl IntoView {
                 attach_status.set(now);
             }
         });
+        spawn_local(async move {
+            if let Ok(config) =
+                shell::invoke::<_, observatory_core::config::Config>("app_config", &json!({})).await
+            {
+                hosted
+                    .output
+                    .set(LiveOutput::new(config.ui.live_output_lines));
+            }
+        });
+        shell::listen::<HostedStatus>("hosted_status", move |now| {
+            hosted.status.set(Some(now));
+        });
+        shell::listen::<OutputLines>("live_output", move |lines| {
+            hosted.output.update(|output| output.push(lines));
+        });
         shell::listen::<AttachStatus>("attach_status", move |now| attach_status.set(now));
         shell::listen::<SessionRow>("session_discovered", move |_| {
             refresh_rows(rows, rows_state);
@@ -118,6 +153,13 @@ pub fn App() -> impl IntoView {
             let open = current
                 .get_untracked()
                 .filter(|capture| *capture.mission_id() == batch.mission_id);
+            let hosted_here = hosted
+                .launched
+                .get_untracked()
+                .is_some_and(|launched| launched.session_id == batch.mission_id.to_string());
+            if hosted_here {
+                report_rendered(&batch, open.is_some());
+            }
             match open {
                 Some(capture) => {
                     if capture.merge(batch) {
@@ -191,6 +233,10 @@ pub fn App() -> impl IntoView {
     view! {
         <main class="app" aria-label="observatory">
             {move || match current.get() {
+                None if launching.get() => {
+                    view! { <LaunchScreen on_close=Callback::new(move |()| launching.set(false)) /> }
+                        .into_any()
+                }
                 Some(capture) => view! { <Board capture=capture on_close=close /> }.into_any(),
                 None => {
                     view! {
@@ -203,6 +249,7 @@ pub fn App() -> impl IntoView {
                             on_pick=pick
                             on_open=reopen
                             on_open_path=open_path
+                            on_launch=Callback::new(move |()| launching.set(true))
                         />
                     }
                         .into_any()

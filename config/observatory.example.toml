@@ -12,8 +12,34 @@
 orchestrator_model = "claude-fable-5.1"
 worker_model = "claude-sonnet-5-5"
 validator_model = "claude-opus-5-5"
+# Reasoning effort per role, as the launch screen pre-fills it (SPEC §2: high for every role).
+orchestrator_reasoning_effort = "high"
+worker_reasoning_effort = "high"
+validator_reasoning_effort = "high"
+# Autonomy of a hosted mission. Droid's mission mode needs `high` (D-033).
+autonomy = "high"
 # Branch the mission integrates into (PRD §2). "<name>" is the mission name.
 branch_pattern = "mission/<name>"
+# Directory under which the app keeps the spool of a hosted mission (`hosted/<launch-id>.jsonl`):
+# the child's stdout exists nowhere else, and events point into it (architecture §4.5).
+spool_base = "~/.droid-observatory"
+# How long a hosted `droid exec` gets to exit after SIGTERM when the window closes before its
+# process group is killed. Droid flushes its session file on SIGTERM; 2 s is ample and bounds the close.
+reap_grace_ms = 2000
+# The Droid executable a hosted mission starts. A bare name is looked up on PATH, which a
+# Finder-launched app does not inherit from the shell: give the absolute path there.
+droid_bin = "droid"
+# Tags the hosted session carries (`droid.initialize_session` `tags`), so a run can be told
+# apart in the session store. A self-check mission sets ["scratch"]; empty adds none.
+session_tags = []
+# Mission settings a hosted mission may skip. Off: a real mission validates every milestone.
+# A self-check mission turns both on so it never runs the validation path (it costs a model run).
+skip_scrutiny = false
+skip_user_testing = false
+# Answer the orchestrator's mission proposal with "proceed" when the mission starts: the launch
+# screen is the human's consent to run it (D-034). Off, the proposal waits in the panel for
+# Approve or Deny like any other permission request.
+auto_approve_proposal = true
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
@@ -53,6 +79,9 @@ event_batch_ms = 100
 # Port of `trunk serve` for the browser host and `devUrl` of the Tauri shell. 3141 was free at
 # planning; services.yaml and Trunk.toml carry the same number.
 dev_port = 3141
+# Lines of a hosted agent's output the window keeps (FR-A3). The spool holds every line; this only
+# bounds the DOM. 500 lines is a few screens of the latest activity.
+live_output_lines = 500
 
 [store]
 # SQLite index of events by pointer (path, byte offset, length). One index per user; raw lines

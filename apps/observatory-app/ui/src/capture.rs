@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::ingest::{
-    EventBatch, MemoryReplay, OpenedMission, SessionInfo, merge_ordered,
+    EventBatch, MemoryReplay, OpenedMission, SessionInfo, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
 use observatory_core::view::{MissionSummary, RawLineView, raw_line_view};
@@ -67,11 +67,12 @@ impl Capture {
                     .is_some_and(|id| sessions.iter().all(|session| session.id != *id))
             })
         });
-        let mut added = 0;
+        let mut changed = 0;
         self.events.update(|held| {
-            added = merge_ordered(held, batch.events);
+            changed = retract_stale(held, &batch.retracted);
+            changed += merge_ordered(held, batch.events);
         });
-        if added > 0 {
+        if changed > 0 {
             self.live.set(true);
         }
         unknown_session

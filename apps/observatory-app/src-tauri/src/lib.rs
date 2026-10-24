@@ -2,8 +2,12 @@
 //! hand `observatory-core` values to the UI; nothing is decided here.
 
 mod commands;
+mod host;
 mod ingest;
+#[cfg(test)]
+mod live_check;
 mod logging;
+mod process;
 
 use std::sync::{Arc, Mutex};
 
@@ -50,10 +54,19 @@ pub fn run() {
         status: status.clone(),
     };
 
+    let (exclude, excluded) = std::sync::mpsc::channel();
+    let grace = std::time::Duration::from_millis(cfg.mission.reap_grace_ms);
     tauri::Builder::default()
         .manage(shell)
+        .manage(host::Hosts::new(exclude))
         .setup(move |app| {
-            app.manage(ingest::spawn(app.handle().clone(), cfg, store_path, status));
+            app.manage(ingest::spawn(
+                app.handle().clone(),
+                cfg,
+                store_path,
+                status,
+                excluded,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,12 +78,30 @@ pub fn run() {
             commands::attach,
             commands::board,
             commands::event_raw,
+            commands::host_launch,
+            commands::host_control,
+            commands::host_status,
+            commands::app_config,
+            commands::panel_rendered,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
+        .run(move |app, event| match event {
+            tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::CloseRequested { .. },
+                ..
+            }
+            | tauri::RunEvent::ExitRequested { .. } => reap_hosted(app, grace),
+            tauri::RunEvent::Exit => {
+                reap_hosted(app, grace);
                 app.state::<ingest::Ingest>().stop();
             }
+            _ => {}
         });
+}
+
+/// Closing the window ends the hosted missions: their process groups get SIGTERM, then SIGKILL
+/// after the grace. Repeating it finds the groups gone.
+fn reap_hosted(app: &tauri::AppHandle, grace: std::time::Duration) {
+    tauri::async_runtime::block_on(app.state::<host::Hosts>().reap_all(grace));
 }

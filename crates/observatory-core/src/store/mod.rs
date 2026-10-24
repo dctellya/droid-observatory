@@ -3,6 +3,7 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod hosted;
 mod read;
 mod record;
 mod replay;
@@ -14,13 +15,14 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
+pub use hosted::HostedRun;
 pub use read::{EventScope, TimeRange};
 pub use record::CaptureInfo;
 
 use rows::{PointerColumns, raw_type, sub_of, wire_text};
 
 use crate::model::{
-    Event, EventId, EventKind, MissionId, Overlay, SourcePtr, Timestamp, TokenUsage,
+    Event, EventId, EventKind, MissionId, Overlay, SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 
 /// How long a writer waits for another connection's write (the ingest thread and a command
@@ -152,6 +154,42 @@ impl Store {
         }
         tx.commit()?;
         Ok(added)
+    }
+
+    /// Deletes the events read from the lines of a session file after its first that start
+    /// before `below_offset` (with their usage rows): the file was rewritten and those
+    /// pointers name bytes that moved. The first line keeps its events, see `Retraction`.
+    pub fn retract_events(
+        &mut self,
+        session: &SessionId,
+        below_offset: u64,
+    ) -> Result<usize, StoreError> {
+        let tx = self.conn.transaction()?;
+        let stale = "SELECT id FROM events WHERE session_id = ?1 AND source = 'jsonl' \
+                     AND byte_offset > 0 AND byte_offset < ?2";
+        tx.execute(
+            &format!("DELETE FROM usage WHERE event_id IN ({stale})"),
+            params![session.to_string(), to_i64(below_offset)],
+        )?;
+        let removed = tx.execute(
+            &format!("DELETE FROM events WHERE id IN ({stale})"),
+            params![session.to_string(), to_i64(below_offset)],
+        )?;
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Points the stored event `event.id` at the bytes `event.source` names now: the first
+    /// line of a session file is rewritten in place and its events keep their ids, so only
+    /// the length of the line moves. Returns false when the id is not stored.
+    pub fn update_pointer(&mut self, event: &Event) -> Result<bool, StoreError> {
+        let id = event.id.to_string();
+        let ptr = PointerColumns::of(&event.source, &id)?;
+        let changed = self.conn.execute(
+            "UPDATE events SET path = ?2, byte_offset = ?3, byte_len = ?4 WHERE id = ?1",
+            params![id, ptr.path, ptr.byte_offset, ptr.byte_len],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Where the raw material of event `id` lives.

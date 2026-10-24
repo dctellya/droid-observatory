@@ -19,8 +19,8 @@ observatory-core.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tauri = { version = "2.12.5", features = [] }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "process", "macros"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "process", "macros", "time", "sync", "io-util"] }
 
-# Declared ahead of its first use: tokio by host.rs (M2). Remove the entry with that module.
-[package.metadata.cargo-machete]
-ignored = ["tokio"]
+[dev-dependencies]
+tauri = { version = "2.12.5", features = ["test"] }
+serde_json.workspace = true

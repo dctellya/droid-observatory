@@ -21,6 +21,9 @@ struct TailState {
     offset: u64,
     /// Bytes after the last newline: a line the writer has not finished.
     partial: Vec<u8>,
+    /// The bytes already consumed changed under the tail and reading restarted at offset 0;
+    /// cleared by `JsonlSource::take_rewritten`. Holds the offset reached before.
+    rewritten: Option<u64>,
 }
 
 impl TailState {
@@ -39,6 +42,11 @@ impl TailState {
             return Err(IngestError::FileMoved {
                 path: self.path.clone(),
             });
+        }
+        if !self.consumed_bytes_unchanged(&mut handle)? {
+            self.rewritten = Some(self.rewritten.unwrap_or(0).max(self.offset));
+            self.offset = 0;
+            self.partial.clear();
         }
         handle
             .seek(SeekFrom::Start(self.offset))
@@ -73,6 +81,21 @@ impl TailState {
         Ok(records)
     }
 
+    /// Whether the file still has, right before `offset`, what the tail consumed there: the
+    /// newline that ended the last line and the unfinished line held back. Droid rewrites the
+    /// `session_start` line of a live file in place, which moves every later byte; the tail
+    /// would then resume in the middle of a line.
+    fn consumed_bytes_unchanged(&self, handle: &mut File) -> Result<bool, IngestError> {
+        let line_start = self.offset - self.partial.len() as u64;
+        let newline = usize::from(line_start > 0);
+        let mut found = vec![0; newline + self.partial.len()];
+        handle
+            .seek(SeekFrom::Start(line_start - newline as u64))
+            .and_then(|_| handle.read_exact(&mut found))
+            .map_err(|source| self.io_error(source))?;
+        Ok(found[..newline].iter().all(|byte| *byte == b'\n') && found[newline..] == self.partial)
+    }
+
     fn record(&self, byte_offset: u64, bytes: Vec<u8>) -> RawRecord {
         RawRecord {
             ptr: SourcePtr::Jsonl {
@@ -82,6 +105,7 @@ impl TailState {
             },
             session_id: self.session_id.clone(),
             bytes,
+            arrived_at: None,
         }
     }
 }
@@ -123,8 +147,30 @@ impl JsonlSource {
             session_id: session_id.clone(),
             offset: 0,
             partial: Vec::new(),
+            rewritten: None,
         });
         Ok(session_id)
+    }
+
+    /// Starts every file again from its first byte, as after a rewrite. Returns the offset the
+    /// files had reached.
+    pub fn rewind(&mut self) -> u64 {
+        let reached = self.consumed();
+        for file in &mut self.files {
+            file.offset = 0;
+            file.partial.clear();
+        }
+        reached
+    }
+
+    /// The offset reached before a file changed in the bytes already read and was read again
+    /// from its start, once; `None` when that has not happened since the last call. The
+    /// records returned since then are the whole file, with the offsets of its new content.
+    pub fn take_rewritten(&mut self) -> Option<u64> {
+        self.files
+            .iter_mut()
+            .filter_map(|file| file.rewritten.take())
+            .max()
     }
 
     /// The session of the file `open` was given.

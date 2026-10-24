@@ -8,10 +8,11 @@ use std::time::SystemTime;
 use super::watcher::{DiscoveredSession, SessionWatcher, session_name};
 use crate::config::IngestConfig;
 use crate::ingest::{
-    IngestError, JsonlSource, SessionTree, Source, UsageLogSource, mapping_version_of, read_sidecar,
+    IngestError, JsonlSource, Retraction, SessionTree, Source, UsageLogSource, mapping_version_of,
+    read_sidecar,
 };
 use crate::mapping::{Mapper, SessionMeta};
-use crate::model::{Event, Role, SessionId};
+use crate::model::{Event, EventId, MissionId, Role, SessionId};
 
 const MB: u64 = 1024 * 1024;
 /// Parent links followed while looking for a session's root, so a cycle in the files ends.
@@ -28,6 +29,12 @@ pub struct AttachBatch {
     /// an event names its session and mission.
     pub trees: Vec<SessionTree>,
     pub warnings: Vec<IngestError>,
+    /// Events already handed out whose file was rewritten in this poll. Apply them before
+    /// `events`, which holds the lines read again.
+    pub retractions: Vec<(MissionId, Retraction)>,
+    /// Events of a first line handed out before, read again after a rewrite: same ids, new
+    /// pointers. Apply them after `retractions`; they are not in `events`.
+    pub repointed: Vec<Event>,
     /// Sessions found but not watched because of `max_watched_sessions`.
     pub unwatched: usize,
 }
@@ -53,6 +60,11 @@ struct Tail {
     index_to: Option<u64>,
     finished: bool,
     failed: bool,
+    /// The mapper has yielded an event from the file as it was read so far.
+    emitted: bool,
+    /// Ids of the events of the first line handed out: that line is rewritten in place and
+    /// its events keep their ids, so they are not handed out again.
+    first_line: HashSet<EventId>,
 }
 
 impl Tail {
@@ -68,6 +80,9 @@ impl Tail {
         }
         match self.source.next_batch() {
             Ok(records) => {
+                if let Some(reached) = self.source.take_rewritten() {
+                    self.restart(reached, batch);
+                }
                 if !records.is_empty() {
                     self.modified = std::fs::metadata(&self.found.path)
                         .and_then(|meta| meta.modified())
@@ -75,13 +90,50 @@ impl Tail {
                 }
                 batch.records += records.len();
                 for record in &records {
-                    batch.events.extend(self.mapper.map(record));
+                    for event in self.mapper.map(record) {
+                        if self.hand_out(&event) {
+                            batch.events.push(event);
+                        } else {
+                            batch.repointed.push(event);
+                        }
+                    }
                 }
+            }
+            // Droid truncates a file before it writes the rewritten one.
+            Err(IngestError::FileMoved { .. }) => {
+                let reached = self.source.rewind();
+                self.restart(reached, batch);
             }
             Err(err) => {
                 self.failed = true;
                 batch.warnings.push(err);
             }
+        }
+    }
+
+    /// False for an event of the first line that went out before the rewrite: the caller
+    /// repoints it instead of handing it out again.
+    fn hand_out(&mut self, event: &Event) -> bool {
+        self.emitted = true;
+        let first_line = matches!(
+            &event.source,
+            crate::model::SourcePtr::Jsonl { byte_offset: 0, .. }
+        );
+        !first_line || self.first_line.insert(event.id.clone())
+    }
+
+    /// The file is read again from its start: the mapper forgets it, and the events handed
+    /// out from the lines after the first, whose offsets moved, are retracted.
+    fn restart(&mut self, reached: u64, batch: &mut AttachBatch) {
+        self.mapper.restart();
+        if std::mem::take(&mut self.emitted) {
+            batch.retractions.push((
+                self.mapper.session().mission_id.clone(),
+                Retraction {
+                    session_id: self.found.session_id.clone(),
+                    below_offset: reached,
+                },
+            ));
         }
     }
 
@@ -131,6 +183,7 @@ pub struct Attach {
     unwatched: Vec<DiscoveredSession>,
     warned: HashSet<PathBuf>,
     polled: bool,
+    excluded: HashSet<SessionId>,
 }
 
 impl Attach {
@@ -145,7 +198,16 @@ impl Attach {
             unwatched: Vec::new(),
             warned: HashSet::new(),
             polled: false,
+            excluded: HashSet::new(),
         })
+    }
+
+    /// Never attach the session `id`, and drop its tail if it is attached: a hosted mission's
+    /// orchestrator is read from its spool, and reading its session file too would count every
+    /// event twice. Its children are attached as usual.
+    pub fn exclude_session(&mut self, id: &SessionId) {
+        self.excluded.insert(id.clone());
+        self.tails.retain(|tail| tail.found.session_id != *id);
     }
 
     /// Blocks until a session file changes or one poll interval passes.
@@ -264,6 +326,7 @@ impl Attach {
     fn admit(&mut self, found: Vec<DiscoveredSession>, batch: &mut AttachBatch) {
         let found: Vec<_> = found
             .into_iter()
+            .filter(|new| !self.excluded.contains(&new.session_id))
             .filter(|new| {
                 self.tails
                     .iter()
@@ -366,6 +429,8 @@ impl Attach {
             index_to,
             finished: false,
             failed: false,
+            emitted: false,
+            first_line: HashSet::new(),
             found,
         })
     }

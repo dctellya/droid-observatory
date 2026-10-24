@@ -7,6 +7,7 @@ mod capture;
 mod ctx;
 mod details;
 mod lanes;
+mod launch;
 mod library;
 mod panel;
 mod raw;

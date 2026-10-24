@@ -95,7 +95,25 @@ pub struct MissionConfig {
     pub orchestrator_model: String,
     pub worker_model: String,
     pub validator_model: String,
+    pub orchestrator_reasoning_effort: String,
+    pub worker_reasoning_effort: String,
+    pub validator_reasoning_effort: String,
+    pub autonomy: String,
     pub branch_pattern: String,
+    pub spool_base: String,
+    pub reap_grace_ms: u64,
+    pub droid_bin: String,
+    pub session_tags: Vec<String>,
+    pub skip_scrutiny: bool,
+    pub skip_user_testing: bool,
+    pub auto_approve_proposal: bool,
+}
+
+impl MissionConfig {
+    /// `spool_base` with a leading `~/` replaced by `$HOME`; hosted spools live under `hosted/`.
+    pub fn resolved_spool_base(&self) -> PathBuf {
+        expand_home(&self.spool_base, std::env::var_os("HOME").as_deref())
+    }
 }
 
 impl Default for MissionConfig {
@@ -104,7 +122,18 @@ impl Default for MissionConfig {
             orchestrator_model: "claude-fable-5.1".into(),
             worker_model: "claude-sonnet-5-5".into(),
             validator_model: "claude-opus-5-5".into(),
+            orchestrator_reasoning_effort: "high".into(),
+            worker_reasoning_effort: "high".into(),
+            validator_reasoning_effort: "high".into(),
+            autonomy: "high".into(),
             branch_pattern: "mission/<name>".into(),
+            spool_base: "~/.droid-observatory".into(),
+            reap_grace_ms: 2000,
+            droid_bin: "droid".into(),
+            session_tags: Vec::new(),
+            skip_scrutiny: false,
+            skip_user_testing: false,
+            auto_approve_proposal: true,
         }
     }
 }
@@ -167,6 +196,7 @@ impl Default for IngestConfig {
 pub struct UiConfig {
     pub event_batch_ms: u64,
     pub dev_port: u16,
+    pub live_output_lines: usize,
 }
 
 impl Default for UiConfig {
@@ -174,6 +204,7 @@ impl Default for UiConfig {
         Self {
             event_batch_ms: 100,
             dev_port: 3141,
+            live_output_lines: 500,
         }
     }
 }
@@ -404,7 +435,18 @@ mod tests {
         ("mission", "orchestrator_model"),
         ("mission", "worker_model"),
         ("mission", "validator_model"),
+        ("mission", "orchestrator_reasoning_effort"),
+        ("mission", "worker_reasoning_effort"),
+        ("mission", "validator_reasoning_effort"),
+        ("mission", "autonomy"),
         ("mission", "branch_pattern"),
+        ("mission", "spool_base"),
+        ("mission", "reap_grace_ms"),
+        ("mission", "droid_bin"),
+        ("mission", "session_tags"),
+        ("mission", "skip_scrutiny"),
+        ("mission", "skip_user_testing"),
+        ("mission", "auto_approve_proposal"),
         ("ingest", "factory_sessions_dir"),
         ("ingest", "factory_logs_dir"),
         ("ingest", "watch_sessions_dir"),
@@ -416,6 +458,7 @@ mod tests {
         ("ingest", "runner_tags"),
         ("ui", "event_batch_ms"),
         ("ui", "dev_port"),
+        ("ui", "live_output_lines"),
         ("store", "path"),
         ("github", "poll_interval_s"),
         ("github", "merge_policy"),

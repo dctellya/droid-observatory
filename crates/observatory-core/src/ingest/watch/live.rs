@@ -63,6 +63,11 @@ impl LiveIngest {
         })
     }
 
+    /// Skips the session file of `id`: its events come from another source (a hosted spool).
+    pub fn exclude_session(&mut self, id: &SessionId) {
+        self.attach.exclude_session(id);
+    }
+
     /// Waits for a file change, a poll interval or the next batch deadline, whichever is
     /// first, then reads what the watched files gained.
     pub fn step(&mut self) -> LiveStep {
@@ -87,6 +92,22 @@ impl LiveIngest {
                 .map_err(StoreError::from)
                 .and_then(|capture| self.store.record_tree(tree, &capture, false));
             if let Err(err) = recorded {
+                step.errors.push(err);
+            }
+        }
+        for (mission, retraction) in batch.retractions {
+            if let Err(err) = self
+                .store
+                .retract_events(&retraction.session_id, retraction.below_offset)
+            {
+                step.errors.push(err);
+            }
+            let unknown = self.store.unknown_count(&mission).unwrap_or(0);
+            self.batcher
+                .retract(&mission, retraction, unknown, Instant::now());
+        }
+        for event in &batch.repointed {
+            if let Err(err) = self.store.update_pointer(event) {
                 step.errors.push(err);
             }
         }

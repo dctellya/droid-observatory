@@ -3,12 +3,14 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use observatory_core::config::Config;
 use observatory_core::ingest::watch::{LiveIngest, LiveStep};
 use observatory_core::ingest::{AttachStatus, EventBatch, IngestError};
+use observatory_core::model::SessionId;
 use observatory_core::store::Store;
 use tauri::{AppHandle, Emitter};
 
@@ -38,12 +40,13 @@ pub fn spawn(
     cfg: Config,
     store_path: PathBuf,
     status: Arc<Mutex<AttachStatus>>,
+    excluded: Receiver<SessionId>,
 ) -> Ingest {
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     let started = std::thread::Builder::new()
         .name("ingest".to_owned())
-        .spawn(move || run(&app, &cfg, &store_path, &status, &flag));
+        .spawn(move || run(&app, &cfg, &store_path, &status, &flag, &excluded));
     if let Err(err) = &started {
         tracing::error!(%err, "ingest thread");
     }
@@ -59,6 +62,7 @@ fn run(
     store_path: &Path,
     status: &Mutex<AttachStatus>,
     stop: &AtomicBool,
+    excluded: &Receiver<SessionId>,
 ) {
     let started = Store::open(store_path)
         .map_err(|err| err.to_string())
@@ -80,6 +84,9 @@ fn run(
     };
     tracing::info!(dir = %cfg.ingest.factory_sessions_dir, "ingest_started");
     while !stop.load(Ordering::Relaxed) {
+        while let Ok(id) = excluded.try_recv() {
+            live.exclude_session(&id);
+        }
         report(app, status, live.step());
     }
     for batch in live.finish() {
@@ -123,7 +130,7 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
     }
 }
 
-fn log_batch(batch: &EventBatch) {
+pub(crate) fn log_batch(batch: &EventBatch) {
     tracing::info!(
         mission_id = %batch.mission_id,
         count = batch.events.len(),

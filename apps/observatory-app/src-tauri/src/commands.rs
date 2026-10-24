@@ -2,16 +2,18 @@
 
 use std::path::PathBuf;
 
-use observatory_core::config::MissionConfig;
+use observatory_core::config::{Config, MissionConfig};
+use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{EventId, MissionId, SessionId, Timestamp};
 use observatory_core::view::{
-    BoardDigest, BoardView, DeclaredModels, Filter, MissionRow, RawLineView, ViewConfig,
-    WorkerGrouping, branch_of,
+    BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus, LaunchConfig,
+    Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
 };
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::Shell;
+use crate::host::{self, Hosts};
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -110,6 +112,57 @@ pub async fn board(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn event_raw(shell: State<'_, Shell>, event_id: EventId) -> Result<RawLineView, String> {
     lock(&shell.store).event_raw(&event_id).map_err(text)
+}
+
+/// Starts the hosted mission of a validated launch form and returns at once; events,
+/// live output and status follow as `events_appended`, `live_output` and `hosted_status`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn host_launch(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    hosts: State<'_, Hosts>,
+    config: LaunchConfig,
+) -> Result<Launched, String> {
+    host::launch(&app, &hosts, &shell.cfg, config).await
+}
+
+/// Pause, resume, message, answer, approve or deny, written to the hosted process.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn host_control(
+    hosts: State<'_, Hosts>,
+    launch_id: String,
+    control: HostControl,
+) -> Result<ControlSent, String> {
+    hosts.control(&launch_id, &control)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn host_status(
+    hosts: State<'_, Hosts>,
+    launch_id: String,
+) -> Result<HostedStatus, String> {
+    hosts.status(&launch_id)
+}
+
+/// The panel has drawn these events: the render half of the 1 s latency measurement (the
+/// emit half is the `events_appended` line of the host). `open` says whether the board of
+/// their mission was on screen.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn panel_rendered(mission_id: String, event_ids: Vec<String>, open: bool) {
+    tracing::info!(
+        mission_id,
+        count = event_ids.len(),
+        open,
+        event_ids = %event_ids.join(","),
+        "panel_rendered"
+    );
+}
+
+/// The configuration in effect: the launch form pre-fills from `[mission]` and the live
+/// output keeps `[ui].live_output_lines`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn app_config(shell: State<'_, Shell>) -> Result<Config, String> {
+    Ok(shell.cfg.clone())
 }
 
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {

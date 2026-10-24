@@ -1,4 +1,5 @@
 use crate::capture::Capture;
+use crate::launch::{HostedCtx, LiveOutputView};
 use leptos::prelude::*;
 use observatory_core::model::{SessionId, Timestamp};
 use observatory_core::view::{
@@ -77,7 +78,17 @@ pub fn AgentPanel(
                         let stream = capture
                             .events
                             .with(|events| agent_stream(events, &session, at.get()));
-                        stream_view(&stream, selected, &entries.get())
+                        let live = use_context::<HostedCtx>()
+                            .filter(|hosted| {
+                                hosted
+                                    .output
+                                    .with(|output| output.launch_id() == Some(session.0.as_str()))
+                            })
+                            .map(|_| view! { <LiveOutputView /> });
+                        view! {
+                            {stream_view(&stream, selected, &entries.get())}
+                            {live}
+                        }
                     })
             }}
         </section>

@@ -174,7 +174,17 @@ impl Rec<'_> {
 /// The phase of an event (D-024). The kind's own phase wins; role-neutral kinds of an
 /// integration or contract session take that session's phase; the rest take the role's.
 /// `feature` is the session's feature, not the one a `Task` call names.
+///
+/// A `feature.defined` is the one fixed-phase kind that follows its emitter (D-032): a
+/// validator that names the features it reviews is working in its own phase, not planning.
 fn lane_of(kind: &EventKind, session: &SessionMeta, feature: Option<&FeatureId>) -> Lane {
+    if matches!(kind, EventKind::FeatureDefined) {
+        match session.role {
+            Role::ScrutinyValidator => return Lane::Scrutiny,
+            Role::UserTestingValidator => return Lane::UserTesting,
+            _ => {}
+        }
+    }
     if kind.fixed_lane().is_some() || matches!(kind, EventKind::Unknown { .. }) {
         return kind.lane(session.role);
     }
@@ -385,8 +395,13 @@ fn message(rec: &mut Rec<'_>, state: &mut State, line: &Value) {
         return rec.unknown("message");
     };
     let role = message["role"].as_str();
-    if !matches!(role, Some("user" | "assistant")) {
+    if !matches!(role, Some("user" | "assistant" | "system")) {
         return rec.unknown("message");
+    }
+    // Droid's own annotations ("Request interrupted by user" after a pause): the pause is
+    // already an event of its own, the note carries no lane meaning.
+    if role == Some("system") {
+        return;
     }
     if role == Some("assistant") {
         model_of(rec, state, message);

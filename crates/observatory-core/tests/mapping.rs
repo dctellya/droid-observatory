@@ -270,7 +270,7 @@ fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
     let count = |lane: Lane| events.iter().filter(|event| event.lane == lane).count();
 
     let phases: Vec<usize> = Lane::ALL.into_iter().map(count).collect();
-    assert_eq!(phases, [443, 69, 424, 87, 122, 134, 0], "Plan..Gate");
+    assert_eq!(phases, [437, 69, 424, 93, 122, 134, 0], "Plan..Gate");
     assert_eq!(phases.iter().sum::<usize>(), events.len());
 
     let overlays: Vec<&Event> = events
@@ -289,6 +289,80 @@ fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
             .all(|event| event.overlay == event.kind.overlay()),
         "the overlay is the kind's"
     );
+}
+
+/// The scrutiny validator that reads the feature list and names the features it reviews.
+const SCRUTINY_SESSION: &str = "6eb88099-278d-4ddb-9f5d-23f1255cdbc5";
+
+#[test]
+fn a_feature_defined_by_a_scrutiny_validator_lands_in_the_scrutiny_lane() {
+    let (_, events) = map_m0();
+    let defined: Vec<&Event> = events
+        .iter()
+        .filter(|event| event.kind == EventKind::FeatureDefined)
+        .collect();
+    let by_session = |event: &&Event| {
+        event
+            .session_id
+            .as_ref()
+            .is_some_and(|id| id.0 == SCRUTINY_SESSION)
+    };
+    let of_scrutiny: Vec<&Event> = defined.iter().copied().filter(by_session).collect();
+
+    assert_eq!(
+        of_scrutiny.len(),
+        6,
+        "the capture holds six, all of 6eb88099"
+    );
+    assert_eq!(defined.len(), 6, "no other session defines a feature");
+    assert!(
+        of_scrutiny
+            .iter()
+            .all(|event| event.role == Role::ScrutinyValidator && event.lane == Lane::Scrutiny),
+        "scrutiny: {:?}",
+        of_scrutiny.iter().map(|e| e.lane).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.lane == Lane::Plan && by_session(event))
+            .count(),
+        0,
+        "the session has no event in Plan"
+    );
+}
+
+#[test]
+fn a_feature_defined_follows_the_phase_of_the_session_that_emits_it() {
+    let task = assistant(
+        1,
+        "m1",
+        json!([tool_use(
+            "t",
+            "Task",
+            json!({"description": "Review m0-fixture-freeze", "subagent_type": "worker"})
+        )]),
+    );
+    let lanes = |role: Role| {
+        let mut session = Session::new(SessionMeta {
+            milestones: vec![MilestoneId("m0".to_owned())],
+            ..meta(role)
+        });
+        let events = session.feed(&task);
+        assert_eq!(kinds(&events), ["task.assigned", "feature.defined"]);
+        (events[0].lane, events[1].lane)
+    };
+
+    assert_eq!(lanes(Role::Orchestrator), (Lane::Plan, Lane::Plan));
+    assert_eq!(
+        lanes(Role::ScrutinyValidator),
+        (Lane::Scrutiny, Lane::Scrutiny)
+    );
+    assert_eq!(
+        lanes(Role::UserTestingValidator),
+        (Lane::UserTesting, Lane::UserTesting)
+    );
+    assert_eq!(lanes(Role::Worker), (Lane::Build, Lane::Plan));
 }
 
 #[test]
@@ -373,6 +447,7 @@ impl Session {
             },
             session_id: SessionId(SESSION.to_owned()),
             bytes,
+            arrived_at: None,
         };
         self.last_offset = self.offset;
         self.offset += record.bytes.len() as u64 + 1;
@@ -917,6 +992,19 @@ fn root_turn_outcomes_pause_or_escalate_and_a_finished_turn_is_quiet() {
 }
 
 #[test]
+fn a_turn_the_host_ended_with_process_exit_maps_like_a_cancel_in_child_and_root() {
+    let outcome = json!({"type": "agent_turn_outcome", "turnId": "t", "reason": "process_exit"});
+
+    let mut child = Session::new(meta(Role::Worker));
+    child.feed(&user(1, json!([{"type": "text", "text": "start"}])));
+    assert_eq!(kinds(&child.feed(&outcome)), ["task.skipped"]);
+
+    let mut root = Session::new(meta(Role::Orchestrator));
+    root.feed(&user(1, json!([])));
+    assert_eq!(kinds(&root.feed(&outcome)), ["mission.paused"]);
+}
+
+#[test]
 fn the_plan_the_questions_and_the_features_come_from_the_orchestrators_tool_calls() {
     let mut session = Session::new(meta(Role::Orchestrator));
     let proposal =
@@ -1142,5 +1230,18 @@ fn chatter_that_carries_no_prd_event_maps_to_no_event() {
         session
             .feed(&user(2, json!([tool_result("r", "contents", false)])))
             .is_empty()
+    );
+}
+
+#[test]
+fn a_system_note_such_as_request_interrupted_by_user_maps_to_no_event() {
+    let mut session = Session::new(meta(Role::Orchestrator));
+    let note = json!({"type": "message", "id": "m", "seq": 1, "timestamp": at(1),
+        "message": {"role": "system", "visibility": "llm_only",
+            "content": [{"type": "text", "text": "Request interrupted by user"}]}});
+
+    assert!(
+        session.feed(&note).is_empty(),
+        "a message of the system role is Droid's own annotation, not an unknown line"
     );
 }

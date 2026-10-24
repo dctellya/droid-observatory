@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use observatory_core::config::IngestConfig;
-use observatory_core::ingest::SessionTree;
 use observatory_core::ingest::watch::{Attach, AttachBatch};
 use observatory_core::ingest::{IngestError, JsonlSource, Source};
+use observatory_core::ingest::{Retraction, SessionTree};
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
-use observatory_core::model::{Event, SessionId, SourcePtr};
+use observatory_core::model::{Event, MissionId, SessionId, SourcePtr};
 
 const M0_ROOT: &str = "2026-10-22-observatory-v1-m0.jsonl";
 
@@ -85,6 +85,7 @@ pub struct Collected {
     pub events: Vec<Event>,
     pub trees: Vec<SessionTree>,
     pub warnings: Vec<IngestError>,
+    pub retractions: Vec<(MissionId, Retraction)>,
     pub unwatched: usize,
 }
 
@@ -93,6 +94,7 @@ impl Collected {
         self.events.extend(batch.events);
         self.trees.extend(batch.trees);
         self.warnings.extend(batch.warnings);
+        self.retractions.extend(batch.retractions);
         self.unwatched = batch.unwatched;
     }
 }

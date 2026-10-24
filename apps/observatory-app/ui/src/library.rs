@@ -18,6 +18,7 @@ pub fn Library(
     on_pick: Callback<Vec<web_sys::File>>,
     on_open: Callback<String>,
     on_open_path: Callback<String>,
+    on_launch: Callback<()>,
 ) -> impl IntoView {
     let path = RwSignal::new(String::new());
     let folder: NodeRef<Input> = NodeRef::new();
@@ -89,6 +90,10 @@ pub fn Library(
                     </tbody>
                 </table>
             </Show>
+
+            <button type="button" aria-label="open-launch" on:click=move |_| on_launch.run(())>
+                "Launch a mission"
+            </button>
 
             <AttachPanel />
 

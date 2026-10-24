@@ -47,6 +47,43 @@ fn event_batches_flush_within_event_batch_ms() {
 }
 
 #[test]
+fn a_retraction_drops_the_pending_events_it_covers_and_travels_with_the_batch() {
+    use observatory_core::ingest::Retraction;
+    use observatory_core::model::SourcePtr;
+
+    let events: Vec<Event> = golden()
+        .into_iter()
+        .filter(|event| matches!(event.source, SourcePtr::Jsonl { .. }))
+        .take(12)
+        .collect();
+    let mission = events[0].mission_id.clone();
+    let offset = |event: &Event| match &event.source {
+        SourcePtr::Jsonl { byte_offset, .. } => *byte_offset,
+        _ => unreachable!(),
+    };
+    let below = offset(&events[8]);
+    let retraction = Retraction {
+        session_id: events[0].session_id.clone().unwrap(),
+        below_offset: below,
+    };
+    let start = Instant::now();
+    let mut batcher = EventBatcher::new(BATCH);
+    batcher.push(&mission, events[..10].to_vec(), 0, start);
+    batcher.retract(&mission, retraction.clone(), 0, start);
+    batcher.push(&mission, events[10..].to_vec(), 0, start);
+
+    let flushed = batcher.flush_all();
+    assert_eq!(flushed.len(), 1);
+    assert_eq!(flushed[0].retracted, vec![retraction]);
+    let kept: Vec<&Event> = events[..10]
+        .iter()
+        .filter(|event| offset(event) == 0 || offset(event) >= below)
+        .chain(&events[10..])
+        .collect();
+    assert_eq!(flushed[0].events.iter().collect::<Vec<_>>(), kept);
+}
+
+#[test]
 fn a_later_push_waits_for_its_own_interval() {
     let events = golden();
     let mission = events[0].mission_id.clone();

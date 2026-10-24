@@ -57,7 +57,7 @@ fn turn_usage_events_do_not_appear_in_lane_rows_or_cards() {
         let b = board(&without, grouping);
 
         let lane_events: Vec<u64> = a.lanes.iter().map(|lane| lane.event_count).collect();
-        assert_eq!(lane_events, [443, 69, 424, 87, 122, 134, 0], "{grouping:?}");
+        assert_eq!(lane_events, [437, 69, 424, 93, 122, 134, 0], "{grouping:?}");
         assert_eq!(a.tray_unknown, 0);
         assert!(a.tray.is_empty());
         assert_eq!(a.event_count, 1279);
@@ -78,7 +78,7 @@ fn turn_usage_events_do_not_appear_in_lane_rows_or_cards() {
         let sb = BoardState::fold(&without, &cfg(grouping));
         assert_eq!(sa.sublanes, sb.sublanes, "{grouping:?}");
         assert_eq!(sa.cards, sb.cards);
-        assert_eq!(sa.lane_counts.to_vec(), [443, 69, 424, 87, 122, 134, 0]);
+        assert_eq!(sa.lane_counts.to_vec(), [437, 69, 424, 93, 122, 134, 0]);
     }
 
     assert_eq!(lane_counts(&with), lane_counts(&without));
