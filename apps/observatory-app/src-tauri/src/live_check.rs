@@ -17,7 +17,7 @@ use observatory_core::ingest::AttachStatus;
 use observatory_core::ingest::EventBatch;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::store::Store;
-use observatory_core::view::{HostedStatus, LaunchForm, OutputLines};
+use observatory_core::view::{HostedStatus, LaunchForm, OutputLines, PermissionRow};
 use tauri::{Listener, Manager};
 
 use crate::Shell;
@@ -63,6 +63,35 @@ async fn wait_until<T>(what: &str, within: Duration, mut probe: impl FnMut() -> 
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// The orchestrator is a model: an interrupted or denied turn does not always end in a new
+/// proposal, so a quiet minute is answered with a nudge, as a person would.
+async fn await_proposal(hosts: &Hosts, id: &str, skip: &str) -> PermissionRow {
+    for nudge in 0..4 {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(60) {
+            let status = hosts.status(id).expect("the run is registered");
+            if let Some(found) = status
+                .permissions
+                .iter()
+                .find(|p| p.request_id != skip && p.can_approve && p.can_deny)
+            {
+                return found.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        println!("no proposal after 60 s: nudge {nudge}");
+        hosts
+            .control(
+                id,
+                &HostControl::Message {
+                    text: "Propose the mission now.".to_owned(),
+                },
+            )
+            .expect("the nudge is written");
+    }
+    panic!("no mission proposal after four nudges");
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
@@ -235,14 +264,7 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         resume.request_id, resume.method
     );
 
-    let proposal = wait_until("the mission proposal", Duration::from_secs(240), || {
-        current()
-            .permissions
-            .iter()
-            .find(|p| p.can_approve && p.can_deny)
-            .cloned()
-    })
-    .await;
+    let proposal = await_proposal(&hosts, &id, "").await;
     println!(
         "proposal waits: request {} tools {:?}",
         proposal.request_id, proposal.tools
@@ -268,18 +290,7 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         .expect("the message is written");
     println!("after the denial: message request {}", again.request_id);
 
-    let second = wait_until(
-        "a second proposal after the denial",
-        Duration::from_secs(180),
-        || {
-            current()
-                .permissions
-                .iter()
-                .find(|p| p.request_id != proposal.request_id && p.can_approve)
-                .cloned()
-        },
-    )
-    .await;
+    let second = await_proposal(&hosts, &id, &proposal.request_id).await;
     println!("second proposal waits: request {}", second.request_id);
     let approved = sent(
         "approve",
