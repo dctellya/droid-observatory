@@ -42,6 +42,17 @@ Counts on the committed M0 golden (`jq`, before the change): `feature_defined` 6
   that names a feature in a `Task` description is reviewing it. Plan kept six events of a session that has no
   other Plan activity, and a Plan card for a scrutiny-only feature would look planned, not reviewed. The
   cycle clock is not affected either way: it reads the kind, not the lane.
+- **Use `Lane::home(role)` for every role's `feature.defined`.** Rejected: it is a different rule, not a
+  generalisation of this one. `Lane::home(Role::Worker)` is `Build` (`model/lane.rs`), so the kind would
+  split across Build, Scrutiny and User testing by role where this decision keeps one exception: the two
+  validator roles follow their phase, every other role stays in Plan. `home` is documented as the fallback
+  "when nothing else fixes the event's phase", and `feature.defined` fixes one: Plan, the start of the
+  cycle (D-024 rule 1e); routing it through the role fallback discards the kind's own phase. The M0 capture
+  has no worker or user-testing `feature.defined` (counts above), so the two rules agree on the golden, but
+  the hand-made role test pins the difference: under `Lane::home` its worker case would sit in Build, and
+  any worker `feature.defined` in a later capture would move between Build and Plan, changing the per-lane
+  totals the golden and the lane-total tests pin (Plan 437, Build 424, Scrutiny 93). The owner's decision
+  covers validator sessions only.
 - **A Build sub-lane (or a "validator-defined" sub-lane under Plan).** Rejected: Build is the workers'
   phase (one sub-lane per worker session, VAL-BOARD-006) and the validator is not a worker; a sub-lane under
   Plan keeps the events on the wrong axis and adds a view concept for six events. Lanes are the seven phases of
