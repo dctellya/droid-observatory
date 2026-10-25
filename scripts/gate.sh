@@ -36,6 +36,14 @@ fi
 cd "$(git rev-parse --show-toplevel)" || exit 2
 command -v jq > /dev/null 2>&1 || { echo "gate: jq is required" >&2; exit 2; }
 
+stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# Decimal points in the duration must be dots whatever the user's locale, or jq rejects the number.
+now() { LC_ALL=C perl -MTime::HiRes=time -e 'printf "%.3f\n", time' 2> /dev/null || date +%s; }
+# The clock starts at entry: the tree computation (0.5 s on this repository) and the tool-version calls are part
+# of the wall time a caller measures around the script, so `seconds` must include them.
+started_at=$(stamp)
+t0=$(now)
+
 idx=$(mktemp "${TMPDIR:-/tmp}/gateidx.XXXXXX")
 out=$(mktemp "${TMPDIR:-/tmp}/gateout.XXXXXX")
 cleanup() { rm -f "$idx" "$out" "$out.code"; }
@@ -106,8 +114,6 @@ if [ -z "$session" ]; then
   fi
 fi
 
-stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-
 if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
   # One line per served hit, for the usage report: the stored seconds are the run the hit saved, the session is
   # the one that was served (the record keeps the one that proved it).
@@ -118,16 +124,11 @@ if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$
   exit "$(jq -r .exit_code "$file")"
 fi
 
-# Decimal points in the duration must be dots whatever the user's locale, or jq rejects the number.
-now() { LC_ALL=C perl -MTime::HiRes=time -e 'printf "%.3f\n", time' 2> /dev/null || date +%s; }
-
 if [ "$force" -eq 1 ]; then
   echo "gate $name: forced $tree, running"
 else
   echo "gate $name: miss $tree, running"
 fi
-started_at=$(stamp)
-t0=$(now)
 # The command's own exit code travels through a file: a pipe into tee would report tee's.
 { "$@"; echo $? > "$out.code"; } 2>&1 | tee "$out" &
 wait $!
