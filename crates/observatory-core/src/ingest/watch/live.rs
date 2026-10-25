@@ -101,6 +101,16 @@ impl LiveIngest {
             if let Err(err) = recorded {
                 step.errors.push(err);
             }
+            // record_tree names every session from the files as they are now; a name the
+            // session kept (a refused change) stays.
+            for session in tree.sessions() {
+                let kept = self.names.current(&session.id);
+                if let Some(kept) = kept.filter(|kept| *kept != session.display_name())
+                    && let Err(err) = self.store.set_session_name(&session.id, kept)
+                {
+                    step.errors.push(err);
+                }
+            }
         }
         for (mission, retraction) in batch.retractions {
             if let Err(err) = self
