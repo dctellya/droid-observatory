@@ -2,7 +2,7 @@
 # Test for scripts/gate.sh (rule 27, VAL-TOOL-001..004): miss, hit, force, key changes and key stability,
 # in a scratch git repository so the real worktree and its records are never touched.
 set -u
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID
 root=$(cd "$(dirname "$0")/../.." && pwd)
 gate="$root/scripts/gate.sh"
 tmp=$(mktemp -d)
@@ -187,7 +187,11 @@ PATH="$tmp/bin2:$PATH" sh "$gate" test -- sh "$tmp/ok.sh" > /dev/null 2>&1
 [ "$(runs)" -eq $((before + 1)) ] || fail "a changed toolchain was not a miss"
 case "$(json test .tool)" in "rustc 1.99.2 | cargo 1.99.2") ;; *) fail "stored tool after bump: $(json test .tool)" ;; esac
 
-# Session fallback: newest settings file by mtime, then unknown.
+# Session sources: DROID_SESSION_ID, then FACTORY_SESSION_ID (what the Droid shell exports), then the newest
+# settings file by mtime, then unknown.
+(unset DROID_SESSION_ID; FACTORY_SESSION_ID=fac-id sh "$gate" factory -- sh "$tmp/ok.sh" > /dev/null 2>&1)
+[ "$(json factory .session)" = "fac-id" ] || fail "FACTORY_SESSION_ID session: $(json factory .session)"
+[ "$(json factory .session_source)" = "FACTORY_SESSION_ID" ] || fail "FACTORY_SESSION_ID source: $(json factory .session_source)"
 mkdir -p "$tmp/sessions/proj"
 : > "$tmp/sessions/proj/old-id.settings.json"
 : > "$tmp/sessions/proj/new-id.settings.json"

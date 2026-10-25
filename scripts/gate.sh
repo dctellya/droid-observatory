@@ -77,6 +77,10 @@ fi
 session=${DROID_SESSION_ID:-}
 session_source=DROID_SESSION_ID
 if [ -z "$session" ]; then
+  session=${FACTORY_SESSION_ID:-}
+  session_source=FACTORY_SESSION_ID
+fi
+if [ -z "$session" ]; then
   newest=$(ls -t "${GATE_SESSIONS_DIR:-$HOME/.factory/sessions}"/*/*.settings.json 2> /dev/null | head -n 1)
   if [ -n "$newest" ]; then
     session=$(basename "$newest" .settings.json)
