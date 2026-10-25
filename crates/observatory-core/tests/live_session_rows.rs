@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use common::{append, session_start};
 use observatory_core::config::Config;
-use observatory_core::ingest::watch::LiveIngest;
+use observatory_core::ingest::watch::{LiveIngest, RenameRefused, SessionRename};
 use observatory_core::model::SessionId;
 use observatory_core::store::Store;
 use tempfile::TempDir;
@@ -138,4 +138,127 @@ fn a_worker_row_goes_from_its_id_to_its_feature_id_once_and_replay_agrees() {
         .replay_file(&path, &live_config(dir.path()).ingest)
         .unwrap();
     assert_eq!(stored_name(&replay_path, "worker-1"), second);
+}
+
+/// Steps until `found` has seen something or the limit passes; returns every step's renames
+/// and refusals.
+fn collect_changes(
+    live: &mut LiveIngest,
+    until: impl Fn(&[SessionRename], &[RenameRefused]) -> bool,
+) -> (Vec<SessionRename>, Vec<RenameRefused>) {
+    let (mut renamed, mut refused) = (Vec::new(), Vec::new());
+    let started = Instant::now();
+    while started.elapsed() < LIMIT && !until(&renamed, &refused) {
+        let step = live.step();
+        renamed.extend(step.renamed);
+        refused.extend(step.refused);
+    }
+    (renamed, refused)
+}
+
+/// A worker session named by its id, then renamed to `feature`; returns the live ingest, the
+/// store path and the file.
+fn renamed_worker(
+    dir: &TempDir,
+    store_dir: &TempDir,
+    feature: &str,
+) -> (LiveIngest, PathBuf, PathBuf) {
+    let store_path = store_dir.path().join("rows.sqlite");
+    let path = session_path(dir.path(), "worker-1");
+    write_sidecar(
+        dir.path(),
+        "worker-1",
+        &["exec", "mission-worker", "mission-session"],
+    );
+    append(&path, &session_start("worker-1", None));
+    let mut live =
+        LiveIngest::start(&live_config(dir.path()), Store::open(&store_path).unwrap()).unwrap();
+    step_until(&mut live, &store_path, "worker-1", |name| name.is_some());
+    append(&path, &runner_message(feature));
+    let (renamed, _) = collect_changes(&mut live, |renamed, _| !renamed.is_empty());
+    assert_eq!(renamed.len(), 1, "{renamed:?}");
+    (live, store_path, path)
+}
+
+#[test]
+fn the_rename_is_reported_with_the_old_and_new_name_and_a_time() {
+    let dir = TempDir::new().unwrap();
+    let store_dir = TempDir::new().unwrap();
+    let path = session_path(dir.path(), "worker-1");
+    write_sidecar(dir.path(), "worker-1", &["exec", "mission-worker"]);
+    append(&path, &session_start("worker-1", None));
+    let mut live = LiveIngest::start(
+        &live_config(dir.path()),
+        Store::open(&store_dir.path().join("rows.sqlite")).unwrap(),
+    )
+    .unwrap();
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_millis(300) {
+        live.step();
+    }
+    append(&path, &runner_message("m3-feature-x"));
+
+    let (renamed, refused) = collect_changes(&mut live, |renamed, _| !renamed.is_empty());
+
+    assert_eq!(renamed.len(), 1, "{renamed:?}");
+    assert_eq!(renamed[0].session_id, SessionId("worker-1".to_owned()));
+    assert_eq!(renamed[0].old, "worker-1");
+    assert_eq!(renamed[0].new, "m3-feature-x");
+    assert!(
+        renamed[0].at.starts_with("20") && renamed[0].at.ends_with('Z'),
+        "{}",
+        renamed[0].at
+    );
+    assert!(refused.is_empty(), "{refused:?}");
+}
+
+#[test]
+fn a_second_name_change_is_refused_logged_once_and_not_stored() {
+    let dir = TempDir::new().unwrap();
+    let store_dir = TempDir::new().unwrap();
+    let (mut live, store_path, path) = renamed_worker(&dir, &store_dir, "m3-feature-x");
+
+    let mut file = session_start("worker-1", None);
+    file.extend(runner_message("m3-feature-y"));
+    std::fs::write(&path, file).unwrap();
+    let (renamed, refused) = collect_changes(&mut live, |_, refused| !refused.is_empty());
+    let later = collect_changes(&mut live, |_, _| false);
+
+    assert!(renamed.is_empty(), "{renamed:?}");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0].kept, "m3-feature-x");
+    assert_eq!(refused[0].attempted, "m3-feature-y");
+    assert!(
+        later.1.is_empty(),
+        "the refusal is logged once: {:?}",
+        later.1
+    );
+    assert_eq!(
+        stored_name(&store_path, "worker-1").as_deref(),
+        Some("m3-feature-x")
+    );
+}
+
+#[test]
+fn a_runner_tag_never_becomes_a_name() {
+    let dir = TempDir::new().unwrap();
+    let store_dir = TempDir::new().unwrap();
+    let store_path = store_dir.path().join("rows.sqlite");
+    let path = session_path(dir.path(), "worker-1");
+    write_sidecar(dir.path(), "worker-1", &["exec", "mission-worker"]);
+    append(&path, &session_start("worker-1", None));
+    let mut live =
+        LiveIngest::start(&live_config(dir.path()), Store::open(&store_path).unwrap()).unwrap();
+    step_until(&mut live, &store_path, "worker-1", |name| name.is_some());
+
+    append(&path, &runner_message("mission-worker"));
+    let (renamed, refused) = collect_changes(&mut live, |_, refused| !refused.is_empty());
+
+    assert!(renamed.is_empty(), "{renamed:?}");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0].attempted, "mission-worker");
+    assert_eq!(
+        stored_name(&store_path, "worker-1").as_deref(),
+        Some("worker-1")
+    );
 }
