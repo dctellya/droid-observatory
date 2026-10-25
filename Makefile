@@ -19,8 +19,12 @@ MAX_FILE_KB ?= 200
 # M0 onward enforces 80; CI passes its own value through the same name.
 COVERAGE_MIN ?= 80
 
+# Gate cache (rule 27): check, test, lint and coverage run once per (tree, toolchain, command) and replay
+# the stored verdict after; FORCE=1 reruns. CI calls cargo directly and does not use the cache.
+GATE := sh scripts/gate.sh $(if $(FORCE),--force)
+
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-scripts check-gate-cache check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
 
 help: ## List targets
@@ -34,7 +38,18 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures ## All light checks (= mission-branch CI)
+check: ## All light checks (= mission-branch CI), cached by tree through scripts/gate.sh
+	@$(GATE) check -- $(MAKE) --no-print-directory check-all
+
+check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
+
+check-scripts: check-gate-cache ## Shell tests of the repository scripts
+	@sh scripts/tests/compile-share.sh
+	@sh scripts/tests/usage-from-log.sh
+	@sh scripts/tests/log-tool-call-duration.sh
+
+check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
+	@sh scripts/tests/gate_test.sh
 
 check-docs: ## Lint markdown
 	@markdownlint-cli2 "**/*.md"
@@ -83,14 +98,14 @@ endif
 
 lint: ## Clippy with warnings denied
 ifneq (,$(HAS_CARGO))
-	@cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
+	@$(GATE) lint -- cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
 else
 	@echo "lint: no Cargo.toml yet, skipped"
 endif
 
 test: ## Run the test suite
 ifneq (,$(HAS_CARGO))
-	@cargo test --workspace --all-features
+	@$(GATE) test -- cargo test --workspace --all-features
 else
 	@echo "test: no Cargo.toml yet, skipped"
 endif
@@ -111,7 +126,7 @@ endif
 
 coverage: ## Line coverage of observatory-core (run alone, not part of check)
 ifneq (,$(HAS_CARGO))
-	@cargo llvm-cov -p observatory-core --fail-under-lines $(COVERAGE_MIN)
+	@$(GATE) coverage -- cargo llvm-cov -p observatory-core --fail-under-lines $(COVERAGE_MIN)
 else
 	@echo "coverage: no Cargo.toml yet, skipped"
 endif

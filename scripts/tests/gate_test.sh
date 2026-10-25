@@ -2,7 +2,7 @@
 # Test for scripts/gate.sh (rule 27, VAL-TOOL-001..004): miss, hit, force, key changes and key stability,
 # in a scratch git repository so the real worktree and its records are never touched.
 set -u
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE
 root=$(cd "$(dirname "$0")/../.." && pwd)
 gate="$root/scripts/gate.sh"
 tmp=$(mktemp -d)
