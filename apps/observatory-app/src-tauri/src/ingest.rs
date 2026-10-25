@@ -105,6 +105,24 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
         );
         let _ = app.emit("session_discovered", row);
     }
+    for rename in &step.renamed {
+        tracing::info!(
+            session_id = %rename.session_id,
+            old = %rename.old,
+            new = %rename.new,
+            at = %rename.at,
+            "session_renamed"
+        );
+    }
+    for refusal in &step.refused {
+        tracing::warn!(
+            session_id = %refusal.session_id,
+            kept = %refusal.kept,
+            attempted = %refusal.attempted,
+            at = %refusal.at,
+            "session_rename_refused"
+        );
+    }
     for warning in &step.warnings {
         match warning {
             IngestError::TooLarge { path, mb } => {
