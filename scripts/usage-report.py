@@ -22,6 +22,12 @@ from datetime import datetime, timedelta, timezone
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
 
+REPRODUCIBILITY = """Reproducibility: the tables are a function of the files read and the window. The log is flushed with a lag
+(m3-usage-target measured it), so a byte-for-byte rerun needs a --to at least 5 minutes before the generation time.
+Without --to the window ends at the generation time minus 1 s and later runs differ. Sidecar readings can move while
+a session is live: they are lifetime totals read at generation time, and the section lists the mtime of every sidecar
+it read so a change can be traced to the file."""
+
 DEFAULT_MISSION_DIR = "/Users/dct/.factory/missions/e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c"
 ROLES = ("orchestrator", "orchestrator subagent", "worker", "validator", "self-check", "other")
 CLASSES = ("waits", "decisions and boundary reports", "narration", "unmatched")
@@ -432,6 +438,67 @@ def gate_rows(gate_dir, repo_root, start, end):
     return rows
 
 
+def gate_label(gate_dir, repo_root):
+    return os.path.relpath(gate_dir, repo_root) if gate_dir.startswith(repo_root) else os.path.basename(gate_dir.rstrip("/"))
+
+
+def hit_rows(gate_dir, start, end):
+    """Cache hits from hits.log (scripts/gate.sh): time, name, tree, stored seconds, session, session_source."""
+    rows = []
+    try:
+        with open(os.path.join(gate_dir, "hits.log")) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        cells = line.split("\t")
+        if len(cells) != 6:
+            continue
+        try:
+            when, seconds = cells[0], float(cells[3])
+            inside = sec(start) <= sec(when) <= sec(end)
+        except ValueError:
+            continue
+        if inside:
+            rows.append({"time": when, "name": cells[1], "tree": cells[2], "seconds": seconds,
+                         "session": cells[4], "session_source": cells[5]})
+    return rows
+
+
+def hit_command(gate_dir, hit):
+    try:
+        with open(os.path.join(gate_dir, hit["tree"], hit["name"] + ".json")) as f:
+            return json.load(f).get("command")
+    except (ValueError, OSError):
+        return None
+
+
+def gates_summary(runs, hits, gate_dir, label):
+    """Rows of the Gates table: per gate and in total, for gates run and gates served from cache."""
+    rows = []
+    for kind, items, src_of in (
+            ("gates run", [(g.get("name"), g.get("command"), g.get("seconds", 0), g["started_at"], g.get("finished_at") or g["started_at"])
+                           for g in runs], lambda n: "%s/*/%s.json" % (label, n)),
+            ("gates served from cache", [(h["name"], hit_command(gate_dir, h), h["seconds"], h["time"], h["time"]) for h in hits],
+             lambda n: "%s/hits.log" % label)):
+        by_name = collections.OrderedDict()
+        for it in sorted(items, key=lambda it: (str(it[0]), it[3])):
+            by_name.setdefault(it[0], []).append(it)
+        groups = [(n, v, src_of(n)) for n, v in by_name.items()]
+        groups.append(("all", [it for v in by_name.values() for it in v], "%s/*/*.json" % label if kind == "gates run" else src_of(None)))
+        for name, v, src in groups:
+            cmds = sorted({c for _, c, _, _, _ in v if c})
+            secs = sum(x[2] for x in v)
+            rows.append([kind, name, "-" if name == "all" or not cmds else "; ".join("`%s`" % c for c in cmds), len(v),
+                         "%.3f" % secs, "%.2f" % (secs / 60),
+                         min((x[3] for x in v), default="-"), max((x[4] for x in v), default="-"), "`%s`" % src])
+    return rows
+
+
+def mtime_utc(path):
+    return datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def minutes(a, b):
     return "%.2f" % ((parse_ts(b) - parse_ts(a)).total_seconds() / 60)
 
@@ -716,14 +783,25 @@ def build(args):
     emit("### Gates")
     emit("")
     gr = gate_rows(args.gate_dir, repo_root, start, end)
-    rows = [[g.get("name"), str(g.get("tree", ""))[:12], g.get("exit_code"), "%.3f" % g.get("seconds", 0), g.get("started_at"),
-             g.get("finished_at"), "`%s`" % g.get("session"), "`%s`" % g["_path"]] for g in gr]
-    for r in md_table(["Gate", "Tree", "Exit", "Seconds", "Started", "Finished", "Session", "Source"], rows):
+    hits = hit_rows(args.gate_dir, start, end)
+    label = gate_label(args.gate_dir, repo_root)
+    for r in md_table(["Kind", "Gate", "Command", "Count", "Seconds", "Minutes", "First", "Last", "Source"],
+                      gates_summary(gr, hits, args.gate_dir, label)):
         emit(r)
     emit("")
     emit("gate runs in the window: %d" % len(gr))
     emit("gate seconds run: %.3f" % sum(g.get("seconds", 0) for g in gr))
-    emit("served from cache: not recorded (`scripts/gate.sh` writes no record for a hit, so hits and the minutes they saved have no source)")
+    emit("gates served from cache: %d, minutes saved: %.2f" % (len(hits), sum(h["seconds"] for h in hits) / 60))
+    emit("")
+    emit("Gates run are the records `%s/*/*.json` by `started_at`; gates served from cache are the lines of `%s/hits.log` "
+         "by time, and the minutes saved are their stored seconds, the run each hit did not repeat." % (label, label))
+    emit("")
+    emit("### Gate runs")
+    emit("")
+    rows = [[g.get("name"), str(g.get("tree", ""))[:12], g.get("exit_code"), "%.3f" % g.get("seconds", 0), g.get("started_at"),
+             g.get("finished_at"), "`%s`" % g.get("session"), "`%s`" % g["_path"]] for g in gr]
+    for r in md_table(["Gate", "Tree", "Exit", "Seconds", "Started", "Finished", "Session", "Source"], rows):
+        emit(r)
     emit("")
 
     # Validation overhead
@@ -800,6 +878,9 @@ def build(args):
     emit("")
     emit("Read from the session sidecars at generation time: lifetime totals of each session, all models, not windowed, and never added to the log rows (D-029). A session still running (the orchestrator, an integrator) moves between two runs with the same `--to`; this is the only section that can, and it is the only source of credits.")
     emit("")
+    mt = [mtime_utc(path) for path, _ in sidecars.values()]
+    emit("sidecars read: %d, oldest mtime %s, newest mtime %s" % (len(mt), min(mt, default="-"), max(mt, default="-")))
+    emit("")
     emit("#### Credits by role (sidecar, cumulative)")
     emit("")
     crole = collections.OrderedDict((r, 0) for r in ROLES)
@@ -820,9 +901,9 @@ def build(args):
         crow.append(["`%s`" % sid, role_of(sid), d.get("model", "-"), d.get("reasoningEffort", "-"), u.get("inputTokens", "-"),
                      u.get("outputTokens", "-"), u.get("cacheReadTokens", "-"), u.get("cacheCreationTokens", "-"),
                      u.get("thinkingTokens", "-"), u.get("factoryCredits", "-"), d.get("assistantActiveTimeMs", "-"),
-                     "`%s/%s.settings.json`" % (os.path.basename(os.path.dirname(path)), sid)])
+                     mtime_utc(path), "`%s/%s.settings.json`" % (os.path.basename(os.path.dirname(path)), sid)])
     for r in md_table(["Session", "Role", "Model", "Effort", "Input", "Output", "Cache read", "Cache write", "Thinking", "Credits",
-                       "Active ms", "Source"], crow):
+                       "Active ms", "Modified", "Source"], crow):
         emit(r)
     emit("")
     return "\n".join(lines)
@@ -847,7 +928,8 @@ def write_out(path, milestone, body):
 
 def main(argv=None):
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0], epilog=REPRODUCIBILITY,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--milestone", "-m", required=True)
     ap.add_argument("--mission-dir", default=os.environ.get("OBSERVATORY_MISSION_DIR", DEFAULT_MISSION_DIR))
     ap.add_argument("--mission-id", help="orchestrator session id; default the mission directory's name")

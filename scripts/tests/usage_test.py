@@ -29,6 +29,7 @@ REVIEWER = "55555555-5555-4555-8555-555555555555"
 SCRATCH = "66666666-6666-4666-8666-666666666666"
 SCRATCH_WORKER = "77777777-7777-4777-8777-777777777777"
 
+GATE_LABEL = "scripts/tests/fixtures/usage/gate"
 FROM = "2026-10-25T10:00:00Z"
 NOW = "2026-10-25T11:00:00Z"
 TO = "2026-10-25T10:59:59Z"
@@ -278,12 +279,12 @@ class UsageReport(unittest.TestCase):
         self.assertEqual(len(got), len(rows))
         cells = lambda k, g: tuple(got[(k, g)][c] for c in ("Command", "Count", "Seconds", "Minutes", "First", "Last", "Source"))
         self.assertEqual(cells("gates run", "check"), (
-            "`make check`", "1", "60.000", "1.00", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`reports/gate/*/check.json`"))
+            "`make check`", "1", "60.000", "1.00", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`%s/*/check.json`" % GATE_LABEL))
         self.assertEqual(cells("gates run", "test")[1:4], ("1", "40.000", "0.67"))
         self.assertEqual(cells("gates run", "all"), (
-            "-", "2", "100.000", "1.67", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`reports/gate/*/*.json`"))
+            "-", "2", "100.000", "1.67", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`%s/*/*.json`" % GATE_LABEL))
         self.assertEqual(cells("gates served from cache", "check"), (
-            "`make check`", "2", "120.000", "2.00", "2026-10-25T10:57:00Z", "2026-10-25T10:57:30Z", "`reports/gate/hits.log`"))
+            "`make check`", "2", "120.000", "2.00", "2026-10-25T10:57:00Z", "2026-10-25T10:57:30Z", "`%s/hits.log`" % GATE_LABEL))
         self.assertEqual(cells("gates served from cache", "test")[1:6], ("1", "40.000", "0.67", "2026-10-25T10:58:00Z", "2026-10-25T10:58:00Z"))
         self.assertEqual(cells("gates served from cache", "all")[1:4], ("3", "160.000", "2.67"))
         self.assertIn("gates served from cache: 3, minutes saved: 2.67", self.text)
