@@ -36,5 +36,9 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
   build times at the M1 integration (`make check` 92.700 s, `cargo llvm-cov` alone 121.731 s) and per-feature compile cost.
   `2026-10-24-m2.json`: hand re-evaluation of the criteria M2 changed; `2026-10-24-m2.md`: warm build times at the M2
   integration (`make check` 118.050 s, `cargo llvm-cov` alone 133.599 s) and per-feature compile cost.
+- `post-mortem/observatory-v1-<milestone>.md`: the delivery post-mortem per milestone (clocks per lane and phase, signatures,
+  the questions Roci raises and the answers, waste causes including validation overhead). `post-mortem/observatory-v1-m2.md`: M2.
+- `staging/<feature-id>.md`: what a feature in a worktree wants written in the shared files (SPEC §9 rows, D-row
+  amendments, BACKLOG rows, deferred clauses); committed with the feature and merged by the integrator (rule 27, F-066).
 - `screenshots/<date>-<milestone>.png`: the owner's unlocked-display screenshot per integration.
   Expected at S: `screenshots/2026-10-23-s.png`; at M0: `screenshots/2026-10-23-m0.png`; at M1: `screenshots/2026-10-24-m1.png`; at M2: `screenshots/2026-10-24-m2.png`.

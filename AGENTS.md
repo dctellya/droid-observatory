@@ -144,6 +144,23 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   `git log -1 --format='%(trailers:key=Co-authored-by)'` (the trailer must print). Merge commits take the same file with
   `git merge --no-ff -F <file>`; `commit.template` has no effect with `-F`/`-m`.
 
+## Validation and the mission loop
+
+- Scratch missions (F-054, owner item 1): a live self-check uses a scratch mission, never the real mission's validators; cheapest
+  explicit models, `skipScrutiny` and `skipUserTesting`, reaped before the test reports.
+- Rules 26 to 28 ([ai/RULES.md](ai/RULES.md)): tooling is verified on the day and listed in SPEC `## Tooling` (26); a worktree
+  feature leaves its shared-file rows in a staging file and the integrator merges files (27); gate flow: inner loop per
+  rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs redirected to a
+  file with the exit code pasted (28).
+- Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
+  BACKLOG rows, deferred clauses, library notes) and commits it with the feature; the integrator merges the files (F-066).
+- Waits: the orchestrator waits on a background Script in one blocking call; there is no `WaitForScript` poll loop, and a
+  wait that returns early is re-issued only after its interrupter is named in the log (F-056).
+- Model check: after any 402 or resume, the first action of every session (orchestrator, worker, validator, subagent) is to
+  read `model` in its own `~/.factory/sessions/<project>/<session-id>.settings.json` and compare it with the mission's
+  `model-settings.json`; on a mismatch it stops with one line and does nothing else, and the handoff pastes `model = <value>`.
+  The next 402 verifies that the plan's limit preference stops the mission on its declared models (F-057).
+
 ## Decisions, backlog, logs
 
 - A decision is one file: `docs/decisions/D-NNN-slug.md` with `**Date:**`, `**Status:**`,
