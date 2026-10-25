@@ -1,6 +1,7 @@
 //! Tauri shell: IO plumbing only. The commands in `commands` and the ingest thread in `ingest`
 //! hand `observatory-core` values to the UI; nothing is decided here.
 
+mod actions;
 mod commands;
 mod host;
 mod ingest;
@@ -8,6 +9,7 @@ mod ingest;
 mod live_check;
 mod logging;
 mod process;
+mod stall;
 
 use std::sync::{Arc, Mutex};
 
@@ -78,6 +80,7 @@ pub fn run() {
                 status,
                 excluded,
             ));
+            stall::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -92,6 +95,7 @@ pub fn run() {
             commands::host_launch,
             commands::host_control,
             commands::host_status,
+            commands::human_action,
             commands::app_config,
             commands::cycle_template,
             commands::panel_rendered,

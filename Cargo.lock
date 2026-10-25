@@ -3034,6 +3034,7 @@ name = "observatory-app"
 version = "0.1.0"
 dependencies = [
  "observatory-core",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use observatory_core::config::{Config, MissionConfig};
+use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
@@ -13,6 +14,7 @@ use observatory_core::view::{
 use tauri::{AppHandle, State};
 
 use crate::Shell;
+use crate::actions::{self, ActionRecorded};
 use crate::host::{self, Hosts};
 use crate::logging;
 
@@ -140,6 +142,28 @@ pub async fn host_control(
     control: HostControl,
 ) -> Result<ControlSent, String> {
     hosts.control(&launch_id, &control)
+}
+
+/// One of the six controls: the `human_actions` row and its human-overlay event, and for a
+/// hosted mission (`launch_id` set) the line written to the process. An attached mission has no
+/// control channel (D-008): the event is recorded and the window shows the text to paste.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn human_action(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    hosts: State<'_, Hosts>,
+    mission_id: MissionId,
+    launch_id: Option<String>,
+    action: HumanAction,
+    text: Option<String>,
+) -> Result<ActionRecorded, String> {
+    match launch_id {
+        Some(launch_id) => hosts.human_action(&app, &launch_id, action, text),
+        None => {
+            let about = actions::about_event(&shell, &action)?;
+            actions::record(&app, &shell, &mission_id, &action, about.as_ref())
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
