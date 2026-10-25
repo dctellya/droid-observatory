@@ -24,7 +24,7 @@ COVERAGE_MIN ?= 80
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-scripts check-gate-cache usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-scripts check-gate-cache check-integrate integrate usage check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
 
 help: ## List targets
@@ -43,7 +43,7 @@ check: ## All light checks (= mission-branch CI), cached by tree through scripts
 
 check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
 
-check-scripts: check-gate-cache ## Shell tests of the repository scripts
+check-scripts: check-gate-cache check-integrate ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
@@ -52,6 +52,13 @@ check-scripts: check-gate-cache ## Shell tests of the repository scripts
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
 	@python3 scripts/usage-report.py --milestone $(M) --cross-check $(foreach c,$(CAPS),--cap $(c)) $(USAGE_ARGS)
+
+integrate: ## Land a milestone: no-ff merge, final gate, usage, staging files (M=<milestone> FROM='<branch>...'), see README 'Running a boundary'
+	@test -n "$(M)" -a -n "$(FROM)" || { echo "usage: make integrate M=<milestone> FROM='<worktree-branch>...'" >&2; exit 2; }
+	@sh scripts/integrate.sh "$(M)" $(FROM)
+
+check-integrate: ## Self-test of scripts/integrate.sh on throwaway repositories
+	@sh scripts/tests/integrate_test.sh
 
 check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
 	@sh scripts/tests/gate_test.sh

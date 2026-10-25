@@ -133,6 +133,9 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Milestones live in worktrees and integrate into `mission/<name>`. Two worktrees never edit
   the same file (rule 13); shared files (`SPEC.md` §9–10, `README.md`, `BACKLOG.md`,
   `docs/decisions/README.md`) are written by the orchestrator at integration time.
+- A milestone boundary is `make integrate M=<milestone> FROM=<worktree-branch>` (`scripts/integrate.sh`, README
+  "Running a boundary"): no-ff merge with the templated message and trailer, cached final gate, usage, staging files
+  merged into SPEC §9, BACKLOG and the decision files, boundary report and summary.
 - Commit subject under 72 characters; co-author trailer for agent commits, kept in `.git-trailers` (one line,
   `Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>`).
 - How to commit (owner item 10, M2 boundary; `8ab88e2` carries a stray heredoc tail that broke trailer parsing and stays,
