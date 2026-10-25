@@ -122,10 +122,12 @@ fn group_view(lane: &LaneView, group: &RowGroup) -> AnyView {
         "milestone"
     };
     let role = group.role.map(|role| role.as_str());
+    let ctx = expect_context::<BoardCtx>();
+    let group_for_title = group.clone();
     view! {
         <section class="sublane" aria-label=format!("{kind}-{}", group.key)>
             <h3>
-                {group.label.clone()} " "
+                {move || ctx.sessions.with(|sessions| group_for_title.title(sessions))} " "
                 <span class="count">{group.rows.len()}</span>
                 {role.map(|role| view! { <span class=format!("role role-{role}")>{role}</span> })}
             </h3>

@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::MissionConfig;
+use crate::ingest::SessionInfo;
 use crate::model::{
-    CycleTemplate, Event, LaneGrouping, LaneId, MilestoneId, ModelId, Overlay, Role, SourcePtr,
-    Timestamp,
+    CycleTemplate, Event, LaneGrouping, LaneId, MilestoneId, ModelId, Overlay, Role, SessionId,
+    SourcePtr, Timestamp,
 };
 
+use super::agent_panel::session_name;
 use super::agents::AgentRow;
 use super::card::Card;
 use super::details::TimelineRow;
@@ -26,6 +28,18 @@ pub struct RowGroup {
     /// The role of the session, when grouped per worker.
     pub role: Option<Role>,
     pub rows: Vec<TimelineRow>,
+}
+
+impl RowGroup {
+    /// The heading: a per-worker group is headed by its session's display name (D-036), any
+    /// other group by its label.
+    pub fn title(&self, sessions: &[SessionInfo]) -> String {
+        if self.role.is_some() && !self.key.is_empty() {
+            session_name(sessions, &SessionId(self.key.clone()))
+        } else {
+            self.label.clone()
+        }
+    }
 }
 
 /// One lane column as the UI draws it.
