@@ -166,6 +166,9 @@ def scan_logs(files, start, end):
                 if not m:
                     continue
                 ts = m.group(1)
+                if sec(ts) > sec(end):
+                    lines -= 1
+                    break
                 if first is None:
                     first = ts
                 last = ts
@@ -173,8 +176,6 @@ def scan_logs(files, start, end):
                 if not is_turn and "[Model-Router] Model transition" not in line:
                     continue
                 s = sec(ts)
-                if s > sec(end):
-                    continue
                 idx = line.find(" | Context: ")
                 try:
                     d = json.loads(line[idx + 12:])
@@ -527,18 +528,20 @@ def build(args):
     src_rows = []
     for i in loginfo:
         src_rows.append(["`logs/%s`" % os.path.basename(i["path"]), i["lines"], ts_or_dash(i["first"]), ts_or_dash(i["last"]),
-                         "unparsed %d" % i["unparsed"]])
+                         "lines up to the window end; unparsed %d" % i["unparsed"]])
     if progress:
-        tss = [r["timestamp"] for _, r in progress if r.get("timestamp")]
-        src_rows.append(["`%s`" % pl_label, len(progress), min(tss), max(tss), "records"])
+        tss = [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(r["timestamp"]) <= sec(end)]
+        src_rows.append(["`%s`" % pl_label, len(tss), min(tss) if tss else "-", max(tss) if tss else "-", "records up to the window end"])
     tpath = next(iter(glob.glob(os.path.join(args.sessions_dir, "*", mission_id + ".jsonl"))), None)
     recs = results = waits = None
     if tpath:
         recs, results, waits = load_transcript(tpath)
-        src_rows.append(["`sessions/%s/%s.jsonl`" % (os.path.basename(os.path.dirname(tpath)), mission_id), len(recs),
-                         ts_or_dash(recs[0]["ts"] if recs else None), ts_or_dash(recs[-1]["ts"] if recs else None),
-                         "orchestrator transcript, assistant records"])
-    src_rows.append(["`sessions/*/*.settings.json` (sidecars)", len(sidecars), "-", "-", "files"])
+        bounded = [r["ts"] for r in recs if sec(r["ts"]) <= sec(end)]
+        src_rows.append(["`sessions/%s/%s.jsonl`" % (os.path.basename(os.path.dirname(tpath)), mission_id), len(bounded),
+                         ts_or_dash(bounded[0] if bounded else None), ts_or_dash(bounded[-1] if bounded else None),
+                         "orchestrator transcript, assistant records up to the window end"])
+    n_sidecars = len({sid for sid, _ in upto if sid in sidecars})
+    src_rows.append(["`sessions/*/*.settings.json` (sidecars)", n_sidecars, "-", "-", "sidecars of the sessions with a log turn up to the window end"])
     src_rows.append(["`%s`" % os.path.basename(args.prices), len(prices), "-", "-", "models priced"])
     for r in md_table(["Source", "Lines", "First timestamp", "Last timestamp", "Note"], src_rows):
         emit(r)
@@ -570,8 +573,7 @@ def build(args):
     total = Agg()
     for role in ROLES:
         a = by_role.get(role) or Agg()
-        credits = sum(credit(sid) for sid in a.sessions)
-        rows.append([role, len(a.sessions)] + agg_cells(a)[:7] + [a.unpriced, credits, ts_or_dash(a.first), ts_or_dash(a.last),
+        rows.append([role, len(a.sessions)] + agg_cells(a)[:7] + [a.unpriced, ts_or_dash(a.first), ts_or_dash(a.last),
                                                                   ", ".join(sorted(a.files)) or "-"])
         total.sessions |= a.sessions
         for k in ("turns", "i", "o", "cr", "cw", "rs", "unpriced", "usd"):
@@ -581,14 +583,14 @@ def build(args):
             total.first = a.first
         if a.last and (total.last is None or a.last > total.last):
             total.last = a.last
-    rows.append(["total", len(total.sessions)] + agg_cells(total)[:7] + [total.unpriced, sum(credit(s) for s in total.sessions),
+    rows.append(["total", len(total.sessions)] + agg_cells(total)[:7] + [total.unpriced,
                                                                          ts_or_dash(total.first), ts_or_dash(total.last), ", ".join(sorted(total.files)) or "-"])
     hdr = ["Role", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "Reasoning", "USD-eq", "Unpriced turns",
-           "Credits (sidecar, cumulative)", "First ts", "Last ts", "Source"]
+           "First ts", "Last ts", "Source"]
     for r in md_table(hdr, rows):
         emit(r)
     emit("")
-    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); turns on a model with no price row are counted in `Unpriced turns` and add nothing to USD-eq. Credits come from the session sidecars and are cumulative for the session, not windowed.")
+    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); turns on a model with no price row are counted in `Unpriced turns` and add nothing to USD-eq.")
     emit("")
 
     # Tokens per session
@@ -604,26 +606,6 @@ def build(args):
     for r in md_table(["Session", "Role", "Kind", "Feature", "Models", "Turns", "Input", "Output", "Cache read", "Cache write",
                        "Reasoning", "USD-eq", "Unpriced turns", "First ts", "Last ts", "Source"], srows):
         emit(r)
-    emit("")
-
-    # Sidecars
-    emit("### Sidecar totals per session (cumulative)")
-    emit("")
-    crow = []
-    for sid, a in sorted(by_sess.items(), key=lambda kv: (ROLES.index(role_of(kv[0])), kv[1].first, kv[0])):
-        if sid not in sidecars:
-            continue
-        path, d = sidecars[sid]
-        u = d.get("tokenUsage") or {}
-        crow.append(["`%s`" % sid, role_of(sid), d.get("model", "-"), d.get("reasoningEffort", "-"), u.get("inputTokens", "-"),
-                     u.get("outputTokens", "-"), u.get("cacheReadTokens", "-"), u.get("cacheCreationTokens", "-"),
-                     u.get("thinkingTokens", "-"), u.get("factoryCredits", "-"), d.get("assistantActiveTimeMs", "-"),
-                     "`%s/%s.settings.json`" % (os.path.basename(os.path.dirname(path)), sid)])
-    for r in md_table(["Session", "Role", "Model", "Effort", "Input", "Output", "Cache read", "Cache write", "Thinking", "Credits",
-                       "Active ms", "Source"], crow):
-        emit(r)
-    emit("")
-    emit("The sidecar is the session's lifetime total, all models, not windowed; it is shown beside the log rows and never added to them (D-029).")
     emit("")
 
     # Orchestrator split
@@ -812,6 +794,37 @@ def build(args):
         emit(r)
     emit("")
     emit("Every log line up to the end of the window, no start bound; caps are those passed with `--cap role=USD`.")
+    # Sidecars: lifetime totals of sessions that may still be running, so the one section that can change between runs.
+    emit("")
+    emit("### Sidecar readings")
+    emit("")
+    emit("Read from the session sidecars at generation time: lifetime totals of each session, all models, not windowed, and never added to the log rows (D-029). A session still running (the orchestrator, an integrator) moves between two runs with the same `--to`; this is the only section that can, and it is the only source of credits.")
+    emit("")
+    emit("#### Credits by role (sidecar, cumulative)")
+    emit("")
+    crole = collections.OrderedDict((r, 0) for r in ROLES)
+    for sid in by_sess:
+        crole[role_of(sid)] += credit(sid)
+    for r in md_table(["Role", "Credits", "Sessions with a sidecar"],
+                      [[r, crole[r], sum(1 for sid in by_sess if role_of(sid) == r and sid in sidecars)] for r in ROLES]):
+        emit(r)
+    emit("")
+    emit("#### Sidecar totals per session (cumulative)")
+    emit("")
+    crow = []
+    for sid, a in sorted(by_sess.items(), key=lambda kv: (ROLES.index(role_of(kv[0])), kv[1].first, kv[0])):
+        if sid not in sidecars:
+            continue
+        path, d = sidecars[sid]
+        u = d.get("tokenUsage") or {}
+        crow.append(["`%s`" % sid, role_of(sid), d.get("model", "-"), d.get("reasoningEffort", "-"), u.get("inputTokens", "-"),
+                     u.get("outputTokens", "-"), u.get("cacheReadTokens", "-"), u.get("cacheCreationTokens", "-"),
+                     u.get("thinkingTokens", "-"), u.get("factoryCredits", "-"), d.get("assistantActiveTimeMs", "-"),
+                     "`%s/%s.settings.json`" % (os.path.basename(os.path.dirname(path)), sid)])
+    for r in md_table(["Session", "Role", "Model", "Effort", "Input", "Output", "Cache read", "Cache write", "Thinking", "Credits",
+                       "Active ms", "Source"], crow):
+        emit(r)
+    emit("")
     return "\n".join(lines)
 
 

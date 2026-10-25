@@ -10,6 +10,7 @@ haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write).
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -134,7 +135,6 @@ class UsageReport(unittest.TestCase):
             ("1", "6", "3600007", "360003", "14000005", "640000", "300"))
         self.assertEqual((o["USD-eq"], o["Unpriced turns"]), ("65.50", "1"))
         self.assertEqual((o["First ts"], o["Last ts"]), ("2026-10-25T10:00:01.000Z", "2026-10-25T10:09:00.000Z"))
-        self.assertEqual(o["Credits (sidecar, cumulative)"], "1234567")
         self.assertEqual(o["Source"], "droid-log-single.log")
 
         w = self.role("worker")
@@ -155,6 +155,16 @@ class UsageReport(unittest.TestCase):
 
         other = self.role("other")
         self.assertEqual((other["Sessions"], other["Turns"], other["Input"]), ("2", "2", "3"))
+
+    def test_credits_come_from_the_sidecars_and_sit_in_their_own_section(self):
+        text = self.text
+        start = text.index("#### Credits by role")
+        rows = [l for l in text[start:].splitlines()[2:10] if l.startswith("| ")]
+        got = {r.split("|")[1].strip(): r.split("|")[2].strip() for r in rows}
+        self.assertEqual(got["orchestrator"], "1234567")
+        self.assertEqual(got["worker"], "333333")
+        self.assertEqual(got["validator"], str(444444 + 5555))
+        self.assertGreater(text.index("### Sidecar readings"), text.index("### Mission to date by role"))
 
     def test_the_role_comes_from_the_sidecar_tags_and_the_progress_log(self):
         _, rows = table(self.text, "Tokens per session")
@@ -185,12 +195,13 @@ class UsageReport(unittest.TestCase):
         by_name = {r["Source"].strip("`"): r for r in rows}
         live = by_name["logs/droid-log-single.log"]
         self.assertEqual((live["Lines"], live["First timestamp"], live["Last timestamp"]),
-                         ("23", "2026-10-25T10:00:00.000Z", "2026-10-25T11:00:00.000Z"))
+                         ("22", "2026-10-25T10:00:00.000Z", "2026-10-25T10:50:00.000Z"))
         self.assertIn("unparsed 1", live["Note"])
         old = by_name["logs/droid-log-single.log.2026-10-24"]
         self.assertEqual((old["Lines"], old["First timestamp"]), ("3", "2026-10-24T22:59:59.000Z"))
         self.assertEqual(by_name["mission/progress_log.jsonl"]["Lines"], "10")
-        self.assertIn("sidecars", " ".join(by_name))
+        sidecars = next(r for k, r in by_name.items() if "sidecars" in k)
+        self.assertEqual(sidecars["Lines"], "8")
 
     def test_the_orchestrator_split_classes_each_turn_from_the_transcript(self):
         _, rows = table(self.text, "Orchestrator split")
@@ -296,6 +307,18 @@ class UsageReportFile(unittest.TestCase):
             diff = [(x, y) for x, y in zip(la, lb) if x != y]
             self.assertEqual(len(diff), 1, diff)
             self.assertTrue(diff[0][0].startswith("generated: "))
+
+    def test_lines_written_after_the_window_end_do_not_change_the_tables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = os.path.join(tmp, "logs")
+            shutil.copytree(os.path.join(FIX, "logs"), logs)
+            a, b = os.path.join(tmp, "a.md"), os.path.join(tmp, "b.md")
+            run(["--to", TO, "--logs-dir", logs], out=a)
+            with open(os.path.join(logs, "droid-log-single.log"), "a") as f:
+                f.write('[2026-10-25T11:30:00.000Z] INFO: [Agent] Streaming result | Context: {"inputTokens":5,"outputTokens":5,'
+                        '"cacheReadInputTokens":5,"cachedTokensWritten":0,"tags":{"sessionId":"%s","modelId":"claude-fable-5.1"}}\n' % MISSION)
+            run(["--to", TO, "--logs-dir", logs], out=b)
+            self.assertEqual(read(a), read(b))
 
     def test_prose_outside_the_markers_survives_a_regeneration(self):
         with tempfile.TemporaryDirectory() as tmp:
