@@ -133,8 +133,16 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Milestones live in worktrees and integrate into `mission/<name>`. Two worktrees never edit
   the same file (rule 13); shared files (`SPEC.md` §9–10, `README.md`, `BACKLOG.md`,
   `docs/decisions/README.md`) are written by the orchestrator at integration time.
-- Commit subject under 72 characters; co-author trailer for agent commits:
-  `Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>`.
+- Commit subject under 72 characters; co-author trailer for agent commits, kept in `.git-trailers` (one line,
+  `Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>`).
+- How to commit (owner item 10, M2 boundary; `8ab88e2` carries a stray heredoc tail that broke trailer parsing and stays,
+  forward only). Once per clone: `git config commit.template .gitmessage` (git config is local; the file is committed,
+  the setting is not). Never build a message inside a chained shell command or a heredoc: write the message to a file
+  (subject, blank line, body, no `#` lines, git keeps them under `-F`), run
+  `git interpret-trailers --in-place --if-exists addIfDifferent --trailer "$(cat .git-trailers)" <file>`, commit with
+  `git commit -F <file>`, then prove it with `git log -1 --format='%h %s'` and
+  `git log -1 --format='%(trailers:key=Co-authored-by)'` (the trailer must print). Merge commits take the same file with
+  `git merge --no-ff -F <file>`; `commit.template` has no effect with `-F`/`-m`.
 
 ## Decisions, backlog, logs
 

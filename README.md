@@ -50,6 +50,7 @@ git clone git@github.com:dctellya/droid-observatory.git
 cd droid-observatory
 make doctor      # which tools are missing and how to install them
 make hooks       # enable the git hooks (once)
+git config commit.template .gitmessage   # commit message shape (once; local config, not cloned)
 make check       # every light check the mission-branch CI runs
 cargo run -p observatory-cli -- replay fixtures/streams/2026-10-22-observatory-v1-m0.jsonl
                  # root file and its child sessions: 1279 events over 8735 records, ends with `unknown events: 0`
