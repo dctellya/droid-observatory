@@ -14,11 +14,11 @@ use observatory_core::control::{self, HumanAction, RunbookPrompt};
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
-    CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, Overlay, Role,
-    SessionId, SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, ModelId, Overlay,
+    Role, SessionId, SourcePtr, Timestamp,
 };
 use observatory_core::store::{EventScope, HostedRun, Store, TimeRange};
-use observatory_core::view::{BoardState, DeclaredModels, Filter, ViewConfig, details};
+use observatory_core::view::{BoardState, DeclaredModels, ViewConfig, details};
 
 const SECRET_MESSAGE: &str = "zq-message-text-that-must-not-persist";
 const SECRET_ANSWER: &str = "zq-answer-text-that-must-not-persist";
@@ -40,7 +40,7 @@ fn at(minute: u32, second: u32) -> Timestamp {
 fn stream_event(kind: EventKind, role: Role, minute: u32, offset: u64) -> Event {
     let template = template();
     Event {
-        id: EventId(format!("session-1:{offset}:0")),
+        id: EventId(format!("mission-1:{offset}:0")),
         mission_id: mission(),
         milestone_id: Some(MilestoneId("m3".to_owned())),
         feature_id: Some(FeatureId("m3-control-core".to_owned())),
@@ -48,7 +48,7 @@ fn stream_event(kind: EventKind, role: Role, minute: u32, offset: u64) -> Event 
         overlay: kind.overlay(),
         kind,
         role,
-        session_id: Some(SessionId("session-1".to_owned())),
+        session_id: Some(SessionId("mission-1".to_owned())),
         model: None,
         at: at(minute, 0),
         duration: None,
@@ -594,9 +594,9 @@ fn human_overlay_events_render_in_board_and_details() {
     events.sort_by_key(|event| event.at);
 
     let declared = DeclaredModels {
-        orchestrator: "o".into(),
-        worker: "w".into(),
-        validator: "v".into(),
+        orchestrator: ModelId("o".to_owned()),
+        worker: ModelId("w".to_owned()),
+        validator: ModelId("v".to_owned()),
     };
     let board = observatory_core::view::BoardView::build(
         &events,
@@ -655,5 +655,4 @@ fn human_overlay_events_render_in_board_and_details() {
             .iter()
             .all(|row| row.overlay == Some(Overlay::Human))
     );
-    let _ = Filter::default();
 }
