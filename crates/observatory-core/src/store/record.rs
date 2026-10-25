@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, params};
 use super::rows::utf8;
 use super::{Store, StoreError, now_text};
 use crate::ingest::{IngestError, SessionTree, capture_path, read_capture};
-use crate::model::MissionId;
+use crate::model::{MissionId, SessionId};
 
 /// The `captures` row: where a set of session files came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +132,16 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Sets the display name (`tag`) of a session already recorded. False when the store has no
+    /// row for it.
+    pub fn set_session_name(&mut self, id: &SessionId, name: &str) -> Result<bool, StoreError> {
+        let changed = self.conn.execute(
+            "UPDATE sessions SET tag = ?2 WHERE id = ?1",
+            params![id.to_string(), name],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Marks every session file of `mission` as read to the size it had when it was recorded.

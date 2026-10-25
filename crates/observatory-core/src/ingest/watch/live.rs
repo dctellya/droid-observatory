@@ -126,7 +126,7 @@ impl LiveIngest {
         let names_due = self.names_checked.elapsed() >= self.poll;
         if !batch.trees.is_empty() || names_due {
             self.names_checked = Instant::now();
-            step.discovered = self.announce_changes();
+            step.discovered = self.announce_changes(&mut step.errors);
         }
         step.batches = self.batcher.flush_due(Instant::now());
         let status = self.status();
@@ -168,10 +168,13 @@ impl LiveIngest {
             .collect()
     }
 
-    fn announce_changes(&mut self) -> Vec<SessionRow> {
+    fn announce_changes(&mut self, errors: &mut Vec<StoreError>) -> Vec<SessionRow> {
         let mut changed = Vec::new();
         for row in self.rows() {
             if self.announced.get(&row.session_id) != Some(&row.name) {
+                if let Err(err) = self.store.set_session_name(&row.session_id, &row.name) {
+                    errors.push(err);
+                }
                 self.announced
                     .insert(row.session_id.clone(), row.name.clone());
                 changed.push(row);
