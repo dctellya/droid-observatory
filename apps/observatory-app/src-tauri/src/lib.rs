@@ -29,8 +29,9 @@ pub struct Shell {
     pub status: Arc<Mutex<AttachStatus>>,
 }
 
-pub fn run() {
-    logging::init();
+/// The config and the store the window opens on; either failing ends the process, with the
+/// reason in the log.
+fn open_or_exit() -> (Config, std::path::PathBuf, Store) {
     let (cfg, origin) = match Config::load_with_origin(None) {
         Ok(loaded) => loaded,
         Err(err) => {
@@ -52,6 +53,12 @@ pub fn run() {
         sessions_dir = %cfg.ingest.factory_sessions_dir,
         "startup"
     );
+    (cfg, store_path, store)
+}
+
+pub fn run() {
+    logging::init();
+    let (cfg, store_path, store) = open_or_exit();
     let loaded = cfg.cycle.load_template();
     if let Some(warning) = &loaded.warning {
         tracing::warn!(%warning, "cycle template");

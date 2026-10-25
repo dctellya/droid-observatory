@@ -525,25 +525,7 @@ impl<R: Runtime> Pump<R> {
     }
 
     fn on_ack(&self, run: &Run, inner: &mut Inner, ack: &Ack) {
-        let (accepted, message) = match &ack.outcome {
-            AckOutcome::Accepted => (true, None),
-            AckOutcome::Rejected { message, .. } => (false, Some(message.clone())),
-        };
-        tracing::info!(
-            launch_id = %self.launch_id,
-            request_id = %ack.id,
-            method = %ack.method,
-            accepted,
-            "host_ack"
-        );
-        let mut status = lock(&run.status);
-        status.record_ack(AckRow {
-            request_id: ack.id.clone(),
-            method: ack.method.clone(),
-            accepted,
-            message,
-        });
-        drop(status);
+        let accepted = self.record_ack(run, ack);
         if ack.method == method::INITIALIZE_SESSION && accepted {
             lock(&run.status).initialised();
             match inner.channel.mission_settings(&self.config) {
@@ -566,6 +548,29 @@ impl<R: Runtime> Pump<R> {
                 },
             );
         }
+    }
+
+    /// Logs the acknowledgement and adds it to the status rows; whether Droid accepted it.
+    fn record_ack(&self, run: &Run, ack: &Ack) -> bool {
+        let (accepted, message) = match &ack.outcome {
+            AckOutcome::Accepted => (true, None),
+            AckOutcome::Rejected { message, .. } => (false, Some(message.clone())),
+        };
+        tracing::info!(
+            launch_id = %self.launch_id,
+            request_id = %ack.id,
+            method = %ack.method,
+            accepted,
+            "host_ack"
+        );
+        let mut status = lock(&run.status);
+        status.record_ack(AckRow {
+            request_id: ack.id.clone(),
+            method: ack.method.clone(),
+            accepted,
+            message,
+        });
+        accepted
     }
 
     /// `droid exec --mission` accepts the orchestrator's proposal without asking; a hosted

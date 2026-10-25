@@ -105,6 +105,23 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
         );
         let _ = app.emit("session_discovered", row);
     }
+    log_problems(&step);
+    log_failures(&step);
+    if let Some(next) = step.status {
+        tracing::info!(
+            watched = next.watched.len(),
+            unwatched = next.unwatched,
+            "attach_status"
+        );
+        publish(app, status, next);
+    }
+    for batch in &step.batches {
+        log_batch(batch);
+        let _ = app.emit("events_appended", batch);
+    }
+}
+
+fn log_problems(step: &LiveStep) {
     for rename in &step.renamed {
         tracing::info!(
             session_id = %rename.session_id,
@@ -123,6 +140,9 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
             "session_rename_refused"
         );
     }
+}
+
+fn log_failures(step: &LiveStep) {
     for warning in &step.warnings {
         match warning {
             IngestError::TooLarge { path, mb } => {
@@ -133,18 +153,6 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
     }
     for error in &step.errors {
         tracing::error!(%error, "store");
-    }
-    if let Some(next) = step.status {
-        tracing::info!(
-            watched = next.watched.len(),
-            unwatched = next.unwatched,
-            "attach_status"
-        );
-        publish(app, status, next);
-    }
-    for batch in &step.batches {
-        log_batch(batch);
-        let _ = app.emit("events_appended", batch);
     }
 }
 
