@@ -44,10 +44,10 @@ fn live_missions<R: Runtime>(app: &AppHandle<R>) -> Vec<MissionId> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     for row in watched {
-        if let Ok(Some(mission)) = store.mission_of_session(&row.session_id) {
-            if !missions.contains(&mission) {
-                missions.push(mission);
-            }
+        if let Ok(Some(mission)) = store.mission_of_session(&row.session_id)
+            && !missions.contains(&mission)
+        {
+            missions.push(mission);
         }
     }
     missions

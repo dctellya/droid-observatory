@@ -220,3 +220,36 @@ fn is_live(shell: &Shell, mission: &MissionId) -> bool {
             .is_some_and(|of| of == *mission)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use observatory_core::ingest::AttachStatus;
+    use observatory_core::store::Store;
+    use tauri::Manager;
+
+    use super::*;
+
+    #[test]
+    fn the_cycle_template_command_returns_the_loaded_lanes_in_order() {
+        let cfg = Config::default();
+        let path =
+            std::env::temp_dir().join(format!("observatory-cmd-{}.sqlite", std::process::id()));
+        let app = tauri::test::mock_app();
+        app.manage(Shell {
+            template: Arc::new(cfg.cycle.load_template().template),
+            store: Mutex::new(Store::open(&path).expect("the store opens")),
+            status: Arc::new(Mutex::new(AttachStatus::default())),
+            cfg,
+        });
+        let shell = app.state::<Shell>();
+        let loaded =
+            tauri::async_runtime::block_on(cycle_template(shell)).expect("the command answers");
+        let names: Vec<&str> = loaded.lanes.iter().map(|lane| lane.name.as_str()).collect();
+        println!("cycle_template lanes: {names:?}");
+        assert_eq!(loaded, CycleTemplate::engineering());
+        assert_eq!(names.len(), 7, "the default template has seven lanes");
+        let _ = std::fs::remove_file(path);
+    }
+}

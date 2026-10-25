@@ -185,6 +185,13 @@ impl From<&StallFlag> for StallFlagView {
     }
 }
 
+/// What `human_action` answers: the `human_actions` row and the event it wrote.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionRecorded {
+    pub action_id: u64,
+    pub event_id: String,
+}
+
 /// The flags of one mission, as the window carries them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StallBatch {

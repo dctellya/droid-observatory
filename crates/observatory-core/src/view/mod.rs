@@ -27,8 +27,8 @@ pub use board::{
 };
 pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
 pub use controls::{
-    ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch, StallFlagView,
-    StallRow, TERMINAL_INSTRUCTION, terminal_text,
+    ActionRecorded, ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch,
+    StallFlagView, StallRow, TERMINAL_INSTRUCTION, terminal_text,
 };
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};

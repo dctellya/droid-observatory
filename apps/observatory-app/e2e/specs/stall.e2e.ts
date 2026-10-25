@@ -25,6 +25,5 @@ describe('the stall banner of a hosted mission that waits on the human', () => {
     await expect(byId('stall-link')).toHaveText(
       'docs/runbooks/stalled-mission.md#waiting-on-human',
     );
-    await browser.saveScreenshot('stall-banner.png').catch(() => undefined);
   });
 });
