@@ -7,9 +7,9 @@ anything here; this file is the operational summary.
 
 droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that watches a Factory Mission and
 measures the waste and effectiveness (cycle time, cost) of the engineering cycle from the spec to
-the PR's checks going green. The lanes are the seven mission phases (1 Plan, 2 Contract, 3 Build,
-4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate); roles are colour and attribution; human and
-commander actions are overlays, not lanes; time, waste, cost and model drift are the Panel. Anything
+the PR's checks going green. The lanes are the phases of the cycle template (`config/cycles/engineering.toml`
+by default: 1 Plan, 2 Contract, 3 Build, 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate); roles are colour and
+attribution; human and officer actions are overlays (D-035), not lanes; time, waste, cost and model drift are the Panel. Anything
 after the merge (release, observe, deploys, flags) is out of scope: the last event is `handed_to_cd`
 (F-028, D-024).
 PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by F-028 where noted).
@@ -76,8 +76,8 @@ Once the skeleton lands, the path the validators follow is:
    over 8735 records. `replay --root-only <root.jsonl>` reads the root file alone: S 364 events
    over 2027 records, M0 474 events over 2820 records. `make replay-fixtures` replays with
    children.
-3. `make app-dev` opens the window; open the same fixture (Replay); the seven phase lanes and the
-   Panel render and a card opens its Details view.
+3. `make app-dev` opens the window; open the same fixture (Replay); the template's lanes (seven in the
+   default template) and the Panel render and a card opens its Details view.
 4. With the window open, start `droid exec --mission ...` in a terminal; the new session
    appears on the board (Attach) and each event shows within 1 s.
 
@@ -105,7 +105,7 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Rust 2024 edition, `rustfmt.toml` and `clippy.toml` as committed. Warnings are errors.
 - Naming: standard Rust (`snake_case` items and modules, `CamelCase` types, `SCREAMING_SNAKE`
   consts). Event kinds mirror the PRD §7 names in `snake_case`
-  (`finding.blocking` → `FindingBlocking`). Role enums use the PRD's words; the lane enum is the seven phases of D-024.
+  (`finding.blocking` → `FindingBlocking`). Role enums use the PRD's words; lanes are `LaneId`s of the cycle template (D-035); there is no lane enum.
 - Tests: unit tests in `#[cfg(test)] mod tests` next to the code; integration tests in
   `crates/<crate>/tests/<topic>.rs`; fixture-driven tests read `fixtures/streams/`. Test
   functions read as sentences: `rework_window_closes_on_resolution()`.
