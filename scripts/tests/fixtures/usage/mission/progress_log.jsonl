@@ -1,0 +1,10 @@
+{"timestamp":"2026-10-24T22:00:00.000Z","type":"worker_started","workerSessionId":"aaaaaaaa-0000-4000-8000-000000000000","featureId":"m8-old","modelId":"claude-sonnet-5-5"}
+{"timestamp":"2026-10-25T10:00:30.000Z","type":"worker_started","workerSessionId":"33333333-3333-4333-8333-333333333333","featureId":"m9-alpha","modelId":"claude-sonnet-5-5"}
+{"timestamp":"2026-10-25T10:02:00.000Z","type":"worker_completed","workerSessionId":"33333333-3333-4333-8333-333333333333","featureId":"m9-alpha","successState":"partial"}
+{"timestamp":"2026-10-25T10:03:00.000Z","type":"worker_started","workerSessionId":"33333333-3333-4333-8333-33333333333b","featureId":"m9-alpha","modelId":"claude-sonnet-5-5"}
+{"timestamp":"2026-10-25T10:10:00.000Z","type":"mission_paused","pauseReason":"unrecoverable_usage_402"}
+{"timestamp":"2026-10-25T10:15:00.000Z","type":"worker_started","workerSessionId":"44444444-4444-4444-8444-444444444444","featureId":"scrutiny-validator-m9","modelId":"claude-opus-5-5"}
+{"timestamp":"2026-10-25T10:30:00.000Z","type":"mission_resumed"}
+{"timestamp":"2026-10-25T10:35:00.000Z","type":"mission_paused"}
+{"timestamp":"2026-10-25T10:36:00.000Z","type":"mission_run_started"}
+{"timestamp":"2026-10-25T10:51:00.000Z","type":"worker_completed","workerSessionId":"44444444-4444-4444-8444-444444444444","featureId":"scrutiny-validator-m9","successState":"success"}

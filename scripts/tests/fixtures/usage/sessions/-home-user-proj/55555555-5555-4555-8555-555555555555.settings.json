@@ -1,0 +1,22 @@
+{
+ "model": "claude-opus-5-5",
+ "reasoningEffort": "high",
+ "tags": [
+  {
+   "name": "subagent",
+   "metadata": {
+    "callingSessionId": "44444444-4444-4444-8444-444444444444",
+    "callingToolUseId": "call_fixture"
+   }
+  }
+ ],
+ "assistantActiveTimeMs": 0,
+ "tokenUsage": {
+  "inputTokens": 15,
+  "outputTokens": 20005,
+  "cacheCreationTokens": 100000,
+  "cacheReadTokens": 500005,
+  "thinkingTokens": 70,
+  "factoryCredits": 5555
+ }
+}

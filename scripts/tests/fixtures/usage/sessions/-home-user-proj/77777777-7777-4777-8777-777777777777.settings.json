@@ -1,0 +1,28 @@
+{
+ "model": "claude-opus-5-5",
+ "reasoningEffort": "high",
+ "tags": [
+  {
+   "name": "exec"
+  },
+  {
+   "name": "mission-worker"
+  },
+  {
+   "name": "mission-session",
+   "metadata": {
+    "role": "worker",
+    "missionId": "66666666-6666-4666-8666-666666666666"
+   }
+  }
+ ],
+ "assistantActiveTimeMs": 0,
+ "tokenUsage": {
+  "inputTokens": 100000,
+  "outputTokens": 10000,
+  "cacheCreationTokens": 0,
+  "cacheReadTokens": 0,
+  "thinkingTokens": 0,
+  "factoryCredits": 222
+ }
+}
