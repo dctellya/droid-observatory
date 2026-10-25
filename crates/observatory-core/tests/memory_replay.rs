@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use observatory_core::ingest::replay_files;
-use observatory_core::model::{Event, SourcePtr};
+use observatory_core::model::{CycleTemplate, Event, SourcePtr};
 use observatory_core::view::{BoardState, ViewConfig, tray_count};
 
 const M0: &str = "2026-10-22-observatory-v1-m0";
@@ -112,7 +112,11 @@ fn unknown_lines_are_counted_and_their_raw_line_opens_from_the_pointer() {
 
     assert_eq!(replay.summary.unknown_count, 2);
     assert_eq!(tray_count(&replay.events), 2);
-    let board = BoardState::fold(&replay.events, &ViewConfig::default());
+    let board = BoardState::fold(
+        &replay.events,
+        &ViewConfig::default(),
+        &CycleTemplate::engineering(),
+    );
     assert_eq!(board.tray_unknown, 2);
     let raw: Vec<&[u8]> = board
         .tray

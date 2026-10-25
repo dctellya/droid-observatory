@@ -105,17 +105,8 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
         );
         let _ = app.emit("session_discovered", row);
     }
-    for warning in &step.warnings {
-        match warning {
-            IngestError::TooLarge { path, mb } => {
-                tracing::warn!(path = %path.display(), mb, "TooLarge");
-            }
-            other => tracing::warn!(%other, "attach"),
-        }
-    }
-    for error in &step.errors {
-        tracing::error!(%error, "store");
-    }
+    log_problems(&step);
+    log_failures(&step);
     if let Some(next) = step.status {
         tracing::info!(
             watched = next.watched.len(),
@@ -127,6 +118,41 @@ fn report(app: &AppHandle, status: &Mutex<AttachStatus>, step: LiveStep) {
     for batch in &step.batches {
         log_batch(batch);
         let _ = app.emit("events_appended", batch);
+    }
+}
+
+fn log_problems(step: &LiveStep) {
+    for rename in &step.renamed {
+        tracing::info!(
+            session_id = %rename.session_id,
+            old = %rename.old,
+            new = %rename.new,
+            at = %rename.at,
+            "session_renamed"
+        );
+    }
+    for refusal in &step.refused {
+        tracing::warn!(
+            session_id = %refusal.session_id,
+            kept = %refusal.kept,
+            attempted = %refusal.attempted,
+            at = %refusal.at,
+            "session_rename_refused"
+        );
+    }
+}
+
+fn log_failures(step: &LiveStep) {
+    for warning in &step.warnings {
+        match warning {
+            IngestError::TooLarge { path, mb } => {
+                tracing::warn!(path = %path.display(), mb, "TooLarge");
+            }
+            other => tracing::warn!(%other, "attach"),
+        }
+    }
+    for error in &step.errors {
+        tracing::error!(%error, "store");
     }
 }
 

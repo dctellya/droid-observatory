@@ -7,10 +7,11 @@ pub use v1::RoleEvidence;
 pub use version::{MappingVersion, Warning, select_version};
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ingest::{RawRecord, SessionTree, UsageTurn};
 use crate::model::{
-    Event, MilestoneId, MissionId, ModelId, Role, SessionId, Timestamp, TokenUsage,
+    CycleTemplate, Event, MilestoneId, MissionId, ModelId, Role, SessionId, Timestamp, TokenUsage,
 };
 
 /// What the mapping needs to know about the session a record came from.
@@ -49,6 +50,8 @@ pub struct MapContext<'a> {
     pub version: MappingVersion,
     /// Time given to a record that carries none of its own.
     pub fallback_at: Timestamp,
+    /// The cycle whose lanes the events are assigned to.
+    pub template: &'a CycleTemplate,
 }
 
 /// Which role a session has, by the rules of the mapping version.
@@ -82,7 +85,7 @@ pub(crate) fn proposal_milestones(version: MappingVersion, proposal: &str) -> Ve
 pub fn map_record(record: &RawRecord, ctx: &MapContext<'_>) -> Vec<Event> {
     match ctx.version {
         MappingVersion::V1 => {
-            let mut state = v1::State::new(ctx.session);
+            let mut state = v1::State::new(ctx.session, Arc::new(ctx.template.clone()));
             state.set_last_at(ctx.fallback_at);
             let mut events = v1::map_record(record, ctx.session, ctx.version, &mut state);
             events.extend(v1::flush(&mut state, ctx.session));
@@ -100,17 +103,30 @@ enum State {
 pub struct Mapper {
     session: SessionMeta,
     version: MappingVersion,
+    template: Arc<CycleTemplate>,
     state: State,
 }
 
 impl Mapper {
+    /// A mapper for the engineering cycle (D-024).
     pub fn new(session: SessionMeta, version: MappingVersion) -> Self {
+        Self::with_template(session, version, CycleTemplate::engineering())
+    }
+
+    /// A mapper that assigns events to the lanes of `template` (F-041).
+    pub fn with_template(
+        session: SessionMeta,
+        version: MappingVersion,
+        template: impl Into<Arc<CycleTemplate>>,
+    ) -> Self {
+        let template = template.into();
         let state = match version {
-            MappingVersion::V1 => State::V1(v1::State::new(&session)),
+            MappingVersion::V1 => State::V1(v1::State::new(&session, template.clone())),
         };
         Self {
             session,
             version,
+            template,
             state,
         }
     }
@@ -131,7 +147,7 @@ impl Mapper {
     /// Forgets every record seen, as when the file is read again from its first line.
     pub fn restart(&mut self) {
         self.state = match self.version {
-            MappingVersion::V1 => State::V1(v1::State::new(&self.session)),
+            MappingVersion::V1 => State::V1(v1::State::new(&self.session, self.template.clone())),
         };
     }
 
@@ -163,10 +179,22 @@ pub struct TreeMapper {
     order: Vec<SessionId>,
     mission_id: MissionId,
     version: MappingVersion,
+    template: Arc<CycleTemplate>,
 }
 
 impl TreeMapper {
+    /// A mapper for the engineering cycle (D-024).
     pub fn new(tree: &SessionTree, version: MappingVersion) -> Self {
+        Self::with_template(tree, version, CycleTemplate::engineering())
+    }
+
+    /// A mapper that assigns events to the lanes of `template` (F-041).
+    pub fn with_template(
+        tree: &SessionTree,
+        version: MappingVersion,
+        template: impl Into<Arc<CycleTemplate>>,
+    ) -> Self {
+        let template = template.into();
         let order = tree
             .sessions()
             .iter()
@@ -175,19 +203,23 @@ impl TreeMapper {
         let mappers = tree
             .sessions()
             .iter()
-            .map(|session| (session.id.clone(), Mapper::new(tree.meta(session), version)))
+            .map(|session| {
+                let mapper = Mapper::with_template(tree.meta(session), version, template.clone());
+                (session.id.clone(), mapper)
+            })
             .collect();
         Self {
             mappers,
             order,
             mission_id: tree.mission_id().clone(),
             version,
+            template,
         }
     }
 
     /// A record from a session the tree does not know is mapped as `Unresolved`, not dropped.
     pub fn map(&mut self, record: &RawRecord) -> Vec<Event> {
-        let (mission_id, version) = (&self.mission_id, self.version);
+        let (mission_id, version, template) = (&self.mission_id, self.version, &self.template);
         self.mappers
             .entry(record.session_id.clone())
             .or_insert_with(|| {
@@ -197,7 +229,7 @@ impl TreeMapper {
                     role: Role::Unresolved,
                     ..SessionMeta::root(record.session_id.clone())
                 };
-                Mapper::new(session, version)
+                Mapper::with_template(session, version, template.clone())
             })
             .map(record)
     }

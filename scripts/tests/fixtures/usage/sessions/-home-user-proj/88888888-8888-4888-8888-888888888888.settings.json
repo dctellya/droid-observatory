@@ -1,0 +1,13 @@
+{
+ "model": "claude-sonnet-5-5",
+ "reasoningEffort": "high",
+ "tags": [
+  {
+   "name": "exec"
+  },
+  {
+   "name": "probe-fixture"
+  }
+ ],
+ "assistantActiveTimeMs": 0
+}

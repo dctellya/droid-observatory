@@ -14,12 +14,20 @@ Cargo.lock.orig
 /apps/**/gen/schemas/
 node_modules/
 
+# User data in the main checkout (never committed or touched) and Python bytecode, both of which move the gate key
+vscode_target/
+__pycache__/
+*.pyc
+
 # Local tool state
 .lycheecache
 .factory/readiness-report.json
 .factory/*.local.json
 *.log
 !build-log/**/*.jsonl
+# The gate hit log is a record like reports/gate/<tree>/*.json; the usage fixture carries sample logs.
+!reports/gate/hits.log
+!scripts/tests/fixtures/usage/**/*.log
 
 # OS
 .DS_Store
@@ -35,3 +43,4 @@ Thumbs.db
 /coverage/
 lcov.info
 *.profraw
+reports/e2e/*/

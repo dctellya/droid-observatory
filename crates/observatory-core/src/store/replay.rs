@@ -13,7 +13,11 @@ use crate::ingest::{
     JsonlSource, OpenedMission, SessionInfo, SessionTree, Source, read_sidecar, select_mapping_of,
 };
 use crate::mapping::{MappingVersion, TreeMapper};
-use crate::model::{EventId, EventKind, MissionId, ModelId, Role, SessionId, SourcePtr};
+use std::sync::Arc;
+
+use crate::model::{
+    CycleTemplate, EventId, EventKind, MissionId, ModelId, Role, SessionId, SourcePtr,
+};
 use crate::store::CaptureInfo;
 use crate::view::{MissionSummary, RawLineView, raw_line_view};
 
@@ -37,13 +41,23 @@ impl Store {
         file: &Path,
         cfg: &IngestConfig,
     ) -> Result<OpenedMission, StoreError> {
+        self.replay_file_with(file, cfg, CycleTemplate::engineering())
+    }
+
+    /// `replay_file`, assigning the events to the lanes of `template` (F-041).
+    pub fn replay_file_with(
+        &mut self,
+        file: &Path,
+        cfg: &IngestConfig,
+        template: impl Into<Arc<CycleTemplate>>,
+    ) -> Result<OpenedMission, StoreError> {
         let root = std::path::absolute(root_of(file)).unwrap_or_else(|_| root_of(file));
         let (version, warning) = select_mapping_of(&root)?;
         let tree = SessionTree::discover(&root, cfg)?;
         self.record_tree(&tree, &CaptureInfo::from_session_file(&root)?, false)?;
 
         let mut source = JsonlSource::open_tree(&tree, cfg)?;
-        let mut mapper = TreeMapper::new(&tree, version);
+        let mut mapper = TreeMapper::with_template(&tree, version, template);
         let mut records = 0_u64;
         loop {
             let mut batch = source.next_batch()?;

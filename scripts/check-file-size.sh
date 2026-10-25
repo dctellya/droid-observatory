@@ -7,7 +7,7 @@ limit=$((MAX_FILE_KB * 1024))
 status=0
 for f in $(git ls-files); do
   case "$f" in
-    fixtures/streams/*|build-log/*|Cargo.lock|*.png|*.webp|*.mp4) continue ;;
+    fixtures/streams/*|build-log/*|Cargo.lock|*/package-lock.json|*.png|*.webp|*.mp4) continue ;;
   esac
   [ -f "$f" ] || continue
   size=$(wc -c < "$f")

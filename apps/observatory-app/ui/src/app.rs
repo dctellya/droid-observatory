@@ -3,16 +3,18 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
-use observatory_core::model::SessionId;
-use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines};
+use observatory_core::model::{CycleTemplate, SessionId};
+use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
 use crate::backend;
 use crate::board::Board;
 use crate::capture::Capture;
+use crate::controls::StallCtx;
 use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
+use crate::perf;
 use crate::shell;
 
 /// Refresh state of the library rows: nothing running, a read running, a read running that a
@@ -32,7 +34,13 @@ fn report_rendered(batch: &EventBatch, board_open: bool) {
         .collect();
     spawn_local(async move {
         leptos::task::tick().await;
-        let args = json!({ "mission_id": mission_id, "event_ids": event_ids, "open": board_open });
+        let ms = perf::batch_drawn();
+        let args = json!({
+            "mission_id": mission_id,
+            "event_ids": event_ids,
+            "open": board_open,
+            "ms": ms,
+        });
         let _ = shell::invoke::<_, ()>("panel_rendered", &args).await;
     });
 }
@@ -82,9 +90,12 @@ pub fn App() -> impl IntoView {
     let attach_status = RwSignal::new(AttachStatus::default());
     let hosted = HostedCtx::new();
     provide_context(hosted);
+    let stalls = StallCtx(RwSignal::new(std::collections::HashMap::new()));
+    provide_context(stalls);
     let launching = RwSignal::new(false);
 
     let open_shell = Callback::new(move |(command, args): (&'static str, Value)| {
+        perf::panel_render_started();
         failure.set(None);
         status.set(Some("Opening…".to_owned()));
         pending.set(Some(Vec::new()));
@@ -112,6 +123,10 @@ pub fn App() -> impl IntoView {
             status.set(None);
         });
     });
+    // The template is data the shell read at start-up; the browser host has no shell and keeps
+    // the compiled-in engineering cycle.
+    let template = RwSignal::new(CycleTemplate::engineering());
+    provide_context(template);
     provide_context(AttachCtx {
         status: attach_status,
         open: Callback::new(move |session_id: SessionId| {
@@ -127,6 +142,11 @@ pub fn App() -> impl IntoView {
             }
         });
         spawn_local(async move {
+            if let Ok(now) = shell::invoke::<_, CycleTemplate>("cycle_template", &json!({})).await {
+                template.set(now);
+            }
+        });
+        spawn_local(async move {
             if let Ok(config) =
                 shell::invoke::<_, observatory_core::config::Config>("app_config", &json!({})).await
             {
@@ -136,7 +156,19 @@ pub fn App() -> impl IntoView {
             }
         });
         shell::listen::<HostedStatus>("hosted_status", move |now| {
-            hosted.status.set(Some(now));
+            // Several hosted runs can be alive; the screen follows the one it launched last.
+            let mine = hosted
+                .launched
+                .get_untracked()
+                .is_some_and(|launched| launched.launch_id == now.launch_id);
+            if mine {
+                hosted.status.set(Some(now));
+            }
+        });
+        shell::listen::<StallBatch>("stall_flag", move |batch| {
+            stalls.0.update(|all| {
+                all.insert(batch.mission_id, batch.flags);
+            });
         });
         shell::listen::<OutputLines>("live_output", move |lines| {
             hosted.output.update(|output| output.push(lines));
@@ -146,6 +178,7 @@ pub fn App() -> impl IntoView {
             refresh_rows(rows, rows_state);
         });
         shell::listen::<EventBatch>("events_appended", move |batch| {
+            perf::batch_received();
             if pending.with_untracked(Option::is_some) {
                 pending.update(|held| held.get_or_insert_with(Vec::new).push(batch));
                 return;
@@ -172,6 +205,7 @@ pub fn App() -> impl IntoView {
     }
 
     let pick = Callback::new(move |files: Vec<web_sys::File>| {
+        perf::panel_render_started();
         failure.set(None);
         status.set(Some(format!("Loading {} files…", files.len())));
         spawn_local(async move {
@@ -231,7 +265,7 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <main class="app" aria-label="observatory">
+        <main class="observatory" aria-label="observatory">
             {move || match current.get() {
                 None if launching.get() => {
                     view! { <LaunchScreen on_close=Callback::new(move |()| launching.set(false)) /> }

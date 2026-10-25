@@ -4,10 +4,14 @@
 use std::path::Path;
 
 use observatory_core::config::MissionConfig;
-use observatory_core::model::{Event, Lane};
+use observatory_core::model::{CycleTemplate, Event};
 use observatory_core::view::{
     BoardDigest, BoardView, DeclaredModels, ViewConfig, branch_of, lane_counts, tray_count,
 };
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -23,6 +27,7 @@ fn board_of(events: &[Event]) -> BoardView {
         &ViewConfig::default(),
         &DeclaredModels::from_config(&mission),
         &branch_of(&mission, "m0"),
+        &engineering(),
     )
 }
 
@@ -40,8 +45,11 @@ fn board_digest_reports_lane_events_card_lanes_and_the_tray() {
     assert_eq!(digest.event_count, on_board, "turn.usage is Panel data");
     assert_eq!(digest.event_count, 1279);
     assert_eq!(digest.tray_unknown, tray_count(&events));
-    assert_eq!(digest.lane_events.to_vec(), lane_counts(&events).to_vec());
-    assert_eq!(digest.lane_events.len(), Lane::ALL.len());
+    assert_eq!(
+        digest.lane_events.to_vec(),
+        lane_counts(&events, &engineering()).to_vec()
+    );
+    assert_eq!(digest.lane_events.len(), engineering().lanes.len());
     assert_eq!(
         digest.lane_cards.iter().sum::<usize>(),
         board.card_count(),
@@ -49,9 +57,8 @@ fn board_digest_reports_lane_events_card_lanes_and_the_tray() {
     );
     assert_eq!(digest.cards.len(), board.card_count());
     for card in &digest.cards {
-        let lane = Lane::ALL
-            .iter()
-            .position(|&l| l == card.lane)
+        let lane = engineering()
+            .index(&card.lane)
             .expect("a card sits in one of the seven lanes");
         assert!(digest.lane_cards[lane] > 0);
     }

@@ -1,0 +1,4 @@
+chore(integration): {{milestone}} boundary reports and shared files
+
+Written by `make integrate` on {{date}} after merging {{branch}}: the usage report, the merged
+staging files (SPEC section 9, BACKLOG, decision addenda), the gate records and the boundary report.

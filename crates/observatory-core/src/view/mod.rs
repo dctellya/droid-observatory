@@ -4,6 +4,7 @@ mod agent_panel;
 mod agents;
 mod board;
 mod card;
+mod controls;
 mod details;
 mod filter;
 mod gate;
@@ -11,6 +12,7 @@ mod hosted;
 mod launch;
 mod library;
 mod live_output;
+mod post_mortem;
 mod scrub;
 mod scrubber;
 mod state;
@@ -24,6 +26,10 @@ pub use board::{
     pointer_text,
 };
 pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
+pub use controls::{
+    ActionRecorded, ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch,
+    StallFlagView, StallRow, TERMINAL_INSTRUCTION, terminal_text,
+};
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
@@ -35,6 +41,7 @@ pub use launch::{
 };
 pub use library::{LibraryEntry, MissionRow, library};
 pub use live_output::{LiveOutput, OutputLines};
+pub use post_mortem::{ClockReading, LaneSummary, PostMortemInput, post_mortem_input};
 pub use scrub::{ScrubbedLine, scrub};
 pub use scrubber::{
     OverlayMarker, Scrubber, lane_counts, overlay_marker_rows, overlay_markers, scrub_to,

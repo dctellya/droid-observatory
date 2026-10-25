@@ -1,12 +1,15 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::Value;
 
 use super::envelope::{Incoming, parse};
 use super::open::OpenRequests;
+use super::session_file::SessionFile;
+use crate::config::IngestConfig;
 use crate::ingest::RawRecord;
 use crate::mapping::{Mapper, MappingVersion, SessionMeta};
-use crate::model::{Event, EventKind, SessionId};
+use crate::model::{CycleTemplate, Event, EventKind, SessionId, Timestamp};
 
 /// Maps the lines of a spool through mapping v1, the rules that map a session file: the
 /// stream's messages are turned back into the file's records in memory and the events point
@@ -18,20 +21,46 @@ use crate::model::{Event, EventKind, SessionId};
 pub struct RpcMapper {
     launch: SessionId,
     version: MappingVersion,
+    template: Arc<CycleTemplate>,
     mapper: Option<Mapper>,
     open: OpenRequests,
     protocol: BTreeMap<String, u64>,
+    files: Option<SessionFile>,
 }
 
 impl RpcMapper {
+    /// A mapper for the engineering cycle (D-024).
     pub fn new(launch_id: &str, version: MappingVersion) -> Self {
+        Self::with_template(launch_id, version, CycleTemplate::engineering())
+    }
+
+    /// A mapper that assigns events to the lanes of `template` (F-041).
+    pub fn with_template(
+        launch_id: &str,
+        version: MappingVersion,
+        template: impl Into<Arc<CycleTemplate>>,
+    ) -> Self {
         Self {
             launch: SessionId(launch_id.to_owned()),
             version,
+            template: template.into(),
             mapper: None,
             open: OpenRequests::default(),
             protocol: BTreeMap::new(),
+            files: None,
         }
+    }
+
+    /// Also reads the hosted child's session file, found below `[ingest].factory_sessions_dir`
+    /// by the session id the stream names, for the records the stream has no notification for:
+    /// `todo_state`, which mapping v1 turns into `plan.revised`. The events carry the session
+    /// file's pointers and so the ids the attach path gives the same lines. A plan the stream
+    /// also carries, or a file read twice, maps once: mapping v1 reports a plan only when it
+    /// differs from the one before.
+    #[must_use]
+    pub fn with_session_files(mut self, cfg: &IngestConfig) -> Self {
+        self.files = Some(SessionFile::new(cfg));
+        self
     }
 
     /// The session of the stream, once its first response has been read.
@@ -55,19 +84,27 @@ impl RpcMapper {
 
     pub fn map(&mut self, record: &RawRecord) -> Vec<Event> {
         match parse(&record.bytes) {
-            Incoming::Record => self.feed(record, record.bytes.clone()),
+            Incoming::Record => {
+                let own = time_of(&record.bytes);
+                self.feed(record, record.bytes.clone(), own)
+            }
             Incoming::Session { id, record: line } => {
                 self.mapper.get_or_insert_with(|| {
-                    Mapper::new(SessionMeta::root(SessionId(id)), self.version)
+                    Mapper::with_template(
+                        SessionMeta::root(SessionId(id)),
+                        self.version,
+                        self.template.clone(),
+                    )
                 });
-                self.feed(record, line)
+                self.feed(record, line, None)
             }
             Incoming::Message {
                 record: line,
                 asks,
                 results,
             } => {
-                let events = self.feed(record, arrival(line, record));
+                let own = time_of(&line);
+                let events = self.feed(record, arrival(line, record), own);
                 let questions = events
                     .iter()
                     .filter(|event| event.kind == EventKind::QuestionAsked);
@@ -79,9 +116,13 @@ impl RpcMapper {
                 }
                 events
             }
-            Incoming::Outcome { record: line } => self.feed(record, arrival(line, record)),
+            Incoming::Outcome { record: line } => {
+                let own = time_of(&line);
+                self.feed(record, arrival(line, record), own)
+            }
             Incoming::ToolResult { record: line, call } => {
-                let events = self.feed(record, arrival(line, record));
+                let own = time_of(&line);
+                let events = self.feed(record, arrival(line, record), own);
                 self.open.close_call(&call);
                 events
             }
@@ -100,14 +141,16 @@ impl RpcMapper {
             Incoming::Protocol(name) => self.count(&name),
             Incoming::Unrecognised(name) => {
                 let line = serde_json::json!({ "type": name }).to_string().into_bytes();
-                self.feed(record, arrival(line, record))
+                self.feed(record, arrival(line, record), None)
             }
         }
     }
 
     /// The events of the end of the spool: call it once, when the process has exited.
     pub fn finish(&mut self) -> Vec<Event> {
-        self.mapper.as_mut().map(Mapper::finish).unwrap_or_default()
+        let mut events = self.map_session_file(None);
+        events.extend(self.mapper.as_mut().map(Mapper::finish).unwrap_or_default());
+        events
     }
 
     fn count(&mut self, name: &str) -> Vec<Event> {
@@ -115,19 +158,54 @@ impl RpcMapper {
         Vec::new()
     }
 
-    fn feed(&mut self, record: &RawRecord, bytes: Vec<u8>) -> Vec<Event> {
-        let (launch, version) = (&self.launch, self.version);
-        let mapper = self
-            .mapper
-            .get_or_insert_with(|| Mapper::new(SessionMeta::root(launch.clone()), version));
+    /// `own` is the time the line itself carries: the session file's records written before it
+    /// are mapped first, so the events come in file order. A line with no time of its own (a
+    /// turn outcome is timed by its arrival) waits for the next one that has.
+    fn feed(&mut self, record: &RawRecord, bytes: Vec<u8>, own: Option<Timestamp>) -> Vec<Event> {
+        let (launch, version, template) = (&self.launch, self.version, &self.template);
+        self.mapper.get_or_insert_with(|| {
+            Mapper::with_template(SessionMeta::root(launch.clone()), version, template.clone())
+        });
+        let mut events = own.map_or_else(Vec::new, |own| self.map_session_file(Some(own)));
+        let mapper = self.mapper.as_mut().expect("the mapper was just created");
         let line = RawRecord {
             ptr: record.ptr.clone(),
             session_id: mapper.session().id.clone(),
             bytes,
             arrived_at: record.arrived_at,
         };
-        mapper.map(&line)
+        events.extend(mapper.map(&line));
+        events
     }
+
+    /// The events of the session file's records written up to `until`, or all that are left.
+    fn map_session_file(&mut self, until: Option<Timestamp>) -> Vec<Event> {
+        let (Some(files), Some(mapper)) = (self.files.as_mut(), self.mapper.as_mut()) else {
+            return Vec::new();
+        };
+        let session = mapper.session().id.clone();
+        let records = match until {
+            Some(until) => files.due(&session, until),
+            None => files.rest(&session),
+        };
+        records
+            .into_iter()
+            .flat_map(|record| {
+                mapper.map(&RawRecord {
+                    session_id: session.clone(),
+                    ..record
+                })
+            })
+            .collect()
+    }
+}
+
+fn time_of(line: &[u8]) -> Option<Timestamp> {
+    serde_json::from_slice::<Value>(line)
+        .ok()?
+        .get("timestamp")?
+        .as_str()
+        .and_then(|text| Timestamp::parse(text).ok())
 }
 
 /// A record rebuilt from a notification has the time its message carried, if it carried one;

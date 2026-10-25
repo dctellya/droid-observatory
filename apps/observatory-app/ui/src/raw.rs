@@ -29,7 +29,7 @@ pub fn RawLine(capture: Capture, selected: RwSignal<Option<EventId>>) -> impl In
                     pointer_text(&line.pointer),
                     view! {
                         <p aria-label="raw-line-kind">{line.kind.clone()}</p>
-                        <pre aria-label="raw-line" class="raw">{line.line.text}</pre>
+                        <pre aria-label="raw-line" class="raw mono">{line.line.text}</pre>
                         <p aria-label="raw-line-masked">{line.line.masked} " token shapes masked"</p>
                     }
                     .into_any(),

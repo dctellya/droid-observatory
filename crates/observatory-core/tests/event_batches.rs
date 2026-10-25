@@ -194,11 +194,11 @@ mod live {
         LiveIngest::start(&config(dir.path()), store).unwrap()
     }
 
-    fn summary(event: &Event) -> (String, String, u8, String, u64) {
+    fn summary(event: &Event) -> (String, String, String, String, u64) {
         (
             event.id.to_string(),
             event.kind.prd_name().into_owned(),
-            event.lane.number(),
+            event.lane.to_string(),
             event.at.to_rfc3339_millis(),
             byte_offset(event),
         )

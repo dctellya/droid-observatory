@@ -7,13 +7,17 @@ use observatory_core::config::MissionConfig;
 use observatory_core::ingest::SessionInfo;
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
-    Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, ModelId, Role, SessionId,
-    SourcePtr, Timestamp, TokenUsage,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, ModelId, Role,
+    SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 use observatory_core::view::{
     AgentStatus, BoardState, DeclaredModels, Filter, IdleReason, MarkerKind, ViewConfig,
     WorkerGrouping, agent_entries, agent_stream, details, session_name,
 };
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -37,7 +41,7 @@ fn event(kind: EventKind, role: Role, session: &str, second: u32, milestone: &st
         mission_id: MissionId("mission".to_owned()),
         milestone_id: Some(MilestoneId(milestone.to_owned())),
         feature_id: Some(FeatureId(format!("{milestone}-feature"))),
-        lane: kind.lane(role),
+        lane: engineering().lane_of(&kind, role),
         overlay: kind.overlay(),
         kind,
         role,
@@ -78,6 +82,7 @@ fn fold(events: &[Event], second: Option<u32>) -> BoardState {
             grouping: WorkerGrouping::PerWorker,
             at: second.map(at),
         },
+        &engineering(),
     )
 }
 
@@ -328,9 +333,21 @@ fn the_board_view_carries_the_agents_at_the_scrubbed_instant() {
         at: second,
     };
 
-    let full = BoardView::build(&events, &cfg(None), &declared(), "mission/x");
+    let full = BoardView::build(
+        &events,
+        &cfg(None),
+        &declared(),
+        "mission/x",
+        &engineering(),
+    );
     let first = events[0].at;
-    let early = BoardView::build(&events, &cfg(Some(first)), &declared(), "mission/x");
+    let early = BoardView::build(
+        &events,
+        &cfg(Some(first)),
+        &declared(),
+        "mission/x",
+        &engineering(),
+    );
 
     assert_eq!(full.agents.len(), 56);
     assert!(early.agents.len() < full.agents.len());

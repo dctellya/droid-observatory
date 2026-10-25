@@ -1,0 +1,6 @@
+{
+  "validationWorkerModel": "claude-opus-5-5",
+  "validationWorkerReasoningEffort": "high",
+  "workerModel": "claude-sonnet-5-5",
+  "workerReasoningEffort": "high"
+}

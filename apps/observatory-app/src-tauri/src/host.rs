@@ -10,13 +10,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use observatory_core::config::Config;
+use observatory_core::control::{self, HumanAction};
 use observatory_core::ingest::rpc::{
     Ack, AckOutcome, ControlChannel, HostControl, RpcMapper, RpcSource, Spool, encode_initialize,
     method, spool_path,
 };
+use observatory_core::ingest::rpc::{Resolution, resolution_of};
 use observatory_core::ingest::{EventBatch, RawRecord, Source};
 use observatory_core::mapping::MappingVersion;
-use observatory_core::model::{Event, MissionId, SessionId};
+use observatory_core::model::{CycleTemplate, Event, LaneId, MissionId, SessionId, Timestamp};
 use observatory_core::store::HostedRun;
 use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
@@ -28,6 +30,8 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc as async_mpsc, watch};
 
 use crate::Shell;
+use crate::actions::Redacted;
+use crate::logging;
 use crate::process::{ProcessGroup, spawn_group};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -43,21 +47,33 @@ pub struct Hosts {
     exclude: mpsc::Sender<SessionId>,
 }
 
-struct Run {
+pub(crate) struct Run {
     group: ProcessGroup,
-    inner: Mutex<Inner>,
+    pub(crate) inner: Mutex<Inner>,
     status: Mutex<HostedStatus>,
+    /// Controls written and not yet acknowledged, by what acknowledges them: the id of the
+    /// request written, `permission:<request id>` or `call:<tool call id>`.
+    pub(crate) pending: Mutex<HashMap<String, PendingAck>>,
+    /// The `permission.requested` event of each open `droid.request_permission` request, by the
+    /// request's JSON-RPC id.
+    requests: Mutex<Vec<(String, String)>>,
+}
+
+/// A control waiting for the line that acknowledges it.
+pub(crate) struct PendingAck {
+    pub(crate) action: HumanAction,
+    pub(crate) about: Option<Event>,
 }
 
 /// The writer and the mapper share a lock: answering a question closes it in the mapper's
 /// open requests, and the pump opens them.
-struct Inner {
-    channel: ControlChannel<ChannelWriter>,
-    mapper: RpcMapper,
+pub(crate) struct Inner {
+    pub(crate) channel: ControlChannel<ChannelWriter>,
+    pub(crate) mapper: RpcMapper,
 }
 
 /// A `Write` over a channel: the stdin task owns the pipe and writes what the channel carries.
-struct ChannelWriter(async_mpsc::UnboundedSender<Vec<u8>>);
+pub(crate) struct ChannelWriter(async_mpsc::UnboundedSender<Vec<u8>>);
 
 impl Write for ChannelWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -80,7 +96,7 @@ impl Hosts {
         }
     }
 
-    fn run(&self, launch_id: &str) -> Result<Arc<Run>, String> {
+    pub(crate) fn run(&self, launch_id: &str) -> Result<Arc<Run>, String> {
         lock(&self.runs)
             .get(launch_id)
             .cloned()
@@ -116,7 +132,7 @@ impl Hosts {
         run.status_waiting(mapper);
         tracing::info!(
             launch_id,
-            control = ?control,
+            control = ?Redacted(control),
             request_id = %sent.id,
             method = sent.method,
             "host_control"
@@ -127,14 +143,26 @@ impl Hosts {
         })
     }
 
+    /// The ids of the hosted runs, which are also their mission ids.
+    pub fn launch_ids(&self) -> Vec<String> {
+        lock(&self.runs).keys().cloned().collect()
+    }
+
     pub fn status(&self, launch_id: &str) -> Result<HostedStatus, String> {
         Ok(lock(&self.run(launch_id)?.status).clone())
     }
 }
 
 impl Run {
+    pub(crate) fn request_for_event(&self, event_id: &str) -> Option<String> {
+        lock(&self.requests)
+            .iter()
+            .find(|(_, event)| event == event_id)
+            .map(|(request, _)| request.clone())
+    }
+
     /// What waits for the human: the open questions and permission requests.
-    fn status_waiting(&self, mapper: &RpcMapper) {
+    pub(crate) fn status_waiting(&self, mapper: &RpcMapper) {
         let open = mapper.open_requests();
         let mut status = lock(&self.status);
         status.questions = open
@@ -149,6 +177,11 @@ impl Run {
             .waiting_permissions()
             .into_iter()
             .map(|waiting| PermissionRow {
+                event_id: lock(&self.requests)
+                    .iter()
+                    .find(|(request, _)| *request == waiting.request_id)
+                    .map(|(_, event)| event.clone())
+                    .unwrap_or_default(),
                 request_id: waiting.request_id,
                 tools: waiting.tools,
                 can_approve: waiting.can_approve,
@@ -164,6 +197,7 @@ pub async fn launch<R: Runtime>(
     app: &AppHandle<R>,
     hosts: &Hosts,
     cfg: &Config,
+    template: &Arc<CycleTemplate>,
     config: LaunchConfig,
 ) -> Result<Launched, String> {
     if !std::path::Path::new(&config.repo).is_dir() {
@@ -225,9 +259,12 @@ pub async fn launch<R: Runtime>(
         group: spawned.group,
         inner: Mutex::new(Inner {
             channel,
-            mapper: RpcMapper::new(&launch_id, MappingVersion::V1),
+            mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone())
+                .with_session_files(&cfg.ingest),
         }),
         status: Mutex::new(HostedStatus::starting(&launch_id)),
+        pending: Mutex::new(HashMap::new()),
+        requests: Mutex::new(Vec::new()),
     });
     lock(&hosts.runs).insert(launch_id.clone(), run.clone());
 
@@ -244,6 +281,8 @@ pub async fn launch<R: Runtime>(
         auto_approve: cfg.mission.auto_approve_proposal,
         first_message: config.first_message(&mission_text),
         mission_name: config.branch.clone(),
+        template: template.clone(),
+        last_lane: None,
         config,
         mission: None,
         pending: Vec::new(),
@@ -251,6 +290,8 @@ pub async fn launch<R: Runtime>(
         output: Vec::new(),
         output_before: 0,
         flush_at: None,
+        line_at: Instant::now(),
+        oldest_at: None,
     };
     tokio::spawn(pump.run(received, spawned.exit));
 
@@ -304,12 +345,20 @@ struct Pump<R: Runtime> {
     config: LaunchConfig,
     first_message: String,
     mission_name: String,
+    template: Arc<CycleTemplate>,
+    /// The lane of the latest event of the stream: where a permission request is placed.
+    last_lane: Option<LaneId>,
     mission: Option<MissionId>,
     pending: Vec<Event>,
     unknown_total: u64,
     output: Vec<Vec<u8>>,
     output_before: u64,
     flush_at: Option<Instant>,
+    /// When the line being read arrived.
+    line_at: Instant,
+    /// When the oldest event not yet emitted arrived: the start of the interval the timing log
+    /// records at the flush.
+    oldest_at: Option<Instant>,
 }
 
 type ExitCode = watch::Receiver<Option<Option<i32>>>;
@@ -340,6 +389,7 @@ impl<R: Runtime> Pump<R> {
             self.record(&record);
         }
         let finished = lock(&self.run.inner).mapper.finish();
+        self.line_at = Instant::now();
         self.store(finished);
         lock(&self.run.status).exited(code);
         tracing::info!(launch_id = %self.launch_id, code = ?code, "host_exit");
@@ -347,6 +397,7 @@ impl<R: Runtime> Pump<R> {
     }
 
     fn line(&mut self, mut line: Vec<u8>) {
+        self.line_at = Instant::now();
         while matches!(line.last(), Some(b'\n' | b'\r')) {
             line.pop();
         }
@@ -381,9 +432,22 @@ impl<R: Runtime> Pump<R> {
         let run = self.run.clone();
         let mut inner = lock(&run.inner);
         let ack = inner.channel.observe(&record.bytes);
-        let events = inner.mapper.map(record);
+        let mut events = inner.mapper.map(record);
+        if let Some(lane) = events.iter().rev().find(|event| event.overlay.is_none()) {
+            self.last_lane = Some(lane.lane.clone());
+        }
+        events.extend(self.permission_requests(&run, &inner, record));
         if let Some(ack) = ack {
             self.on_ack(&run, &mut inner, &ack);
+            let accepted = matches!(ack.outcome, AckOutcome::Accepted);
+            events.extend(self.acknowledged(&run, &inner, &ack.id, record, accepted));
+        }
+        if let Some(resolution) = resolution_of(&record.bytes) {
+            let key = match resolution {
+                Resolution::Permission { request_id } => format!("permission:{request_id}"),
+                Resolution::ToolResult { call } => format!("call:{call}"),
+            };
+            events.extend(self.acknowledged(&run, &inner, &key, record, true));
         }
         self.approve_mission_proposals(&mut inner);
         run.status_waiting(&inner.mapper);
@@ -391,26 +455,78 @@ impl<R: Runtime> Pump<R> {
         self.store(events);
     }
 
-    fn on_ack(&self, run: &Run, inner: &mut Inner, ack: &Ack) {
-        let (accepted, message) = match &ack.outcome {
-            AckOutcome::Accepted => (true, None),
-            AckOutcome::Rejected { message, .. } => (false, Some(message.clone())),
-        };
+    /// The `permission.requested` events of the requests this line opened: the mapped stream
+    /// carries none, and an approve or deny points at one.
+    fn permission_requests(&self, run: &Run, inner: &Inner, record: &RawRecord) -> Vec<Event> {
+        let session = inner
+            .mapper
+            .session_id()
+            .cloned()
+            .unwrap_or_else(|| SessionId(self.launch_id.clone()));
+        let mission = MissionId(self.launch_id.clone());
+        let mut known = lock(&run.requests);
+        let mut made = Vec::new();
+        for open in inner.mapper.open_requests().permissions() {
+            if known.iter().any(|(request, _)| *request == open.request_id) {
+                continue;
+            }
+            let lane = self
+                .last_lane
+                .clone()
+                .unwrap_or_else(|| self.template.first().clone());
+            let at = record.arrived_at.unwrap_or_else(Timestamp::now);
+            let event = control::permission_requested_event(
+                &mission,
+                &session,
+                at,
+                record.ptr.clone(),
+                lane,
+            );
+            known.push((open.request_id.clone(), event.id.to_string()));
+            made.push(event);
+        }
+        made
+    }
+
+    /// The overlay event of a control whose acknowledgement `record` is, if one waits for `key`.
+    fn acknowledged(
+        &self,
+        run: &Run,
+        inner: &Inner,
+        key: &str,
+        record: &RawRecord,
+        accepted: bool,
+    ) -> Option<Event> {
+        let pending = lock(&run.pending).remove(key)?;
+        if !accepted {
+            return None;
+        }
+        let session = inner
+            .mapper
+            .session_id()
+            .cloned()
+            .unwrap_or_else(|| SessionId(self.launch_id.clone()));
+        let event = control::ack_event(
+            &pending.action,
+            &MissionId(self.launch_id.clone()),
+            &session,
+            record.arrived_at.unwrap_or_else(Timestamp::now),
+            record.ptr.clone(),
+            &self.template,
+            pending.about.as_ref(),
+        )?;
         tracing::info!(
             launch_id = %self.launch_id,
-            request_id = %ack.id,
-            method = %ack.method,
-            accepted,
-            "host_ack"
+            control = pending.action.kind(),
+            event_id = %event.id,
+            byte_offset = ?record.ptr,
+            "host_control_acknowledged"
         );
-        let mut status = lock(&run.status);
-        status.record_ack(AckRow {
-            request_id: ack.id.clone(),
-            method: ack.method.clone(),
-            accepted,
-            message,
-        });
-        drop(status);
+        Some(event)
+    }
+
+    fn on_ack(&self, run: &Run, inner: &mut Inner, ack: &Ack) {
+        let accepted = self.record_ack(run, ack);
         if ack.method == method::INITIALIZE_SESSION && accepted {
             lock(&run.status).initialised();
             match inner.channel.mission_settings(&self.config) {
@@ -433,6 +549,29 @@ impl<R: Runtime> Pump<R> {
                 },
             );
         }
+    }
+
+    /// Logs the acknowledgement and adds it to the status rows; whether Droid accepted it.
+    fn record_ack(&self, run: &Run, ack: &Ack) -> bool {
+        let (accepted, message) = match &ack.outcome {
+            AckOutcome::Accepted => (true, None),
+            AckOutcome::Rejected { message, .. } => (false, Some(message.clone())),
+        };
+        tracing::info!(
+            launch_id = %self.launch_id,
+            request_id = %ack.id,
+            method = %ack.method,
+            accepted,
+            "host_ack"
+        );
+        let mut status = lock(&run.status);
+        status.record_ack(AckRow {
+            request_id: ack.id.clone(),
+            method: ack.method.clone(),
+            accepted,
+            message,
+        });
+        accepted
     }
 
     /// `droid exec --mission` accepts the orchestrator's proposal without asking; a hosted
@@ -460,7 +599,7 @@ impl<R: Runtime> Pump<R> {
         match channel.send(control, mapper.open_requests_mut()) {
             Ok(sent) => tracing::info!(
                 launch_id = %self.launch_id,
-                control = ?control,
+                control = ?Redacted(control),
                 request_id = %sent.id,
                 method = sent.method,
                 "host_control"
@@ -496,6 +635,7 @@ impl<R: Runtime> Pump<R> {
         self.unknown_total = store.unknown_count(&mission).unwrap_or(0);
         drop(store);
         self.pending.extend(events);
+        self.oldest_at.get_or_insert(self.line_at);
         self.schedule_flush();
     }
 
@@ -516,6 +656,13 @@ impl<R: Runtime> Pump<R> {
                 "events_appended"
             );
             let _ = self.app.emit("events_appended", &batch);
+            if let Some(arrived) = self.oldest_at.take() {
+                logging::interval(
+                    "spool_to_appended",
+                    arrived.elapsed().as_secs_f64() * 1000.0,
+                    batch.events.len(),
+                );
+            }
         }
         if !self.output.is_empty() {
             let lines = OutputLines::of(&self.launch_id, self.output_before, &self.output);

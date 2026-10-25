@@ -19,9 +19,13 @@ MAX_FILE_KB ?= 200
 # M0 onward enforces 80; CI passes its own value through the same name.
 COVERAGE_MIN ?= 80
 
+# Gate cache (rule 27): check, test, lint and coverage run once per (tree, toolchain, command) and replay
+# the stored verdict after; FORCE=1 reruns. CI calls cargo directly and does not use the cache.
+GATE := sh scripts/gate.sh $(if $(FORCE),--force)
+
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-todos check-decisions-index decisions-index check-secrets redact-check \
-        fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
+        check-all check-scripts check-gate-cache check-integrate integrate usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-24s %s\n", $$1, $$2}'
@@ -34,7 +38,31 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures ## All light checks (= mission-branch CI)
+check: ## All light checks (= mission-branch CI), cached by tree through scripts/gate.sh
+	@$(GATE) check -- $(MAKE) --no-print-directory check-all
+
+check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
+
+check-scripts: check-gate-cache check-integrate ## Shell tests of the repository scripts
+	@sh scripts/tests/compile-share.sh
+	@sh scripts/tests/usage-from-log.sh
+	@sh scripts/tests/log-tool-call-duration.sh
+	@sh scripts/tests/agents_md_test.sh
+	@python3 scripts/tests/usage_test.py
+
+usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
+	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
+	@python3 scripts/usage-report.py --milestone $(M) --cross-check $(foreach c,$(CAPS),--cap $(c)) $(USAGE_ARGS)
+
+integrate: ## Land a milestone: no-ff merge, final gate, usage, staging files (M=<milestone> FROM='<branch>...'), see README 'Running a boundary'
+	@test -n "$(M)" -a -n "$(FROM)" || { echo "usage: make integrate M=<milestone> FROM='<worktree-branch>...'" >&2; exit 2; }
+	@sh scripts/integrate.sh "$(M)" $(FROM)
+
+check-integrate: ## Self-test of scripts/integrate.sh on throwaway repositories
+	@sh scripts/tests/integrate_test.sh
+
+check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
+	@sh scripts/tests/gate_test.sh
 
 check-docs: ## Lint markdown
 	@markdownlint-cli2 "**/*.md"
@@ -83,14 +111,14 @@ endif
 
 lint: ## Clippy with warnings denied
 ifneq (,$(HAS_CARGO))
-	@cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
+	@$(GATE) lint -- cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
 else
 	@echo "lint: no Cargo.toml yet, skipped"
 endif
 
 test: ## Run the test suite
 ifneq (,$(HAS_CARGO))
-	@cargo test --workspace --all-features
+	@$(GATE) test -- cargo test --workspace --all-features
 else
 	@echo "test: no Cargo.toml yet, skipped"
 endif
@@ -111,7 +139,7 @@ endif
 
 coverage: ## Line coverage of observatory-core (run alone, not part of check)
 ifneq (,$(HAS_CARGO))
-	@cargo llvm-cov -p observatory-core --fail-under-lines $(COVERAGE_MIN)
+	@$(GATE) coverage -- cargo llvm-cov -p observatory-core --fail-under-lines $(COVERAGE_MIN)
 else
 	@echo "coverage: no Cargo.toml yet, skipped"
 endif
@@ -152,6 +180,21 @@ ifneq (,$(HAS_TAURI))
 	@cargo tauri build $(if $(BUNDLES),--bundles $(BUNDLES))
 else
 	@echo "app-build: no Tauri app yet, skipped"
+endif
+
+# The window suite (owner item 14): the debug app with the embedded WebDriver server (`e2e` cargo
+# feature, never a release build), driven by WebdriverIO. JUnit and screenshots land in
+# reports/e2e/<E2E_DATE>/; the app's store, spool and fake Droid live in a scratch directory.
+E2E_DATE ?= $(shell date +%Y-%m-%d)
+E2E_RUN_DIR ?= $(or $(TMPDIR),/tmp)/observatory-e2e
+e2e: ## Build the app with --features e2e and run the WebdriverIO suite (reports/e2e/<date>/)
+ifneq (,$(HAS_TAURI))
+	@cargo build -p observatory-cli
+	@cargo tauri build --debug --no-bundle --features e2e
+	@rm -rf "$(E2E_RUN_DIR)" "reports/e2e/$(E2E_DATE)"
+	@cd apps/observatory-app/e2e && npm ci && E2E_DATE=$(E2E_DATE) E2E_RUN_DIR="$(E2E_RUN_DIR)" npx wdio run wdio.conf.ts
+else
+	@echo "e2e: no Tauri app yet, skipped"
 endif
 
 clean: ## Remove build output

@@ -3,17 +3,20 @@
 use std::path::PathBuf;
 
 use observatory_core::config::{Config, MissionConfig};
+use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
-use observatory_core::model::{EventId, MissionId, SessionId, Timestamp};
+use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::view::{
-    BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus, LaunchConfig,
-    Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
+    ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
+    LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
 };
 use tauri::{AppHandle, State};
 
 use crate::Shell;
+use crate::actions;
 use crate::host::{self, Hosts};
+use crate::logging;
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -30,7 +33,11 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
     let mut opened = lock(&shell.store)
-        .replay_file(&PathBuf::from(path), &shell.cfg.ingest)
+        .replay_file_with(
+            &PathBuf::from(path),
+            &shell.cfg.ingest,
+            shell.template.clone(),
+        )
         .map_err(text)?;
     opened.live = is_live(&shell, &opened.summary.mission_id);
     Ok(opened)
@@ -104,6 +111,7 @@ pub async fn board(
         &cfg,
         &DeclaredModels::from_config(&mission),
         &branch_of(&mission, &opened.summary.name),
+        &shell.template,
     );
     Ok(board.digest())
 }
@@ -123,7 +131,7 @@ pub async fn host_launch(
     hosts: State<'_, Hosts>,
     config: LaunchConfig,
 ) -> Result<Launched, String> {
-    host::launch(&app, &hosts, &shell.cfg, config).await
+    host::launch(&app, &hosts, &shell.cfg, &shell.template, config).await
 }
 
 /// Pause, resume, message, answer, approve or deny, written to the hosted process.
@@ -136,6 +144,28 @@ pub async fn host_control(
     hosts.control(&launch_id, &control)
 }
 
+/// One of the six controls: the `human_actions` row and its human-overlay event, and for a
+/// hosted mission (`launch_id` set) the line written to the process. An attached mission has no
+/// control channel (D-008): the event is recorded and the window shows the text to paste.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn human_action(
+    app: AppHandle,
+    shell: State<'_, Shell>,
+    hosts: State<'_, Hosts>,
+    mission_id: MissionId,
+    launch_id: Option<String>,
+    action: HumanAction,
+    text: Option<String>,
+) -> Result<ActionRecorded, String> {
+    match launch_id {
+        Some(launch_id) => hosts.human_action(&app, &launch_id, action, text),
+        None => {
+            let about = actions::about_event(&shell, &action)?;
+            actions::record(&app, &shell, &mission_id, &action, about.as_ref())
+        }
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn host_status(
     hosts: State<'_, Hosts>,
@@ -146,9 +176,17 @@ pub async fn host_status(
 
 /// The panel has drawn these events: the render half of the 1 s latency measurement (the
 /// emit half is the `events_appended` line of the host). `open` says whether the board of
-/// their mission was on screen.
+/// their mission was on screen; `ms` is the window's own `event:first_on_board` measure.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn panel_rendered(mission_id: String, event_ids: Vec<String>, open: bool) {
+pub async fn panel_rendered(
+    mission_id: String,
+    event_ids: Vec<String>,
+    open: bool,
+    ms: Option<f64>,
+) {
+    if let Some(ms) = ms {
+        logging::interval("panel_rendered", ms, event_ids.len());
+    }
     tracing::info!(
         mission_id,
         count = event_ids.len(),
@@ -165,6 +203,12 @@ pub async fn app_config(shell: State<'_, Shell>) -> Result<Config, String> {
     Ok(shell.cfg.clone())
 }
 
+/// The cycle template in effect: the lanes the board draws, their names and the clocks.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn cycle_template(shell: State<'_, Shell>) -> Result<CycleTemplate, String> {
+    Ok(shell.template.as_ref().clone())
+}
+
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {
     let watched = lock(&shell.status).watched.clone();
     let store = lock(&shell.store);
@@ -175,4 +219,37 @@ fn is_live(shell: &Shell, mission: &MissionId) -> bool {
             .flatten()
             .is_some_and(|of| of == *mission)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use observatory_core::ingest::AttachStatus;
+    use observatory_core::store::Store;
+    use tauri::Manager;
+
+    use super::*;
+
+    #[test]
+    fn the_cycle_template_command_returns_the_loaded_lanes_in_order() {
+        let cfg = Config::default();
+        let path =
+            std::env::temp_dir().join(format!("observatory-cmd-{}.sqlite", std::process::id()));
+        let app = tauri::test::mock_app();
+        app.manage(Shell {
+            template: Arc::new(cfg.cycle.load_template().template),
+            store: Mutex::new(Store::open(&path).expect("the store opens")),
+            status: Arc::new(Mutex::new(AttachStatus::default())),
+            cfg,
+        });
+        let shell = app.state::<Shell>();
+        let loaded =
+            tauri::async_runtime::block_on(cycle_template(shell)).expect("the command answers");
+        let names: Vec<&str> = loaded.lanes.iter().map(|lane| lane.name.as_str()).collect();
+        println!("cycle_template lanes: {names:?}");
+        assert_eq!(loaded, CycleTemplate::engineering());
+        assert_eq!(names.len(), 7, "the default template has seven lanes");
+        let _ = std::fs::remove_file(path);
+    }
 }

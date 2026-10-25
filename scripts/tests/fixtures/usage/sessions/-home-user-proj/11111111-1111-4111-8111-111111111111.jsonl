@@ -1,0 +1,8 @@
+{"type":"message","id":"a1","timestamp":"2026-10-25T10:00:01.000Z","message":{"role":"assistant","content":[{"type":"thinking","signature":"x"},{"type":"tool_use","id":"toolu_w1","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"wait"}}]}}
+{"type":"message","id":"u1","timestamp":"2026-10-25T10:05:00.500Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_w1","content":"[Script running]"}]}}
+{"type":"message","id":"a2","timestamp":"2026-10-25T10:05:01.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_w2","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"wait"}}]}}
+{"type":"message","id":"u2","timestamp":"2026-10-25T10:05:41.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_w2","content":"done"}]}}
+{"type":"message","id":"a3","timestamp":"2026-10-25T10:06:00.001Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_s1","name":"Script","input":{"script":"await tools.Edit({file_path:'/x/a.md',old_str:'a',new_str:'b'});"}}]}}
+{"type":"message","id":"repl-tool-call:inner-1","timestamp":"2026-10-25T10:06:00.050Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"inner-1","name":"Edit","input":{"file_path":"/x/a.md"}}]}}
+{"type":"message","id":"a4","timestamp":"2026-10-25T10:07:00.002Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_r1","name":"Read","input":{"file_path":"/x/a.md"}}]}}
+{"type":"message","id":"a5","timestamp":"2026-10-25T10:08:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Owner, one decision."}]}}

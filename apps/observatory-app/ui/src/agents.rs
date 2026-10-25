@@ -39,7 +39,7 @@ pub fn AgentPanel(
                 "Agents "
                 <span class="count" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
             </h2>
-            <div class="agent-table">
+            <div class="agent-table"><div class="lib"><div class="scroll">
                 <table aria-label="agent-table">
                     <thead>
                         <tr>
@@ -70,7 +70,7 @@ pub fn AgentPanel(
                         }}
                     </tbody>
                 </table>
-            </div>
+            </div></div></div>
             {move || {
                 selected
                     .get()
@@ -108,21 +108,21 @@ fn agent_row(entry: &AgentEntry, selected: RwSignal<Option<SessionId>>) -> AnyVi
                     {entry.name.clone()}
                 </button>
             </td>
-            <td class="event-id">{entry.session_id.0.clone()}</td>
+            <td class="event-id mono">{entry.session_id.0.clone()}</td>
             <td>{entry.role.as_str()}</td>
             <td>{status_text(entry.status)}</td>
-            <td>{entry.feature.as_ref().map(|f| f.0.clone())}</td>
-            <td>{entry.model.as_ref().map(|m| m.0.clone())}</td>
-            <td>
+            <td class="mono">{entry.feature.as_ref().map(|f| f.0.clone())}</td>
+            <td class="mono">{entry.model.as_ref().map(|m| m.0.clone())}</td>
+            <td class="mono">
                 {entry.declared.as_ref().map(|m| m.0.clone())}
                 {entry.drifted.then_some(" (drift)")}
             </td>
             <td>{entry.effort.clone()}</td>
-            <td>{entry.tokens.map(|t| t.input)}</td>
-            <td>{entry.tokens.map(|t| t.output)}</td>
-            <td>{entry.tokens.map(|t| t.cache_read)}</td>
-            <td>{entry.tokens.map(|t| t.cache_write)}</td>
-            <td>{entry.markers}</td>
+            <td class="n">{entry.tokens.map(|t| t.input)}</td>
+            <td class="n">{entry.tokens.map(|t| t.output)}</td>
+            <td class="n">{entry.tokens.map(|t| t.cache_read)}</td>
+            <td class="n">{entry.tokens.map(|t| t.cache_write)}</td>
+            <td class="n">{entry.markers}</td>
         </tr>
     }
     .into_any()
@@ -173,16 +173,16 @@ fn stream_row(row: &TimelineRow, marker: Option<MarkerKind>) -> AnyView {
     });
     view! {
         <li class="row" class:marker=marker.is_some() data-event-id=row.event_id.0.clone()>
-            <time>{row.at.to_rfc3339_millis()}</time>
-            <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
+            <time class="mono">{row.at.to_rfc3339_millis()}</time>
+            <span class=format!("role mono role-{}", row.role.as_str())>{row.role.as_str()}</span>
             {match label {
                 Some(label) => {
                     view! { <strong class="agent-marker" aria-label=label>{label}</strong> }
                         .into_any()
                 }
-                None => view! { <span class="kind">{row.kind.clone()}</span> }.into_any(),
+                None => view! { <span class="kind mono">{row.kind.clone()}</span> }.into_any(),
             }}
-            {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}
+            {row.model.as_ref().map(|model| view! { <span class="model mono">{model.0.clone()}</span> })}
         </li>
     }
     .into_any()

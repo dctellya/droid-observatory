@@ -10,10 +10,14 @@ use observatory_core::ingest::{
     JsonlSource, SessionTree, Source, mapping_version_of, read_capture, sidecar_path,
 };
 use observatory_core::mapping::TreeMapper;
-use observatory_core::model::{Event, EventId, EventKind, Lane, SourcePtr, Timestamp};
+use observatory_core::model::{Event, EventId, EventKind, LaneId, SourcePtr, Timestamp};
 use observatory_core::store::{CaptureInfo, EventScope, Store, StoreError, TimeRange};
 use rusqlite::Connection;
 use serde_json::Value;
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
 
 const SLUG: &str = "2026-10-22-observatory-v1-m0";
 
@@ -504,7 +508,11 @@ fn opening_a_store_twice_applies_the_schema_once() {
     drop(Store::open(&db).expect("parent directories are created"));
     drop(Store::open(&db).expect("an existing store opens"));
 
-    assert_eq!(query_count(&db, "SELECT count(*) FROM schema_version"), 1);
+    assert_eq!(
+        query_count(&db, "SELECT count(*) FROM schema_version"),
+        2,
+        "0001 and 0002, each applied once"
+    );
     assert_eq!(query_count(&db, "SELECT count(*) FROM mapping_versions"), 1);
 }
 
@@ -562,33 +570,15 @@ fn the_overlay_column_marks_the_human_events_and_lane_counts_are_the_phases() {
     );
     assert_eq!(
         by_lane,
-        ["1:437", "2:69", "3:424", "4:93", "5:122", "6:134"]
+        [
+            "build:424",
+            "contract:69",
+            "integrate:134",
+            "plan:437",
+            "scrutiny:93",
+            "user_testing:122"
+        ]
     );
-}
-
-#[test]
-fn the_events_table_refuses_a_ninth_lane_and_an_unknown_overlay() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("observatory.sqlite");
-    drop(Store::open(&db).unwrap());
-    let conn = Connection::open(&db).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
-    conn.execute(
-        "INSERT INTO mapping_versions VALUES ('vx', 'x', 'x') ON CONFLICT DO NOTHING",
-        [],
-    )
-    .unwrap();
-    let insert = |lane: i64, overlay: Option<&str>| {
-        conn.execute(
-            "INSERT INTO events (id, mission_id, lane, overlay, kind, mapping_version, role, at, source) \
-             VALUES (?1, 'm', ?2, ?3, 'x', 'v1', 'worker', 't', 'app')",
-            rusqlite::params![format!("e{lane}{overlay:?}"), lane, overlay],
-        )
-    };
-    assert!(insert(7, Some("commander")).is_ok());
-    assert!(insert(8, None).is_err());
-    assert!(insert(0, None).is_err());
-    assert!(insert(1, Some("robot")).is_err());
 }
 
 fn wire_form(events: &[Event]) -> Vec<Event> {
@@ -691,7 +681,7 @@ fn events_keep_the_phase_and_overlay_they_were_stored_with() {
 
     assert_eq!(stored.iter().filter(|e| e.overlay.is_some()).count(), 70);
     assert_eq!(
-        stored.iter().filter(|e| e.lane == Lane::Contract).count(),
+        stored.iter().filter(|e| e.lane == lane("contract")).count(),
         69
     );
 }

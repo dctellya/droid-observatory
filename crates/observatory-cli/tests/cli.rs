@@ -3,6 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use observatory_core::model::{CycleTemplate, LaneId};
+
 const SESSION: &str = "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c";
 
 fn s_fixture() -> PathBuf {
@@ -100,6 +102,76 @@ fn replay_includes_the_child_sessions_under_their_own_lanes() {
     assert!(lanes.contains("1 Plan"), "{lanes:?}");
     assert!(lanes.contains("3 Build"), "{lanes:?}");
 }
+
+#[test]
+fn replay_prints_lane_number_and_name_from_the_template() {
+    let home = tempfile::tempdir().unwrap();
+    let output = replay(home.path(), &s_fixture());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let template = CycleTemplate::engineering();
+    let expected: std::collections::BTreeSet<String> = template
+        .lanes
+        .iter()
+        .map(|lane| template.lane_text(&lane.id))
+        .collect();
+    let printed: std::collections::BTreeSet<String> = stdout
+        .lines()
+        .filter_map(|line| line.split('\t').nth(1))
+        .map(str::to_owned)
+        .collect();
+    assert!(printed.is_subset(&expected), "{printed:?} in {expected:?}");
+    assert!(printed.len() >= 4, "{printed:?}");
+
+    // Another template, named in the config: the names come from it, not from the binary.
+    let template_path = home.path().join("two_lanes.toml");
+    std::fs::write(&template_path, TWO_LANES).unwrap();
+    let config_dir = home.path().join(".droid-observatory");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            "[cycle]\ntemplate = {:?}\n",
+            template_path.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let output = replay(home.path(), &s_fixture());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let printed: std::collections::BTreeSet<&str> = stdout
+        .lines()
+        .filter_map(|line| line.split('\t').nth(1))
+        .collect();
+    assert_eq!(printed, ["1 Alpha"].into(), "{printed:?}");
+    assert!(stdout.ends_with("unknown events: 0\n"));
+}
+
+/// A template whose only populated lane is the first; the second holds the final event.
+const TWO_LANES: &str = r#"
+name = "two_lanes"
+final_event = "handed_to_cd"
+
+[[lanes]]
+id = "alpha"
+name = "Alpha"
+home_for = ["orchestrator", "worker", "scrutiny_validator", "user_testing_validator", "human", "unresolved"]
+
+[[lanes]]
+id = "omega"
+name = "Omega"
+home_for = ["external"]
+kinds = ["handed_to_cd"]
+
+[rules]
+integration_session = "alpha"
+contract_session = "alpha"
+orchestrator_commit = "alpha"
+kind_follows_emitter = []
+"#;
 
 #[test]
 fn replay_root_only_prints_only_events_of_the_root_session() {
@@ -463,18 +535,12 @@ fn replay_and_inspect_use_the_store_path_of_the_config_file_in_effect() {
     assert!(left_behind.is_empty(), "{left_behind:?}");
 }
 
-/// The lane as `inspect` and the event lines write it: number and name.
-fn lane_text(wire: &str) -> &'static str {
-    match wire {
-        "plan" => "1 Plan",
-        "contract" => "2 Contract",
-        "build" => "3 Build",
-        "scrutiny" => "4 Scrutiny",
-        "user_testing" => "5 User testing",
-        "integrate" => "6 Integrate",
-        "gate" => "7 Gate",
-        other => panic!("not a lane: {other}"),
-    }
+/// The lane as `inspect` and the event lines write it: number and name, from the template.
+fn lane_text(wire: &str) -> String {
+    let template = CycleTemplate::engineering();
+    let id = LaneId::from(wire);
+    assert!(template.index(&id).is_some(), "not a lane: {wire}");
+    template.lane_text(&id)
 }
 
 const ROLES: [&str; 4] = [

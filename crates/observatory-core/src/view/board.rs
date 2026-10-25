@@ -3,8 +3,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::MissionConfig;
-use crate::model::{Event, Lane, MilestoneId, ModelId, Overlay, Role, SourcePtr, Timestamp};
+use crate::ingest::SessionInfo;
+use crate::model::{
+    CycleTemplate, Event, LaneGrouping, LaneId, MilestoneId, ModelId, Overlay, Role, SessionId,
+    SourcePtr, Timestamp,
+};
 
+use super::agent_panel::session_name;
 use super::agents::AgentRow;
 use super::card::Card;
 use super::details::TimelineRow;
@@ -13,8 +18,8 @@ use super::gate::{GateGroup, GatePlaceholder, mission_branch};
 use super::scrubber::OverlayMarker;
 use super::state::{BoardState, TrayEntry};
 
-/// A set of rows of one lane under one heading: a worker or a feature in Build, a milestone in
-/// Integrate.
+/// A set of rows of one lane under one heading: a worker or a feature in a session-grouped lane,
+/// a milestone in a milestone-grouped one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RowGroup {
     /// Session, feature or milestone id; empty for rows that have none.
@@ -25,11 +30,25 @@ pub struct RowGroup {
     pub rows: Vec<TimelineRow>,
 }
 
+impl RowGroup {
+    /// The heading: a per-worker group is headed by its session's display name (D-036), any
+    /// other group by its label.
+    pub fn title(&self, sessions: &[SessionInfo]) -> String {
+        if self.role.is_some() && !self.key.is_empty() {
+            session_name(sessions, &SessionId(self.key.clone()))
+        } else {
+            self.label.clone()
+        }
+    }
+}
+
 /// One lane column as the UI draws it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LaneView {
-    pub lane: Lane,
-    pub name: &'static str,
+    pub lane: LaneId,
+    pub name: String,
+    /// How the lane's rows split under headings.
+    pub grouping: LaneGrouping,
     /// Stable accessible name, `lane-<n>`, which validators address the column by.
     pub aria_label: String,
     pub card_count: usize,
@@ -37,10 +56,10 @@ pub struct LaneView {
     pub event_count: u64,
     /// The milestone cards whose most recent open activity is in this lane.
     pub cards: Vec<Card>,
-    /// True when `groups` are sub-lanes (Build) or per-milestone sections (Integrate).
+    /// True when `groups` are sub-lanes (sessions) or per-milestone sections (milestones).
     pub grouped: bool,
     pub groups: Vec<RowGroup>,
-    /// Gate only, while no PR exists.
+    /// The final lane only, while no PR exists.
     pub placeholder: Option<GatePlaceholder>,
 }
 
@@ -195,7 +214,7 @@ pub struct OverlayView {
     pub markers: Vec<OverlayMarker>,
 }
 
-/// The board: the seven phase lanes in order, the Panel and the unmapped tray.
+/// The board: the template's lanes in order, the Panel and the unmapped tray.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoardView {
     pub lanes: Vec<LaneView>,
@@ -212,17 +231,20 @@ pub struct BoardView {
 }
 
 impl BoardView {
-    pub fn empty() -> Self {
-        let lanes = Lane::ALL
+    pub fn empty(template: &CycleTemplate) -> Self {
+        let lanes = template
+            .lanes
             .iter()
-            .map(|&lane| LaneView {
-                lane,
-                name: lane.name(),
-                aria_label: format!("lane-{}", lane.number()),
+            .enumerate()
+            .map(|(index, lane)| LaneView {
+                lane: lane.id.clone(),
+                name: lane.name.clone(),
+                grouping: lane.grouping,
+                aria_label: format!("lane-{}", index + 1),
                 card_count: 0,
                 event_count: 0,
                 cards: Vec::new(),
-                grouped: is_grouped(lane),
+                grouped: lane.grouping != LaneGrouping::None,
                 groups: Vec::new(),
                 placeholder: None,
             })
@@ -255,9 +277,10 @@ impl BoardView {
         cfg: &ViewConfig,
         declared: &DeclaredModels,
         branch: &str,
+        template: &CycleTemplate,
     ) -> Self {
-        let (state, kept) = BoardState::fold_kept(events, cfg);
-        let mut board = Self::empty();
+        let (state, kept) = BoardState::fold_kept(events, cfg, template);
+        let mut board = Self::empty(template);
         for view in &mut board.lanes {
             let in_lane = kept.iter().copied().filter(|event| event.lane == view.lane);
             view.cards = state
@@ -267,10 +290,10 @@ impl BoardView {
                 .cloned()
                 .collect();
             view.card_count = view.cards.len();
-            view.groups = lane_groups(view.lane, cfg.grouping, in_lane);
+            view.groups = lane_groups(view.grouping, cfg.grouping, in_lane);
             view.event_count = view.groups.iter().map(|g| g.rows.len() as u64).sum();
-            if view.lane == Lane::Gate {
-                view.placeholder = state.gate.placeholder(branch);
+            if view.lane == *template.final_lane() {
+                view.placeholder = state.gate.placeholder(branch, template);
             }
         }
         board.overlay_human.markers = kept
@@ -298,16 +321,18 @@ impl BoardView {
         let mut digest = BoardDigest {
             event_count: self.event_count,
             tray_unknown: self.tray_unknown,
-            lane_events: [0; Lane::ALL.len()],
-            lane_cards: [0; Lane::ALL.len()],
+            lanes: Vec::new(),
+            lane_events: Vec::new(),
+            lane_cards: Vec::new(),
             cards: Vec::new(),
         };
-        for (index, view) in self.lanes.iter().enumerate().take(Lane::ALL.len()) {
-            digest.lane_events[index] = view.event_count;
-            digest.lane_cards[index] = view.card_count;
+        for view in &self.lanes {
+            digest.lanes.push(view.lane.clone());
+            digest.lane_events.push(view.event_count);
+            digest.lane_cards.push(view.card_count);
             digest.cards.extend(view.cards.iter().map(|card| CardLane {
                 milestone: card.milestone.clone(),
-                lane: card.lane,
+                lane: card.lane.clone(),
             }));
         }
         digest
@@ -318,17 +343,19 @@ impl BoardView {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardLane {
     pub milestone: MilestoneId,
-    pub lane: Lane,
+    pub lane: LaneId,
 }
 
-/// The counts of a board, in lane order (Plan first), for the `board` command and for comparing
+/// The counts of a board, in template lane order, for the `board` command and for comparing
 /// a live capture with the replay of the same file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoardDigest {
     pub event_count: u64,
     pub tray_unknown: u64,
-    pub lane_events: [u64; Lane::ALL.len()],
-    pub lane_cards: [usize; Lane::ALL.len()],
+    /// The lane ids the counts below are in the order of.
+    pub lanes: Vec<LaneId>,
+    pub lane_events: Vec<u64>,
+    pub lane_cards: Vec<usize>,
     pub cards: Vec<CardLane>,
 }
 
@@ -337,30 +364,26 @@ pub fn branch_of(config: &MissionConfig, name: &str) -> String {
     mission_branch(&config.branch_pattern, name)
 }
 
-fn is_grouped(lane: Lane) -> bool {
-    matches!(lane, Lane::Build | Lane::Integrate)
-}
-
 /// The rows of one lane, split under their headings where the lane has any.
 fn lane_groups<'a>(
-    lane: Lane,
+    lane_grouping: LaneGrouping,
     grouping: WorkerGrouping,
     events: impl Iterator<Item = &'a Event>,
 ) -> Vec<RowGroup> {
     let mut groups: Vec<RowGroup> = Vec::new();
     for event in events {
-        let (key, none_label, role) = match (lane, grouping) {
-            (Lane::Build, WorkerGrouping::PerWorker) => (
+        let (key, none_label, role) = match (lane_grouping, grouping) {
+            (LaneGrouping::Sessions, WorkerGrouping::PerWorker) => (
                 event.session_id.as_ref().map(|s| s.0.clone()),
                 "(no session)",
                 Some(event.role),
             ),
-            (Lane::Build, WorkerGrouping::PerFeature) => (
+            (LaneGrouping::Sessions, WorkerGrouping::PerFeature) => (
                 event.feature_id.as_ref().map(|f| f.0.clone()),
                 "(no feature)",
                 None,
             ),
-            (Lane::Integrate, _) => (
+            (LaneGrouping::Milestones, _) => (
                 event.milestone_id.as_ref().map(|m| m.0.clone()),
                 "(no milestone)",
                 None,
@@ -389,7 +412,7 @@ fn lane_groups<'a>(
     groups
 }
 
-/// The Integrate rows of one milestone (none: the events with no milestone).
+/// The rows of the milestone-grouped lane for one milestone (none: the events with no milestone).
 #[derive(Clone, Debug, PartialEq)]
 pub struct IntegrateGroup {
     pub milestone: Option<MilestoneId>,
@@ -398,13 +421,20 @@ pub struct IntegrateGroup {
     pub gate_runs: u64,
 }
 
-/// The Integrate lane per milestone, in the order of the milestones' first Integrate event,
-/// rows oldest first.
-pub fn integrate_timeline(events: &[Event]) -> Vec<IntegrateGroup> {
+/// The template's milestone-grouped lane per milestone, in the order of the milestones' first
+/// event there, rows oldest first. Empty when the template has no such lane.
+pub fn integrate_timeline(events: &[Event], template: &CycleTemplate) -> Vec<IntegrateGroup> {
     let mut groups: Vec<IntegrateGroup> = Vec::new();
+    let Some(lane) = template
+        .lanes
+        .iter()
+        .find(|lane| lane.grouping == LaneGrouping::Milestones)
+    else {
+        return groups;
+    };
     for event in events
         .iter()
-        .filter(|event| event.lane == Lane::Integrate && !event.kind.is_panel_only())
+        .filter(|event| event.lane == lane.id && !event.kind.is_panel_only())
     {
         let index = match groups
             .iter()
@@ -460,23 +490,14 @@ mod tests {
 
     #[test]
     fn empty_board_has_seven_lanes_a_panel_and_no_cards() {
-        let board = BoardView::empty();
+        let template = CycleTemplate::engineering();
+        let board = BoardView::empty(&template);
 
-        assert_eq!(board.lanes.len(), 7);
+        assert_eq!(board.lanes.len(), template.lanes.len());
         assert_eq!(board.card_count(), 0);
-        let names: Vec<&str> = board.lanes.iter().map(|l| l.name).collect();
-        assert_eq!(
-            names,
-            [
-                "Plan",
-                "Contract",
-                "Build",
-                "Scrutiny",
-                "User testing",
-                "Integrate",
-                "Gate",
-            ]
-        );
+        let names: Vec<&str> = board.lanes.iter().map(|l| l.name.as_str()).collect();
+        let wanted: Vec<&str> = template.lanes.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, wanted);
         let labels: Vec<&str> = board.lanes.iter().map(|l| l.aria_label.as_str()).collect();
         assert_eq!(
             labels,

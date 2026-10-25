@@ -42,6 +42,7 @@ pub fn Library(
                     }
                 }
             >
+                <div class="lib"><div class="scroll">
                 <table aria-label="library-table">
                     <thead>
                         <tr>
@@ -61,10 +62,10 @@ pub fn Library(
                                 let id = entry.mission_id.0.clone();
                                 let open_id = id.clone();
                                 view! {
-                                    <tr aria-label="library-row">
-                                        <td aria-label="library-name">{entry.name.clone()}</td>
-                                        <td aria-label="library-date">{entry.date.clone()}</td>
-                                        <td aria-label="library-events">{entry.event_count}</td>
+                                    <tr aria-label="library-row" data-testid="library-row">
+                                        <td aria-label="library-name" data-testid="library-name">{entry.name.clone()}</td>
+                                        <td class="mono" aria-label="library-date">{entry.date.clone()}</td>
+                                        <td class="n" aria-label="library-events">{entry.event_count}</td>
                                         <td>
                                             <Show
                                                 when=move || reopenable.get().contains(&id)
@@ -73,7 +74,7 @@ pub fn Library(
                                                 }
                                             >
                                                 <button
-                                                    aria-label="library-open"
+                                                    aria-label="library-open" data-testid="library-open"
                                                     on:click={
                                                         let open_id = open_id.clone();
                                                         move |_| on_open.run(open_id.clone())
@@ -89,9 +90,10 @@ pub fn Library(
                         </For>
                     </tbody>
                 </table>
+                </div></div>
             </Show>
 
-            <button type="button" aria-label="open-launch" on:click=move |_| on_launch.run(())>
+            <button type="button" aria-label="open-launch" data-testid="open-launch" on:click=move |_| on_launch.run(())>
                 "Launch a mission"
             </button>
 
@@ -114,12 +116,12 @@ pub fn Library(
                             "Capture path "
                             <input
                                 type="text"
-                                aria-label="open-path"
+                                aria-label="open-path" data-testid="open-path"
                                 prop:value=move || path.get()
                                 on:input=move |ev| path.set(event_target_value(&ev))
                             />
                         </label>
-                        <button type="submit" aria-label="open-path-go">"Open"</button>
+                        <button type="submit" aria-label="open-path-go" data-testid="open-path-go">"Open"</button>
                     </form>
                 }
             })}

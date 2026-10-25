@@ -5,49 +5,69 @@ use std::time::Duration;
 
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
-    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, MissionId, ModelId, Overlay, Role,
-    SessionId, SourcePtr, Timestamp, TokenUsage,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, MissionId, ModelId,
+    Overlay, Role, SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+/// The phase of a kind by a role under the default template (D-024 rules 1, 2 and 5).
+fn lane_of(kind: &EventKind, role: Role) -> LaneId {
+    engineering().lane_of(kind, role)
+}
+
 #[test]
-fn lanes_are_the_seven_phases_in_order() {
-    let names: Vec<&str> = Lane::ALL.iter().map(|lane| lane.name()).collect();
+fn event_kinds_no_longer_know_their_lane() {
+    // `EventKind` has no lane API: the compile-time proof is that the only way to ask is the
+    // template, which reproduces the D-024 table.
+    let template = engineering();
+    let table = [
+        (EventKind::IntentCreated, "plan"),
+        (EventKind::PlanCreated, "plan"),
+        (EventKind::FeatureDefined, "plan"),
+        (EventKind::SpecVersioned, "contract"),
+        (EventKind::FindingBlocking, "scrutiny"),
+        (EventKind::QaEvidence, "user_testing"),
+        (EventKind::IntegrationMerged, "integrate"),
+        (EventKind::GateCommandRun, "integrate"),
+        (EventKind::PrOpened, "integrate"),
+        (EventKind::ApprovalGiven, "plan"),
+        (EventKind::ReviewOutcome, "gate"),
+        (EventKind::CheckPassed, "gate"),
+        (
+            EventKind::HandedToCd {
+                merge_sha: String::new(),
+                pr_number: 0,
+                attestation_ids: Vec::new(),
+            },
+            "gate",
+        ),
+    ];
+    for (kind, id) in &table {
+        assert_eq!(
+            template.fixed_lane(kind),
+            Some(&lane(id)),
+            "{}",
+            kind.prd_name()
+        );
+    }
+    for kind in [
+        EventKind::TaskStarted,
+        EventKind::CommitCreated,
+        EventKind::TestsRun,
+    ] {
+        assert_eq!(template.fixed_lane(&kind), None, "{}", kind.prd_name());
+    }
+
+    let ids: Vec<&str> = template.lanes.iter().map(|l| l.id.as_str()).collect();
     assert_eq!(
-        names,
-        [
-            "Plan",
-            "Contract",
-            "Build",
-            "Scrutiny",
-            "User testing",
-            "Integrate",
-            "Gate",
-        ]
-    );
-
-    let numbers: Vec<u8> = Lane::ALL.iter().map(|lane| lane.number()).collect();
-    assert_eq!(numbers, [1, 2, 3, 4, 5, 6, 7]);
-
-    assert_eq!(Lane::home(Role::Orchestrator), Lane::Plan);
-    assert_eq!(Lane::home(Role::Worker), Lane::Build);
-    assert_eq!(Lane::home(Role::ScrutinyValidator), Lane::Scrutiny);
-    assert_eq!(Lane::home(Role::UserTestingValidator), Lane::UserTesting);
-    assert_eq!(Lane::home(Role::Human), Lane::Plan);
-    assert_eq!(Lane::home(Role::External), Lane::Gate);
-    assert_eq!(Lane::home(Role::Unresolved), Lane::Build);
-
-    let wire: Vec<String> = Lane::ALL
-        .iter()
-        .map(|lane| {
-            serde_json::to_value(lane)
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_owned()
-        })
-        .collect();
-    assert_eq!(
-        wire,
+        ids,
         [
             "plan",
             "contract",
@@ -58,11 +78,29 @@ fn lanes_are_the_seven_phases_in_order() {
             "gate"
         ]
     );
-    for lane in Lane::ALL {
-        assert_eq!(Lane::from_number(lane.number()), Some(lane));
-    }
-    assert_eq!(Lane::from_number(0), None);
-    assert_eq!(Lane::from_number(8), None);
+    assert_eq!(
+        serde_json::to_value(lane("user_testing")).unwrap(),
+        "user_testing"
+    );
+    assert_eq!(template.index(&lane("gate")), Some(6));
+    assert_eq!(template.index(&lane("retired")), None);
+}
+
+#[test]
+fn overlay_accepts_commander_on_intake_and_writes_officer() {
+    let officer: Overlay = serde_json::from_str("\"officer\"").unwrap();
+    let legacy: Overlay = serde_json::from_str("\"commander\"").unwrap();
+    assert_eq!(officer, Overlay::Officer);
+    assert_eq!(
+        legacy, officer,
+        "intake accepts the legacy spelling for one milestone"
+    );
+    assert_eq!(serde_json::to_string(&legacy).unwrap(), "\"officer\"");
+    assert_eq!(legacy.as_str(), "officer");
+    assert_eq!(Overlay::parse("commander"), Some(Overlay::Officer));
+    assert_eq!(Overlay::parse("officer"), Some(Overlay::Officer));
+    assert_eq!(Overlay::parse("human"), Some(Overlay::Human));
+    assert_eq!(Overlay::parse("robot"), None);
 }
 
 const ROLES: [Role; 7] = [
@@ -99,42 +137,45 @@ fn role_neutral_kinds_take_the_role_home_phase() {
         },
     ];
     for kind in &neutral {
-        assert_eq!(kind.fixed_lane(), None, "{}", kind.prd_name());
+        assert_eq!(engineering().fixed_lane(kind), None, "{}", kind.prd_name());
         for role in ROLES {
             assert_eq!(
-                kind.lane(role),
-                Lane::home(role),
+                lane_of(kind, role),
+                engineering().home(role).clone(),
                 "{} {role:?}",
                 kind.prd_name()
             );
         }
     }
     // A worker's commit stays in Build; only the orchestrator's moves.
-    assert_eq!(EventKind::CommitCreated.lane(Role::Worker), Lane::Build);
+    assert_eq!(
+        lane_of(&EventKind::CommitCreated, Role::Worker),
+        lane("build")
+    );
 }
 
 #[test]
 fn fixed_phase_kinds_ignore_the_role() {
     let fixed = [
-        (EventKind::IntentCreated, Lane::Plan),
-        (EventKind::PlanCreated, Lane::Plan),
-        (EventKind::FeatureDefined, Lane::Plan),
-        (EventKind::EscalationRaised, Lane::Plan),
-        (EventKind::SpecVersioned, Lane::Contract),
-        (EventKind::FindingBlocking, Lane::Scrutiny),
-        (EventKind::ScrutinyPassed, Lane::Scrutiny),
-        (EventKind::QaScenarioPassed, Lane::UserTesting),
-        (EventKind::QaEvidence, Lane::UserTesting),
-        (EventKind::IntegrationMerged, Lane::Integrate),
-        (EventKind::PrOpened, Lane::Integrate),
-        (EventKind::ApprovalGiven, Lane::Plan),
-        (EventKind::ReviewOutcome, Lane::Gate),
-        (EventKind::CheckPassed, Lane::Gate),
-        (EventKind::AttestationRecorded, Lane::Gate),
+        (EventKind::IntentCreated, lane("plan")),
+        (EventKind::PlanCreated, lane("plan")),
+        (EventKind::FeatureDefined, lane("plan")),
+        (EventKind::EscalationRaised, lane("plan")),
+        (EventKind::SpecVersioned, lane("contract")),
+        (EventKind::FindingBlocking, lane("scrutiny")),
+        (EventKind::ScrutinyPassed, lane("scrutiny")),
+        (EventKind::QaScenarioPassed, lane("user_testing")),
+        (EventKind::QaEvidence, lane("user_testing")),
+        (EventKind::IntegrationMerged, lane("integrate")),
+        (EventKind::PrOpened, lane("integrate")),
+        (EventKind::ApprovalGiven, lane("plan")),
+        (EventKind::ReviewOutcome, lane("gate")),
+        (EventKind::CheckPassed, lane("gate")),
+        (EventKind::AttestationRecorded, lane("gate")),
     ];
     for (kind, lane) in fixed {
         for role in ROLES {
-            assert_eq!(kind.lane(role), lane, "{} {role:?}", kind.prd_name());
+            assert_eq!(lane_of(&kind, role), lane, "{} {role:?}", kind.prd_name());
         }
     }
 }
@@ -148,8 +189,8 @@ fn gate_command_lands_in_integrate_for_every_role() {
     ] {
         for role in ROLES {
             assert_eq!(
-                kind.lane(role),
-                Lane::Integrate,
+                lane_of(&kind, role),
+                lane("integrate"),
                 "{} {role:?}",
                 kind.prd_name()
             );
@@ -160,14 +201,20 @@ fn gate_command_lands_in_integrate_for_every_role() {
 #[test]
 fn orchestrator_commits_land_in_integrate() {
     assert_eq!(
-        EventKind::CommitCreated.lane(Role::Orchestrator),
-        Lane::Integrate
+        lane_of(&EventKind::CommitCreated, Role::Orchestrator),
+        lane("integrate")
     );
     for role in ROLES.into_iter().filter(|role| *role != Role::Orchestrator) {
-        assert_eq!(EventKind::CommitCreated.lane(role), Lane::home(role));
+        assert_eq!(
+            lane_of(&EventKind::CommitCreated, role),
+            engineering().home(role).clone()
+        );
     }
     // Its file edits are not commits: they stay in Plan.
-    assert_eq!(EventKind::FileTouched.lane(Role::Orchestrator), Lane::Plan);
+    assert_eq!(
+        lane_of(&EventKind::FileTouched, Role::Orchestrator),
+        lane("plan")
+    );
 }
 
 #[test]
@@ -198,7 +245,7 @@ fn human_facing_kinds_carry_the_human_overlay() {
     assert!(
         EventKind::KNOWN
             .iter()
-            .all(|kind| kind.overlay() != Some(Overlay::Commander)),
+            .all(|kind| kind.overlay() != Some(Overlay::Officer)),
         "Commander has no producer in v1"
     );
     assert_eq!(
@@ -210,11 +257,17 @@ fn human_facing_kinds_carry_the_human_overlay() {
     );
     // Human-facing kinds are placed by kind, not by the asking person's role.
     assert_eq!(
-        EventKind::IntentAmended.lane(Role::Orchestrator),
-        Lane::Plan
+        lane_of(&EventKind::IntentAmended, Role::Orchestrator),
+        lane("plan")
     );
-    assert_eq!(EventKind::QuestionAsked.lane(Role::Worker), Lane::Plan);
-    assert_eq!(EventKind::ReviewOutcome.lane(Role::Human), Lane::Gate);
+    assert_eq!(
+        lane_of(&EventKind::QuestionAsked, Role::Worker),
+        lane("plan")
+    );
+    assert_eq!(
+        lane_of(&EventKind::ReviewOutcome, Role::Human),
+        lane("gate")
+    );
 }
 
 #[test]
@@ -226,7 +279,7 @@ fn handed_to_cd_carries_merge_sha_pr_number_and_attestation_ids() {
     };
     assert_eq!(kind.prd_name(), "handed_to_cd");
     for role in [Role::Human, Role::External] {
-        assert_eq!(kind.lane(role), Lane::Gate);
+        assert_eq!(lane_of(&kind, role), lane("gate"));
     }
     assert_eq!(kind.overlay(), None);
 
@@ -290,7 +343,7 @@ fn event_with(source: SourcePtr, kind: EventKind) -> Event {
         mission_id: MissionId("e194b9e3".to_owned()),
         milestone_id: Some(MilestoneId("m0".to_owned())),
         feature_id: Some(FeatureId("s-core-event-model".to_owned())),
-        lane: Lane::Build,
+        lane: lane("build"),
         overlay: None,
         kind,
         role: Role::Worker,
@@ -403,12 +456,12 @@ fn unknown_event_keeps_raw_type_and_byte_offset() {
         raw_type: "todo_state".to_owned(),
     };
     assert_eq!(kind.prd_name(), "unknown.event");
-    assert_eq!(kind.fixed_lane(), None);
-    assert_eq!(kind.lane(Role::Unresolved), Lane::Build);
+    assert_eq!(engineering().fixed_lane(&kind), None);
+    assert_eq!(lane_of(&kind, Role::Unresolved), lane("build"));
 
     let mut event = event_with(jsonl_pointer(), kind);
     event.role = Role::Unresolved;
-    event.lane = Lane::home(event.role);
+    event.lane = engineering().home(event.role).clone();
 
     let json = serde_json::to_value(&event).expect("event serializes");
     assert_eq!(

@@ -128,6 +128,27 @@ droid exec --mission --auto high \
 Reasoning effort per role is `high` for all three (SPEC §2). The mission works on
 `mission/<name>`, one worktree per milestone, and ends in one pull request into `main`.
 
+## Running a boundary
+
+The integrator lands a finished milestone with one target, from the mission branch checkout with a clean tree
+(only `build-log/` may differ):
+
+```sh
+make integrate M=m3 FROM=wt/m3       # FROM takes several branches, separated by spaces
+```
+
+`scripts/integrate.sh` does, in order: a `git merge --no-ff` of each branch with the message rendered from
+`scripts/templates/integrate-commit.txt` and the trailers of `.git-trailers` added by `git interpret-trailers`; the final
+gate through `make check` (`scripts/gate.sh`: a printed cache hit when the merged tree is the tree a worker or validator
+already proved, a real run on a miss, an abort with the summary when red, never a rerun); `make usage M=m3`
+(`CAPS` and `USAGE_ARGS` pass through); the merge of every `reports/staging/<feature>.md` into `SPEC.md` §9 (next free
+`F-NNN` rows), `BACKLOG.md` (next `B-NNN` rows) and the decision files (an addendum per amendment), after which the
+staging files are deleted and `make decisions-index` runs; the boundary report
+`reports/readiness/<date>-<milestone>.md` (merges, the gate numbers copied from `reports/gate/<tree>/*.json`, deferred
+clauses, library notes); one boundary commit; and the boundary summary the integrator pastes. A failed step leaves the
+merges in place: fix with a new commit and run the target again (a merged branch is skipped). Judgement edits
+(`SPEC.md` §10, `README.md`, the Honest time table) stay by hand. `make check-integrate` is the self-test.
+
 ## The gate
 
 Two workflows, one required check:

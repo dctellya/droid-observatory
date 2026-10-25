@@ -6,7 +6,17 @@ use std::path::{Path, PathBuf};
 use observatory_core::config::IngestConfig;
 use observatory_core::ingest::{JsonlSource, RawRecord, SessionTree, Source, mapping_version_of};
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta, TreeMapper};
-use observatory_core::model::{Event, EventKind, Lane, Role, SessionId, SourcePtr};
+use observatory_core::model::{
+    CycleTemplate, Event, EventKind, LaneId, Role, SessionId, SourcePtr,
+};
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 const SLUG: &str = "2026-10-22-observatory-v1-s";
 
@@ -95,7 +105,11 @@ fn replayed_events_carry_the_root_session_the_orchestrator_role_and_the_header_v
     );
     assert_eq!(first.role, Role::Orchestrator);
     assert!(events.iter().all(|e| e.role == Role::Orchestrator));
-    assert!(events.iter().all(|e| e.lane == e.kind.lane(e.role)));
+    assert!(
+        events
+            .iter()
+            .all(|e| e.lane == engineering().lane_of(&e.kind, e.role))
+    );
     assert!(
         events
             .iter()
@@ -186,13 +200,13 @@ fn a_tree_replay_maps_every_session_under_its_own_role_and_lane() {
     for event in &events {
         let session = tree.get(event.session_id.as_ref().unwrap()).unwrap();
         assert_eq!(event.role, session.role);
-        match event.kind.fixed_lane() {
-            Some(fixed) => assert_eq!(event.lane, fixed),
+        match engineering().fixed_lane(&event.kind) {
+            Some(fixed) => assert_eq!(&event.lane, fixed),
             None => assert!(
                 [
-                    event.kind.lane(session.role),
-                    Lane::Contract,
-                    Lane::Integrate
+                    engineering().lane_of(&event.kind, session.role),
+                    lane("contract"),
+                    lane("integrate")
                 ]
                 .contains(&event.lane),
                 "{} in {:?}",

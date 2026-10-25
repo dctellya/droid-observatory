@@ -20,6 +20,10 @@ impl Timestamp {
         OffsetDateTime::parse(text, &Rfc3339).map(|at| Self(at.to_offset(UtcOffset::UTC)))
     }
 
+    pub fn now() -> Self {
+        Self(OffsetDateTime::now_utc())
+    }
+
     pub fn to_rfc3339_millis(&self) -> String {
         self.0
             .to_offset(UtcOffset::UTC)

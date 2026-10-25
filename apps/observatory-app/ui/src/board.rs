@@ -2,26 +2,29 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::config::MissionConfig;
-use observatory_core::model::{EventId, MilestoneId, Timestamp};
+use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
-    BoardView, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber, ViewConfig,
-    WorkerGrouping, branch_of, tray_count,
+    BoardView, ControlBar, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber,
+    ViewConfig, WorkerGrouping, branch_of, tray_count,
 };
 
 use crate::agents::AgentPanel;
 use crate::attach::AttachPanel;
 use crate::capture::Capture;
+use crate::controls::{ControlCtx, Controls, StallBannerView, StallCtx, ThemeSwitch};
 use crate::ctx::BoardCtx;
 use crate::details::DetailsView;
 use crate::lanes::Lanes;
+use crate::launch::HostedCtx;
 use crate::panel::{OverlayList, Panel};
 use crate::tray::Tray;
 
-/// A capture on the board: header, the six filters, the scrubber, the Panel, the seven phase
+/// A capture on the board: header, the six filters, the scrubber, the Panel, the template's
 /// lanes, the human-overlay list and the unmapped tray. Every figure comes from
 /// `BoardView::build` over the events held, which grow while the capture is live.
 #[component]
 pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     let mission = MissionConfig::default();
     let declared = DeclaredModels::from_config(&mission);
     let agent_declared = declared.clone();
@@ -57,7 +60,49 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
                 grouping: grouping.get(),
                 at: at.get(),
             };
-            events.with(|events| BoardView::build(events, &cfg, &declared, &branch))
+            template.with(|template| {
+                events.with(|events| BoardView::build(events, &cfg, &declared, &branch, template))
+            })
+        }
+    });
+
+    let tauri = crate::shell::is_tauri();
+    let hosted = expect_context::<HostedCtx>();
+    let mission = capture.mission_id().clone();
+    let launch_id = hosted
+        .launched
+        .get_untracked()
+        .filter(|launched| launched.session_id == mission.0)
+        .map(|launched| launched.launch_id);
+    let stalls = expect_context::<StallCtx>();
+    let stalled = Signal::derive({
+        let mission = mission.0.clone();
+        move || {
+            stalls
+                .0
+                .with(|all| all.get(&mission).cloned().unwrap_or_default())
+        }
+    });
+    let live_now = capture.live.clone();
+    let hosted_launch = launch_id.is_some();
+    let enabled = Signal::derive(move || tauri && (hosted_launch || live_now.get()));
+    let control = ControlCtx {
+        mission,
+        launch_id: launch_id.clone(),
+        hosted,
+        result: RwSignal::new(None),
+        paste: RwSignal::new(None),
+        stalled,
+        enabled,
+    };
+    provide_context(control.clone());
+    let bar = Signal::derive({
+        let events = events.clone();
+        move || match (&launch_id, hosted.status.get()) {
+            (Some(_), Some(status)) => {
+                events.with(|events| ControlBar::hosted(&status, Some(events)))
+            }
+            _ => events.with(|events| ControlBar::attached(events)),
         }
     });
 
@@ -69,27 +114,28 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let unknown_total = events.clone();
     let session_total = capture.sessions.clone();
     view! {
-        <div class="board" aria-label="board">
+        <div class="board" aria-label="board" data-testid="board">
             <header class="top">
-                <h1 aria-label="mission-name">{summary.name.clone()}</h1>
-                <span class="mode" aria-label="mode">
+                <h1 aria-label="mission-name" data-testid="mission-name">{summary.name.clone()}</h1>
+                <span class="mode mono" aria-label="mode">
                     {move || if mode_live.get() { "Live" } else { "Replay" }}
                 </span>
                 <dl class="facts">
                     <dt>"Events"</dt>
-                    <dd aria-label="event-count">{move || event_total.with(Vec::len)}</dd>
+                    <dd class="mono" aria-label="event-count" data-testid="event-count">{move || event_total.with(Vec::len)}</dd>
                     <dt>"Shown"</dt>
-                    <dd aria-label="events-shown">{move || board.with(|b| b.event_count)}</dd>
+                    <dd class="mono" aria-label="events-shown">{move || board.with(|b| b.event_count)}</dd>
                     <dt>"Unknown"</dt>
-                    <dd aria-label="unknown-count">
+                    <dd class="mono" aria-label="unknown-count" data-testid="unknown-count">
                         {move || unknown_total.with(|events| tray_count(events))}
                     </dd>
                     <dt>"Sessions"</dt>
-                    <dd aria-label="session-count">{move || session_total.with(Vec::len)}</dd>
+                    <dd class="mono" aria-label="session-count">{move || session_total.with(Vec::len)}</dd>
                     <dt>"Mapping"</dt>
-                    <dd aria-label="mapping-version">{summary.mapping_version.clone()}</dd>
+                    <dd class="mono" aria-label="mapping-version">{summary.mapping_version.clone()}</dd>
                 </dl>
-                <button aria-label="back-to-library" on:click=move |_| on_close.run(())>
+                <ThemeSwitch />
+                <button aria-label="back-to-library" data-testid="back-to-library" on:click=move |_| on_close.run(())>
                     "Library"
                 </button>
             </header>
@@ -102,6 +148,8 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
                     }
                 })}
             <AttachPanel />
+            <StallBannerView flags=stalled />
+            {move || enabled.get().then(|| view! { <Controls ctx=control.clone() bar=bar /> })}
             <FilterBar filter=filter options=options />
             <ScrubberBar scrubber=scrubber at=at live=state_live />
             <Panel board=board />
@@ -185,13 +233,14 @@ fn ScrubberBar(
                     }
                 />
             </label>
-            <output aria-label="scrubber-timestamp">
+            <output class="mono" aria-label="scrubber-timestamp">
                 {move || scrubber.with(|s| s.label(at.get()))}
             </output>
             <label>
                 "Go to time "
                 <input
                     type="text"
+                    class="mono"
                     aria-label="scrubber-time"
                     placeholder="2026-10-22T10:18:11.451Z"
                     on:change=move |ev| {

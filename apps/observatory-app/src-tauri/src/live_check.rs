@@ -13,9 +13,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use observatory_core::config::Config;
+use observatory_core::control::HumanAction;
 use observatory_core::ingest::AttachStatus;
 use observatory_core::ingest::EventBatch;
 use observatory_core::ingest::rpc::HostControl;
+use observatory_core::model::{EventId, FeatureId};
 use observatory_core::store::Store;
 use observatory_core::view::{HostedStatus, LaunchForm, OutputLines, PermissionRow};
 use tauri::{Listener, Manager};
@@ -112,13 +114,28 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
     let store = Store::open(&cfg.store.resolved_path()).expect("the scratch store opens");
     let app = tauri::test::mock_app();
     app.manage(Shell {
+        template: Arc::new(cfg.cycle.load_template().template),
         cfg: cfg.clone(),
         store: Mutex::new(store),
         status: Arc::new(Mutex::new(AttachStatus::default())),
     });
+    // The host's own log lines (`host_control`, `human_action`, `stall_flag`) are evidence.
+    let _ = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stdout)
+        .try_init();
     let (exclude, _excluded) = std::sync::mpsc::channel();
-    let hosts = Hosts::new(exclude);
+    app.manage(Hosts::new(exclude));
+    let hosts = app.state::<Hosts>();
     let handle = app.handle().clone();
+    crate::stall::spawn(handle.clone());
+    let flags: Arc<Mutex<Vec<String>>> = Arc::default();
+    let listened = flags.clone();
+    handle.listen("stall_flag", move |event| {
+        println!("stall_flag event: {}", event.payload());
+        listened.lock().unwrap().push(event.payload().to_owned());
+    });
 
     let log = Arc::new(Mutex::new(Log::default()));
     let listened = log.clone();
@@ -161,7 +178,8 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         "tags: {:?} skip_scrutiny: {} skip_user_testing: {}",
         config.tags, config.skip_scrutiny, config.skip_user_testing
     );
-    let launched = launch(&handle, &hosts, &cfg, config)
+    let template = Arc::new(cfg.cycle.load_template().template);
+    let launched = launch(&handle, &hosts, &cfg, &template, config)
         .await
         .expect("the scratch mission launches");
     println!("launched: {launched:?}");
@@ -172,14 +190,14 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
     print_group(pgid);
 
     let current = || hosts.status(&id).expect("the run is registered");
-    let sent = |what: &str, control: HostControl| {
+    let act = |what: &str, action: HumanAction, text: Option<&str>| {
         let at = now_nanos();
-        let sent = hosts
-            .control(&id, &control)
-            .expect("the control is written");
+        let recorded = hosts
+            .human_action(&handle, &id, action, text.map(str::to_owned))
+            .unwrap_or_else(|err| panic!("{what} is refused: {err}"));
         println!(
-            "control {what}: request {} method {} written at {at}",
-            sent.request_id, sent.method
+            "control {what}: human_actions row {} overlay event {} at {at}",
+            recorded.action_id, recorded.event_id
         );
         at
     };
@@ -190,6 +208,22 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
             .iter()
             .find(|seen| seen.kind == kind && seen.emitted_nanos >= after)
             .map(|seen| (seen.id.clone(), seen.at_nanos))
+    };
+    // The acknowledgement events of `control::ack_event` carry the sub id 2^30.
+    let acks_after = |after: i128| -> Vec<String> {
+        log.lock()
+            .unwrap()
+            .seen
+            .iter()
+            .filter(|seen| seen.emitted_nanos >= after && seen.id.ends_with(":1073741824"))
+            .map(|seen| format!("{} {}", seen.kind, seen.id))
+            .collect()
+    };
+    let ack_of = |what: &'static str, after: i128| {
+        wait_until(what, Duration::from_secs(60), move || {
+            let acks = acks_after(after);
+            (!acks.is_empty()).then_some(acks)
+        })
     };
 
     let question = wait_until(
@@ -204,13 +238,20 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         })
         .await;
     println!("question: event {question_event} at {question_at}");
+    let hold: u64 = std::env::var("OBSERVATORY_LIVE_HOLD_S")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    if hold > 0 {
+        println!("holding the question unanswered for {hold} s");
+        tokio::time::sleep(Duration::from_secs(hold)).await;
+    }
+    println!("stall flags raised so far: {}", flags.lock().unwrap().len());
 
-    let answered = sent(
+    let answered = act(
         "answer",
-        HostControl::Answer {
-            question_id: question.event_id.clone(),
-            text: "salud".to_owned(),
-        },
+        HumanAction::answer(EventId(question.event_id.clone()), "salud"),
+        Some("salud"),
     );
     let (answered_event, answered_at) =
         wait_until("intent_answered", Duration::from_secs(30), || {
@@ -222,28 +263,14 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         answered_at > question_at
     );
 
-    let acked = |request_id: &str| {
-        current()
-            .acks
-            .iter()
-            .find(|ack| ack.request_id == request_id)
-            .map(|ack| (ack.accepted, ack.method.clone()))
-    };
-    let message = hosts
-        .control(
-            &id,
-            &HostControl::Message {
-                text: "Keep it to the one feature.".to_owned(),
-            },
-        )
-        .expect("the message is written");
-    let ack = wait_until("the message ack", Duration::from_secs(30), || {
-        acked(&message.request_id)
-    })
-    .await;
-    println!("message: request {} acked {ack:?}", message.request_id);
+    let message = act(
+        "message",
+        HumanAction::message("Keep it to the one feature."),
+        Some("Keep it to the one feature."),
+    );
+    println!("message -> {:?}", ack_of("the message ack", message).await);
 
-    let paused = sent("pause", HostControl::Pause);
+    let paused = act("pause", HumanAction::Pause, None);
     let (paused_event, paused_at) = wait_until("mission_paused", Duration::from_secs(30), || {
         first_after("mission_paused", paused)
     })
@@ -252,69 +279,71 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         "pause -> mission.paused event {paused_event} at {paused_at} (question at {question_at}, later: {})",
         paused_at > question_at
     );
-    let resume = hosts
-        .control(&id, &HostControl::Resume)
-        .expect("the resume is written");
-    let ack = wait_until("the resume ack", Duration::from_secs(30), || {
-        acked(&resume.request_id)
-    })
-    .await;
-    println!(
-        "resume: request {} method {} acked {ack:?}",
-        resume.request_id, resume.method
-    );
+    let resume = act("resume", HumanAction::Resume, None);
+    println!("resume -> {:?}", ack_of("the resume ack", resume).await);
 
     let proposal = await_proposal(&hosts, &id, "").await;
     println!(
-        "proposal waits: request {} tools {:?}",
-        proposal.request_id, proposal.tools
+        "proposal waits: request {} event {} tools {:?}",
+        proposal.request_id, proposal.event_id, proposal.tools
     );
-    let denied = sent(
+    let denied = act(
         "deny",
-        HostControl::Deny {
-            request_id: proposal.request_id.clone(),
+        HumanAction::Deny {
+            request_event: EventId(proposal.event_id.clone()),
         },
+        None,
     );
+    println!("deny -> {:?}", ack_of("the deny ack", denied).await);
     let closed = current()
         .permissions
         .iter()
         .all(|p| p.request_id != proposal.request_id);
     println!("deny: proposal left the waiting list: {closed}");
-    let again = hosts
-        .control(
-            &id,
-            &HostControl::Message {
-                text: "Denied once. Propose the same mission again.".to_owned(),
-            },
-        )
-        .expect("the message is written");
-    println!("after the denial: message request {}", again.request_id);
+    let again = act(
+        "message",
+        HumanAction::message("Denied once. Propose the same mission again."),
+        Some("Denied once. Propose the same mission again."),
+    );
+    println!("after the denial: message at {again}");
 
     let second = await_proposal(&hosts, &id, &proposal.request_id).await;
-    println!("second proposal waits: request {}", second.request_id);
-    let approved = sent(
-        "approve",
-        HostControl::Approve {
-            request_id: second.request_id.clone(),
-        },
+    println!(
+        "second proposal waits: request {} event {}",
+        second.request_id, second.event_id
     );
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    let approved = act(
+        "approve",
+        HumanAction::Approve {
+            request_event: EventId(second.event_id.clone()),
+        },
+        None,
+    );
+    println!("approve -> {:?}", ack_of("the approve ack", approved).await);
     let closed = current()
         .permissions
         .iter()
         .all(|p| p.request_id != second.request_id);
     println!("approve: proposal left the waiting list: {closed}");
-    for (name, from) in [("deny", denied), ("approve", approved)] {
-        let log = log.lock().unwrap();
-        let reactions: Vec<String> = log
-            .seen
-            .iter()
-            .filter(|seen| seen.emitted_nanos >= from)
-            .take(6)
-            .map(|seen| format!("{} {}", seen.kind, seen.id))
-            .collect();
-        println!("after {name}: {}", reactions.join(" | "));
-    }
+
+    act(
+        "mark complete",
+        HumanAction::MarkComplete {
+            feature_id: FeatureId("write-salute".to_owned()),
+        },
+        None,
+    );
+    act(
+        "mark skipped",
+        HumanAction::mark_skipped(FeatureId("write-salute".to_owned()), "scratch: not needed"),
+        Some("scratch: not needed"),
+    );
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    println!("acks after the marks: {:?}", acks_after(approved));
+    println!(
+        "stall flags raised in total: {}",
+        flags.lock().unwrap().len()
+    );
 
     // VAL-HOST-013: the count the panel shows (live_output total) against `wc -l` of the spool,
     // at two moments at least 30 s apart; the panel is read inside a 500 ms window of two

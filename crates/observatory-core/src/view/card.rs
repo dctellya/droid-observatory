@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Event, EventKind, FeatureId, Lane, MilestoneId, ModelId, Role, SessionId, Timestamp,
+    CycleTemplate, Event, EventKind, FeatureId, LaneId, MilestoneId, ModelId, Role, SessionId,
+    Timestamp,
 };
 
 /// PRD §8.1 validation state of a milestone card.
@@ -86,7 +87,7 @@ impl IdleReason {
 pub struct Card {
     pub milestone: MilestoneId,
     /// Lane of the most recent open activity.
-    pub lane: Lane,
+    pub lane: LaneId,
     pub event_count: u64,
     pub last_at: Timestamp,
     /// In order of first appearance.
@@ -113,29 +114,32 @@ struct Track {
 }
 
 /// Lane of the last open event, else of the last event.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct LaneTracker {
-    open: Option<Lane>,
-    last: Option<Lane>,
+    open: Option<LaneId>,
+    last: Option<LaneId>,
 }
 
 impl LaneTracker {
-    fn apply(&mut self, event: &Event) {
-        if is_open(event) {
-            self.open = Some(event.lane);
+    fn apply(&mut self, event: &Event, template: &CycleTemplate) {
+        if is_open(event, template) {
+            self.open = Some(event.lane.clone());
         }
-        self.last = Some(event.lane);
+        self.last = Some(event.lane.clone());
     }
 
-    fn lane(&self) -> Lane {
-        self.open.or(self.last).unwrap_or(Lane::Plan)
+    fn lane(&self, template: &CycleTemplate) -> LaneId {
+        self.open
+            .clone()
+            .or_else(|| self.last.clone())
+            .unwrap_or_else(|| template.first().clone())
     }
 }
 
-/// Phases 1 to 6 are open unless the kind ends `.done`, `.passed`, `.merged` or `.finished`;
-/// in Gate only the kinds that wait for someone are.
-fn is_open(event: &Event) -> bool {
-    if event.lane == Lane::Gate {
+/// Every lane but the final one is open unless the kind ends `.done`, `.passed`, `.merged` or
+/// `.finished`; in the final lane only the kinds that wait for someone are.
+fn is_open(event: &Event, template: &CycleTemplate) -> bool {
+    if event.lane == *template.final_lane() {
         return matches!(
             event.kind,
             EventKind::PrReviewRequested
@@ -152,23 +156,23 @@ fn is_open(event: &Event) -> bool {
 }
 
 /// The lane a milestone's card sits in, from the events of that milestone in time order. A
-/// milestone with no events waits in Plan.
-pub fn card_lane(events_of_milestone: &[Event]) -> Lane {
+/// milestone with no events waits in the template's first lane.
+pub fn card_lane(events_of_milestone: &[Event], template: &CycleTemplate) -> LaneId {
     let mut tracker = LaneTracker::default();
     for event in events_of_milestone
         .iter()
         .filter(|event| !event.kind.is_panel_only())
     {
-        tracker.apply(event);
+        tracker.apply(event, template);
     }
-    tracker.lane()
+    tracker.lane(template)
 }
 
 impl Card {
-    pub(super) fn start(milestone: MilestoneId, first: &Event) -> Self {
+    pub(super) fn start(milestone: MilestoneId, first: &Event, template: &CycleTemplate) -> Self {
         let mut card = Self {
             milestone,
-            lane: Lane::Plan,
+            lane: template.first().clone(),
             event_count: 0,
             last_at: first.at,
             features: Vec::new(),
@@ -177,11 +181,11 @@ impl Card {
             idle: None,
             track: Track::default(),
         };
-        card.apply(first);
+        card.apply(first, template);
         card
     }
 
-    pub(super) fn apply(&mut self, event: &Event) {
+    pub(super) fn apply(&mut self, event: &Event, template: &CycleTemplate) {
         self.event_count += 1;
         self.last_at = self.last_at.max(event.at);
         if let Some(feature) = &event.feature_id
@@ -189,8 +193,8 @@ impl Card {
         {
             self.features.push(feature.clone());
         }
-        self.track.lanes.apply(event);
-        self.lane = self.track.lanes.lane();
+        self.track.lanes.apply(event, template);
+        self.lane = self.track.lanes.lane(template);
         self.track_validation(&event.kind);
         self.validation = self.track.badge();
         self.track_holder(event);

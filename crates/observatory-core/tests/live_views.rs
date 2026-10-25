@@ -68,11 +68,11 @@ mod store {
     use observatory_core::store::Store;
     use tempfile::TempDir;
 
-    fn summary(event: &Event) -> (String, String, u8, String) {
+    fn summary(event: &Event) -> (String, String, String, String) {
         (
             event.id.to_string(),
             event.kind.prd_name().into_owned(),
-            event.lane.number(),
+            event.lane.to_string(),
             event.at.to_rfc3339_millis(),
         )
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, ModelId, Overlay, Role, SessionId,
+    Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, ModelId, Overlay, Role, SessionId,
     SourcePtr, Timestamp,
 };
 
@@ -16,7 +16,7 @@ pub struct TimelineRow {
     /// The raw `type` of an event the mapping did not know.
     pub raw_type: Option<String>,
     pub unmapped: bool,
-    pub lane: Lane,
+    pub lane: LaneId,
     pub overlay: Option<Overlay>,
     pub role: Role,
     pub session_id: Option<SessionId>,
@@ -49,7 +49,7 @@ impl TimelineRow {
             kind: event.kind.prd_name().into_owned(),
             unmapped: raw_type.is_some(),
             raw_type,
-            lane: event.lane,
+            lane: event.lane.clone(),
             overlay: event.overlay,
             role: event.role,
             session_id: event.session_id.clone(),

@@ -67,10 +67,11 @@ tail_chunk_kb = 1024
 # Startup scan attaches only files modified within this window; older sessions stay in the
 # library and open on demand, so a directory of hundreds of old sessions does not open at once.
 startup_scan_hours = 24
-# Sidecar tags the Droid runner writes itself (0.247 puts `exec` before the user's `--tag`). A
-# session is named by its first tag that is not in this list and carries no `role`, `missionId`
-# or `callingSessionId` metadata; with none left, by its session id (FR-L1).
-runner_tags = ["exec", "mission-worker", "mission-session", "subagent", "read-only"]
+# Sidecar tags the Droid runner writes itself (0.247 puts `exec` before the user's `--tag`; 0.249
+# writes `mission-orchestrator` first on an orchestrator session). A session is named by its first
+# tag that is not in this list and carries no `role`, `missionId` or `callingSessionId` metadata;
+# with none left, by its session id (FR-L1).
+runner_tags = ["mission-orchestrator", "exec", "mission-worker", "mission-session", "subagent", "read-only"]
 
 [ui]
 # Shell-to-UI flush interval. 100 ms is well under the 1 s latency target and avoids one
@@ -105,6 +106,9 @@ repo = "dctellya/droid-observatory"
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
 # 20 minutes matches the troubleshooting examples in Factory's mission docs.
 stall_threshold_min = 20
+# How often the app looks for stalled features. Short against the threshold, so a flag
+# appears within one poll of crossing it; long enough that reading the events stays cheap.
+stall_poll_s = 15
 
 [metrics]
 # Price table used for cost when the stream does not expose credits (PRD §10.5).
@@ -168,3 +172,30 @@ mission_switch_min_interval_min = 30
 mission_cycle_seconds = [3600, 7200, 14400, 28800, 86400, 172800]
 # Histogram bucket bounds in seconds for a feature cycle: minutes to hours.
 feature_cycle_seconds = [600, 1800, 3600, 7200, 14400]
+
+[e2e]
+# Limits `make e2e` asserts on latencies the app records itself (User Timing measures in the window,
+# JSON lines of the host in OBSERVATORY_TIMING_LOG); a figure above its limit fails the suite.
+# p95 of the `panel:render` measure: replay opened to the Panel holding its numbers, S fixture
+# (661 events over several files). The limit is a ceiling for a debug build, not a target.
+panel_render_p95_ms = 3000
+# p95 of the `event:first_on_board` measure: `events_appended` received by the window to the
+# board having drawn the batch. One reactive pass over the held events; well under the 1 s target.
+event_first_on_board_p95_ms = 500
+# p95 of the host interval from a spool line's arrival to its `events_appended` emit. It contains
+# the `[ui].event_batch_ms` wait (100 ms), so the limit is that wait plus slack for the store write.
+host_append_p95_ms = 300
+# No event of a hosted run may take longer than this from arrival to drawn (FR-L2 and the
+# "each event shows within 1 s" target of the interactive QA path).
+event_visible_max_ms = 1000
+# Fewest samples a latency scenario must have recorded before its percentiles mean anything.
+min_samples = 3
+
+[cycle]
+# The cycle template the board, the digests and the post-mortem input iterate (F-041, D-035):
+# the lanes, their order, the role that owns each, the final event and the clocks are data, so
+# a team whose cycle is not the engineering one writes a file instead of changing code.
+# "engineering" is the compiled-in seven-lane cycle of D-024 (config/cycles/engineering.toml);
+# any other value is the path of a template file (a leading ~/ is your home). A file that is
+# missing or invalid falls back to "engineering" and the app shows why.
+template = "engineering"

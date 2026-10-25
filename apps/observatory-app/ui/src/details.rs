@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use observatory_core::model::{EventId, MilestoneId};
+use observatory_core::model::{CycleTemplate, EventId, MilestoneId};
 use observatory_core::view::{TimelineRow, details};
 
 use crate::capture::Capture;
@@ -43,6 +43,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
                         <span aria-label="details-row-count">{model.timeline.len()}</span>
                     </p>
                     <RawLine capture=capture.clone() selected=selected />
+                    <div class="lib"><div class="scroll">
                     <table aria-label="details-timeline">
                         <thead>
                             <tr>
@@ -59,6 +60,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
                         </thead>
                         <tbody>{rows}</tbody>
                     </table>
+                    </div></div>
                 </section>
             }
         })
@@ -66,18 +68,19 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
 }
 
 fn timeline_row(row: &TimelineRow, selected: RwSignal<Option<EventId>>) -> AnyView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     let id = row.event_id.clone();
     let open = row.event_id.clone();
     view! {
         <tr aria-label="timeline-row" class:unmapped=row.unmapped>
-            <td>{row.at.to_rfc3339_millis()}</td>
-            <td class="event-id">{id.0}</td>
-            <td>{row.lane.name()}</td>
+            <td class="mono">{row.at.to_rfc3339_millis()}</td>
+            <td class="event-id mono">{id.0}</td>
+            <td>{template.with(|template| template.name_of(&row.lane))}</td>
             <td>{row.overlay.map(|overlay| overlay.as_str())}</td>
-            <td>{row.kind.clone()}</td>
+            <td class="mono">{row.kind.clone()}</td>
             <td>{row.role.as_str()}</td>
-            <td>{row.model.as_ref().map(|model| model.0.clone())}</td>
-            <td>{row.duration_ms.map(|ms| format!("{ms} ms"))}</td>
+            <td class="mono">{row.model.as_ref().map(|model| model.0.clone())}</td>
+            <td class="n">{row.duration_ms.map(|ms| format!("{ms} ms"))}</td>
             <td>
                 <button
                     type="button"

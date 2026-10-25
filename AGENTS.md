@@ -7,9 +7,9 @@ anything here; this file is the operational summary.
 
 droid-observatory: a Tauri 2 + Leptos (Rust) desktop app that watches a Factory Mission and
 measures the waste and effectiveness (cycle time, cost) of the engineering cycle from the spec to
-the PR's checks going green. The lanes are the seven mission phases (1 Plan, 2 Contract, 3 Build,
-4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate); roles are colour and attribution; human and
-commander actions are overlays, not lanes; time, waste, cost and model drift are the Panel. Anything
+the PR's checks going green. The lanes are the phases of the cycle template (`config/cycles/engineering.toml`
+by default: 1 Plan, 2 Contract, 3 Build, 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate); roles are colour and
+attribution; human and officer actions are overlays (D-035), not lanes; time, waste, cost and model drift are the Panel. Anything
 after the merge (release, observe, deploys, flags) is out of scope: the last event is `handed_to_cd`
 (F-028, D-024).
 PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by F-028 where noted).
@@ -76,8 +76,8 @@ Once the skeleton lands, the path the validators follow is:
    over 8735 records. `replay --root-only <root.jsonl>` reads the root file alone: S 364 events
    over 2027 records, M0 474 events over 2820 records. `make replay-fixtures` replays with
    children.
-3. `make app-dev` opens the window; open the same fixture (Replay); the seven phase lanes and the
-   Panel render and a card opens its Details view.
+3. `make app-dev` opens the window; open the same fixture (Replay); the template's lanes (seven in the
+   default template) and the Panel render and a card opens its Details view.
 4. With the window open, start `droid exec --mission ...` in a terminal; the new session
    appears on the board (Attach) and each event shows within 1 s.
 
@@ -105,7 +105,7 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Rust 2024 edition, `rustfmt.toml` and `clippy.toml` as committed. Warnings are errors.
 - Naming: standard Rust (`snake_case` items and modules, `CamelCase` types, `SCREAMING_SNAKE`
   consts). Event kinds mirror the PRD §7 names in `snake_case`
-  (`finding.blocking` → `FindingBlocking`). Role enums use the PRD's words; the lane enum is the seven phases of D-024.
+  (`finding.blocking` → `FindingBlocking`). Role enums use the PRD's words; lanes are `LaneId`s of the cycle template (D-035); there is no lane enum.
 - Tests: unit tests in `#[cfg(test)] mod tests` next to the code; integration tests in
   `crates/<crate>/tests/<topic>.rs`; fixture-driven tests read `fixtures/streams/`. Test
   functions read as sentences: `rework_window_closes_on_resolution()`.
@@ -133,6 +133,9 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 - Milestones live in worktrees and integrate into `mission/<name>`. Two worktrees never edit
   the same file (rule 13); shared files (`SPEC.md` §9–10, `README.md`, `BACKLOG.md`,
   `docs/decisions/README.md`) are written by the orchestrator at integration time.
+- A milestone boundary is `make integrate M=<milestone> FROM=<worktree-branch>` (`scripts/integrate.sh`, README
+  "Running a boundary"): no-ff merge with the templated message and trailer, cached final gate, usage, staging files
+  merged into SPEC §9, BACKLOG and the decision files, boundary report and summary.
 - Commit subject under 72 characters; co-author trailer for agent commits, kept in `.git-trailers` (one line,
   `Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>`).
 - How to commit (owner item 10, M2 boundary; `8ab88e2` carries a stray heredoc tail that broke trailer parsing and stays,
@@ -148,14 +151,15 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 
 - Scratch missions (F-054, owner item 1): a live self-check uses a scratch mission, never the real mission's validators; cheapest
   explicit models, `skipScrutiny` and `skipUserTesting`, reaped before the test reports.
-- Rules 26 to 28 ([ai/RULES.md](ai/RULES.md)): tooling is verified on the day and listed in SPEC `## Tooling` (26); a worktree
-  feature leaves its shared-file rows in a staging file and the integrator merges files (27); gate flow: inner loop per
-  rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs redirected to a
-  file with the exit code pasted (28).
+- Rules 26 to 28 ([ai/RULES.md](ai/RULES.md)): tooling is verified on the day and listed in SPEC `## Tooling` (26); the gate cache by tree hash
+  (`reports/gate/<tree>/<command>.json`, a hit is evidence, `--force` reruns) (27); gate flow: inner
+  loop per rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs
+  redirected to a file with the exit code pasted (28).
 - Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
   BACKLOG rows, deferred clauses, library notes) and commits it with the feature; the integrator merges the files (F-066).
-- Waits: the orchestrator waits on a background Script in one blocking call; there is no `WaitForScript` poll loop, and a
-  wait that returns early is re-issued only after its interrupter is named in the log (F-056).
+- Waits (owner item 6, F-056): the orchestrator starts the mission run as a background Script (`startInBackground`) and
+  ends its turn with one line; the platform delivers the script's output as a message when the run returns and the
+  orchestrator acts then. Zero turns while a worker runs; there is no `WaitForScript` call at all.
 - Model check: after any 402 or resume, the first action of every session (orchestrator, worker, validator, subagent) is to
   read `model` in its own `~/.factory/sessions/<project>/<session-id>.settings.json` and compare it with the mission's
   `model-settings.json`; on a mismatch it stops with one line and does nothing else, and the handoff pastes `model = <value>`.
@@ -194,9 +198,10 @@ When a decision comes with a recommendation and changes neither scope, nor usage
 models per role, the orchestrator takes the recommendation, records it as a SPEC §9 row with the
 alternatives and reports it at the next boundary (rule 24, D-026).
 
-The orchestrator never polls (rule 25, D-027): it waits in one blocking call sized to the feature's remaining
-cap, and a cancelled worker call or a run that does not return is re-dispatched or failed in the same turn, with
-a SPEC §9 row for the cause. While the mission is paused it does nothing until the owner resumes it.
+The orchestrator never polls (rule 25, D-027, F-056): it starts the run in a background Script, ends its turn and acts
+when the output is delivered; it makes no `WaitForScript` call. A cancelled worker call or a run that does not return is
+re-dispatched or failed in the same turn, with a SPEC §9 row for the cause. While the mission is paused it does nothing
+until the owner resumes it.
 
 ## Environment and secrets
 

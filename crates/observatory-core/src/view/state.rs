@@ -3,14 +3,14 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Event, EventId, EventKind, Lane, MilestoneId, Overlay, Role, SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, LaneGrouping, MilestoneId, Overlay, Role, SourcePtr,
+    Timestamp,
 };
 
 use super::agents::AgentRow;
 use super::card::Card;
 use super::filter::{ViewConfig, WorkerGrouping};
 use super::gate::GateGroup;
-use super::scrubber::lane_index;
 
 /// An event the mapping did not know (FR-B7). The pointer opens the raw line.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub struct TrayEntry {
     pub at: Timestamp,
 }
 
-/// One row of the Build lane (FR-B2): a worker session, or a feature.
+/// One row of the session-grouped lane (FR-B2): a worker session, or a feature.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubLane {
     /// Session id or feature id; empty for events without a feature.
@@ -53,13 +53,13 @@ pub struct BoardState {
     pub tray: Vec<TrayEntry>,
     pub agents: Vec<AgentRow>,
     pub grouping: WorkerGrouping,
-    /// Rows of the Build lane under `grouping`.
+    /// Rows of the lane the template groups by session, under `grouping`.
     pub sublanes: Vec<SubLane>,
     pub event_count: u64,
-    /// Events per phase, in lane order.
-    pub lane_counts: [u64; Lane::ALL.len()],
+    /// Events per lane, in template order.
+    pub lane_counts: Vec<u64>,
     pub human_overlays: u64,
-    pub commander_overlays: u64,
+    pub officer_overlays: u64,
     /// Per role, in order of the role's first turn; nothing else of the board counts a turn.
     pub turn_tokens: Vec<RoleTurns>,
     /// The scrubber position, or the time of the last event when live.
@@ -67,25 +67,30 @@ pub struct BoardState {
 }
 
 impl BoardState {
-    pub fn new(grouping: WorkerGrouping) -> Self {
+    pub fn new(grouping: WorkerGrouping, template: &CycleTemplate) -> Self {
         Self {
             grouping,
+            lane_counts: vec![0; template.lanes.len()],
             ..Self::default()
         }
     }
 
     /// The board of `events` (in time order) under `cfg`. The scrubber keeps the events up to
     /// `cfg.at`; the filter narrows what is left.
-    pub fn fold(events: &[Event], cfg: &ViewConfig) -> Self {
-        Self::fold_kept(events, cfg).0
+    pub fn fold(events: &[Event], cfg: &ViewConfig, template: &CycleTemplate) -> Self {
+        Self::fold_kept(events, cfg, template).0
     }
 
     /// `fold`, with the events the board was folded from, in time order.
-    pub fn fold_kept<'a>(events: &'a [Event], cfg: &ViewConfig) -> (Self, Vec<&'a Event>) {
+    pub fn fold_kept<'a>(
+        events: &'a [Event],
+        cfg: &ViewConfig,
+        template: &CycleTemplate,
+    ) -> (Self, Vec<&'a Event>) {
         let build = |events: &[&Event]| {
-            let mut state = Self::new(cfg.grouping);
+            let mut state = Self::new(cfg.grouping, template);
             for event in events {
-                state.apply(event);
+                state.apply(event, template);
             }
             state
         };
@@ -99,7 +104,7 @@ impl BoardState {
             && state.gate.badge != gate
         {
             kept.clear();
-            state = Self::new(cfg.grouping);
+            state = Self::new(cfg.grouping, template);
         }
         if let Some(validation) = cfg.filter.validation {
             let milestones: HashSet<&MilestoneId> = state
@@ -122,7 +127,7 @@ impl BoardState {
     }
 
     /// Folds one more event, in time order, into the board.
-    pub fn apply(&mut self, event: &Event) {
+    pub fn apply(&mut self, event: &Event, template: &CycleTemplate) {
         if let EventKind::TurnUsage {
             input,
             output,
@@ -134,10 +139,15 @@ impl BoardState {
             return;
         }
         self.event_count += 1;
-        self.lane_counts[lane_index(event.lane)] += 1;
+        if let Some(index) = template.index(&event.lane) {
+            match self.lane_counts.get_mut(index) {
+                Some(count) => *count += 1,
+                None => self.lane_counts.resize(index + 1, 0),
+            }
+        }
         match event.overlay {
             Some(Overlay::Human) => self.human_overlays += 1,
-            Some(Overlay::Commander) => self.commander_overlays += 1,
+            Some(Overlay::Officer) => self.officer_overlays += 1,
             None => {}
         }
         self.now = Some(self.now.map_or(event.at, |now| now.max(event.at)));
@@ -154,8 +164,10 @@ impl BoardState {
         }
         if let Some(milestone) = &event.milestone_id {
             match self.cards.iter_mut().find(|c| &c.milestone == milestone) {
-                Some(card) => card.apply(event),
-                None => self.cards.push(Card::start(milestone.clone(), event)),
+                Some(card) => card.apply(event, template),
+                None => self
+                    .cards
+                    .push(Card::start(milestone.clone(), event, template)),
             }
         }
         if let Some(session) = &event.session_id {
@@ -168,7 +180,10 @@ impl BoardState {
                 }
             }
         }
-        if event.lane == Lane::Build {
+        if template
+            .lane(&event.lane)
+            .is_some_and(|lane| lane.grouping == LaneGrouping::Sessions)
+        {
             self.apply_to_sublane(event);
         }
     }

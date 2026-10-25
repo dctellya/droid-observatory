@@ -1,0 +1,12 @@
+{
+ "name": "test",
+ "tree": "t1",
+ "tool": "fixture",
+ "command": "make test",
+ "exit_code": 0,
+ "summary": "test result: ok. 1 passed",
+ "seconds": 40.0,
+ "started_at": "2026-10-25T10:55:10Z",
+ "finished_at": "2026-10-25T10:55:50Z",
+ "session": "33333333-3333-4333-8333-333333333333"
+}

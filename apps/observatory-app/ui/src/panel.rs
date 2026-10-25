@@ -1,14 +1,23 @@
 use leptos::prelude::*;
+use observatory_core::model::CycleTemplate;
 use observatory_core::view::BoardView;
+
+use crate::perf;
 
 /// Time, tokens per role and model drift against the declared models. Cost and waste arrive
 /// with M5.
 #[component]
 pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
+    // Runs once the Panel's rows are in the DOM; the measure it closes was opened by the request
+    // that produced this board, so live batches add none.
+    Effect::new(move |_| {
+        board.track();
+        perf::panel_rendered();
+    });
     view! {
-        <section class="panel" aria-label=move || board.with(|b| b.panel.aria_label.clone())>
+        <section class="panel" data-testid="panel" aria-label=move || board.with(|b| b.panel.aria_label.clone())>
             <h2>"Panel"</h2>
-            <p aria-label="panel-elapsed">
+            <p aria-label="panel-elapsed" data-testid="panel-elapsed">
                 "Elapsed: "
                 {move || {
                     board
@@ -16,7 +25,8 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                         .map_or_else(|| "n/a".to_owned(), |ms| format!("{} s", ms / 1000))
                 }}
             </p>
-            <table aria-label="panel-roles">
+            <div class="lib"><div class="scroll">
+            <table aria-label="panel-roles" data-testid="panel-roles">
                 <thead>
                     <tr>
                         <th>"Role"</th>
@@ -51,17 +61,17 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                                         view! {
                                             <tr aria-label=format!("panel-role-{}", row.role.as_str())>
                                                 <td>{row.role.as_str()}</td>
-                                                <td>{row.sessions}</td>
-                                                <td>{row.tokens.input}</td>
-                                                <td>{row.tokens.output}</td>
-                                                <td>{row.tokens.cache_read}</td>
-                                                <td>{row.tokens.cache_write}</td>
-                                                <td aria-label=format!("panel-turns-{}", row.role.as_str())>{row.turns}</td>
-                                                <td>{row.turn_input}</td>
-                                                <td>{row.turn_output}</td>
-                                                <td>{row.turn_cache_read}</td>
-                                                <td aria-label="declared-model">{row.declared.0.clone()}</td>
-                                                <td aria-label="observed-models">{observed}</td>
+                                                <td class="n">{row.sessions}</td>
+                                                <td class="n">{row.tokens.input}</td>
+                                                <td class="n">{row.tokens.output}</td>
+                                                <td class="n">{row.tokens.cache_read}</td>
+                                                <td class="n">{row.tokens.cache_write}</td>
+                                                <td class="n" aria-label=format!("panel-turns-{}", row.role.as_str())>{row.turns}</td>
+                                                <td class="n">{row.turn_input}</td>
+                                                <td class="n">{row.turn_output}</td>
+                                                <td class="n">{row.turn_cache_read}</td>
+                                                <td class="mono" aria-label="declared-model">{row.declared.0.clone()}</td>
+                                                <td class="mono" aria-label="observed-models">{observed}</td>
                                                 <td aria-label="model-drift">
                                                     {if row.drifted { "drift" } else { "as declared" }}
                                                 </td>
@@ -73,6 +83,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                     }}
                 </tbody>
             </table>
+            </div></div>
         </section>
     }
 }
@@ -80,6 +91,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
 /// The overlay filter list: events a person caused, each also marked on its phase lane.
 #[component]
 pub fn OverlayList(board: Memo<BoardView>) -> impl IntoView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     view! {
         <section class="overlay-list" aria-label=move || board.with(|b| b.overlay_human.aria_label.clone())>
             <h2>
@@ -99,7 +111,7 @@ pub fn OverlayList(board: Memo<BoardView>) -> impl IntoView {
                                     view! {
                                         <li aria-label="overlay-human-marker">
                                             {marker.at.to_rfc3339_millis()} " "
-                                            {marker.kind.clone()} " on " {marker.lane.name()}
+                                            {marker.kind.clone()} " on " {template.with(|template| template.name_of(&marker.lane))}
                                         </li>
                                     }
                                 })
