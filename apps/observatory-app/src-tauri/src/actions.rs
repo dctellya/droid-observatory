@@ -119,6 +119,30 @@ impl Hosts {
     }
 }
 
+/// A `HostControl` as the app log shows it: the kind and the length of any free text, never the
+/// text (PRD §11.2). `Debug` of the control itself prints the message, answer or reason.
+pub(crate) struct Redacted<'a>(pub &'a HostControl);
+
+impl std::fmt::Debug for Redacted<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let length = |text: &str| text.chars().count();
+        match self.0 {
+            HostControl::Pause => f.write_str("Pause"),
+            HostControl::Resume => f.write_str("Resume"),
+            HostControl::Message { text } => write!(f, "Message {{ text_len: {} }}", length(text)),
+            HostControl::Answer { question_id, text } => write!(
+                f,
+                "Answer {{ question_id: {question_id:?}, text_len: {} }}",
+                length(text)
+            ),
+            HostControl::Approve { request_id } => {
+                write!(f, "Approve {{ request_id: {request_id:?} }}")
+            }
+            HostControl::Deny { request_id } => write!(f, "Deny {{ request_id: {request_id:?} }}"),
+        }
+    }
+}
+
 /// The app log reads `HumanAction`, which holds lengths only: the `HostControl` carries the
 /// message, answer or reason text and must never be formatted into a log line (PRD §11.2).
 fn log_host_control(launch_id: &str, action: &HumanAction, request_id: &str, method: &str) {

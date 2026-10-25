@@ -30,6 +30,7 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc as async_mpsc, watch};
 
 use crate::Shell;
+use crate::actions::Redacted;
 use crate::logging;
 use crate::process::{ProcessGroup, spawn_group};
 
@@ -131,7 +132,7 @@ impl Hosts {
         run.status_waiting(mapper);
         tracing::info!(
             launch_id,
-            control = ?control,
+            control = ?Redacted(control),
             request_id = %sent.id,
             method = sent.method,
             "host_control"
@@ -598,7 +599,7 @@ impl<R: Runtime> Pump<R> {
         match channel.send(control, mapper.open_requests_mut()) {
             Ok(sent) => tracing::info!(
                 launch_id = %self.launch_id,
-                control = ?control,
+                control = ?Redacted(control),
                 request_id = %sent.id,
                 method = sent.method,
                 "host_control"
