@@ -73,13 +73,13 @@ fn timeline_row(row: &TimelineRow, selected: RwSignal<Option<EventId>>) -> AnyVi
     let open = row.event_id.clone();
     view! {
         <tr aria-label="timeline-row" class:unmapped=row.unmapped>
-            <td>{row.at.to_rfc3339_millis()}</td>
+            <td class="mono">{row.at.to_rfc3339_millis()}</td>
             <td class="event-id mono">{id.0}</td>
             <td>{template.with(|template| template.name_of(&row.lane))}</td>
             <td>{row.overlay.map(|overlay| overlay.as_str())}</td>
-            <td>{row.kind.clone()}</td>
+            <td class="mono">{row.kind.clone()}</td>
             <td>{row.role.as_str()}</td>
-            <td>{row.model.as_ref().map(|model| model.0.clone())}</td>
+            <td class="mono">{row.model.as_ref().map(|model| model.0.clone())}</td>
             <td class="n">{row.duration_ms.map(|ms| format!("{ms} ms"))}</td>
             <td>
                 <button

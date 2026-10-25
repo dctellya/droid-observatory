@@ -64,7 +64,7 @@ pub fn Library(
                                 view! {
                                     <tr aria-label="library-row" data-testid="library-row">
                                         <td aria-label="library-name" data-testid="library-name">{entry.name.clone()}</td>
-                                        <td aria-label="library-date">{entry.date.clone()}</td>
+                                        <td class="mono" aria-label="library-date">{entry.date.clone()}</td>
                                         <td class="n" aria-label="library-events">{entry.event_count}</td>
                                         <td>
                                             <Show

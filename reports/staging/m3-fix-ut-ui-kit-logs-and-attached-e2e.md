@@ -16,7 +16,9 @@ Feature `m3-fix-ut-ui-kit-logs-and-attached-e2e` (fix 2 of 3 after M3 user-testi
   Deferred to `m4-gate-ui-and-merge`, which adds the Gate screens and is the first feature that may add navigation
   (the kit's "No new navigation" applies until then). Alternative: add the head to every M3 screen now (rejected:
   it needs the products › runs › missions structure that does not exist). Screens: Library, board, Details, Agents.
-- Row (F-NEW): VAL-UI-001 rule 2 and rule 6 are met by this feature: the Panel roles, Agents, Library and Details
+- Row (F-NEW): VAL-UI-001 rule 2 and rule 6 are only partly met by this feature (corrected in round 3: identifier
+  and timestamp cells were still sans, and two padding overrides remain; see `m3-fix-ut-round3-lanes-and-mono.md`,
+  which closes rule 2 and records rule 6 as proposed departures). Done here: the Panel roles, Agents, Library and Details
   tables sit in the kit's `.lib` box (`.lib > .scroll > table`) and every numeric cell is `class="n"` (right-aligned
   mono `tabular-nums` from `theme.css`; `ui/src/panel.rs`, `agents.rs`, `library.rs`, `details.rs`). `style.css`
   gained no `font-family` and no colour literal; `diff ai/design/ui-kit-v2/theme.css apps/observatory-app/ui/theme.css`

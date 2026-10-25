@@ -70,8 +70,8 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                                                 <td class="n">{row.turn_input}</td>
                                                 <td class="n">{row.turn_output}</td>
                                                 <td class="n">{row.turn_cache_read}</td>
-                                                <td aria-label="declared-model">{row.declared.0.clone()}</td>
-                                                <td aria-label="observed-models">{observed}</td>
+                                                <td class="mono" aria-label="declared-model">{row.declared.0.clone()}</td>
+                                                <td class="mono" aria-label="observed-models">{observed}</td>
                                                 <td aria-label="model-drift">
                                                     {if row.drifted { "drift" } else { "as declared" }}
                                                 </td>

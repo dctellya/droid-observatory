@@ -111,9 +111,9 @@ fn agent_row(entry: &AgentEntry, selected: RwSignal<Option<SessionId>>) -> AnyVi
             <td class="event-id mono">{entry.session_id.0.clone()}</td>
             <td>{entry.role.as_str()}</td>
             <td>{status_text(entry.status)}</td>
-            <td>{entry.feature.as_ref().map(|f| f.0.clone())}</td>
-            <td>{entry.model.as_ref().map(|m| m.0.clone())}</td>
-            <td>
+            <td class="mono">{entry.feature.as_ref().map(|f| f.0.clone())}</td>
+            <td class="mono">{entry.model.as_ref().map(|m| m.0.clone())}</td>
+            <td class="mono">
                 {entry.declared.as_ref().map(|m| m.0.clone())}
                 {entry.drifted.then_some(" (drift)")}
             </td>

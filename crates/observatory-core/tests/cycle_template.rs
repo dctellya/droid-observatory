@@ -276,6 +276,7 @@ kinds = ["intent.created"]"#,
 #[test]
 fn a_second_template_with_four_lanes_maps_every_event_into_one_of_them() {
     let template = four_step();
+    assert_eq!(template.lanes.len(), 4, "the four_step template content");
     let default_events = map_m0(&CycleTemplate::engineering());
     let events = map_m0(&template);
 
@@ -287,7 +288,11 @@ fn a_second_template_with_four_lanes_maps_every_event_into_one_of_them() {
         "{counts:?}"
     );
     assert_eq!(counts.values().sum::<u64>(), events.len() as u64);
-    assert!(counts.len() == 4, "every lane has events: {counts:?}");
+    assert_eq!(
+        counts.len(),
+        template.lanes.len(),
+        "every lane has events: {counts:?}"
+    );
     for event in &events {
         assert!(template.index(&event.lane).is_some(), "{}", event.lane);
     }
@@ -299,7 +304,7 @@ fn the_board_iterates_the_template_lanes_and_places_the_placeholder_on_the_final
     let events = map_m0(&template);
     let board = board(&events, &template);
 
-    assert_eq!(board.lanes.len(), 4);
+    assert_eq!(board.lanes.len(), template.lanes.len());
     let names: Vec<&str> = board.lanes.iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, ["Spec", "Code", "Check", "Ship"]);
     let labels: Vec<&str> = board.lanes.iter().map(|l| l.aria_label.as_str()).collect();
@@ -323,8 +328,8 @@ fn the_board_iterates_the_template_lanes_and_places_the_placeholder_on_the_final
     assert_eq!(clocks, ["spec to ship"]);
 
     let digest = board.digest();
-    assert_eq!(digest.lane_events.len(), 4);
-    assert_eq!(digest.lane_cards.len(), 4);
+    assert_eq!(digest.lane_events.len(), template.lanes.len());
+    assert_eq!(digest.lane_cards.len(), template.lanes.len());
     assert_eq!(
         digest.lanes,
         ["spec", "code", "check", "ship"].map(LaneId::from)
@@ -402,7 +407,7 @@ fn cards_and_lane_counts_follow_the_template() {
     let counts = lane_counts(&events, &template);
     let board_counts: Vec<u64> = board.lanes.iter().map(|l| l.event_count).collect();
     assert_eq!(counts, board_counts);
-    assert_eq!(counts.len(), 4);
+    assert_eq!(counts.len(), template.lanes.len());
 
     let mut by_milestone: BTreeMap<String, Vec<Event>> = BTreeMap::new();
     for event in &events {
