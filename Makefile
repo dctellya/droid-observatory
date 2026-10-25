@@ -51,7 +51,7 @@ check-scripts: check-gate-cache ## Shell tests of the repository scripts
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
-	@python3 scripts/usage.py --milestone $(M) --cross-check $(foreach c,$(CAPS),--cap $(c)) $(USAGE_ARGS)
+	@python3 scripts/usage-report.py --milestone $(M) --cross-check $(foreach c,$(CAPS),--cap $(c)) $(USAGE_ARGS)
 
 check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
 	@sh scripts/tests/gate_test.sh

@@ -454,7 +454,7 @@ def cross_check(script_dir, files, start, end, per_session):
         want = per_session[sid]
         have = got.get(sid)
         if have != want:
-            diffs.append("  %s: usage.py %s, usage-from-log.sh %s" % (sid, want, have))
+            diffs.append("  %s: usage-report.py %s, usage-from-log.sh %s" % (sid, want, have))
     if proc.returncode == 0 and not diffs:
         return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read against scripts/usage-from-log.sh --embedded)" % len(ids)]
     return ["cross-check: DIFFERENT (exit %d)" % proc.returncode] + diffs[:50]
@@ -476,12 +476,12 @@ def build(args):
         firsts = [r["timestamp"] for _, r in progress
                   if r.get("type") == "worker_started" and str(r.get("featureId", "")).startswith(args.milestone + "-")]
         if not firsts:
-            sys.exit("usage.py: no worker_started for %s-* in progress_log.jsonl; pass --from" % args.milestone)
+            sys.exit("usage-report.py: no worker_started for %s-* in progress_log.jsonl; pass --from" % args.milestone)
         start = fmt_s(parse_ts(min(firsts)))
 
     files = sorted(glob.glob(os.path.join(args.logs_dir, "droid-log-single.log*")), key=log_sort_key)
     if not files:
-        sys.exit("usage.py: no droid-log-single.log* in %s" % args.logs_dir)
+        sys.exit("usage-report.py: no droid-log-single.log* in %s" % args.logs_dir)
 
     prices = load_prices(args.prices)
     sidecars = load_sidecars(args.sessions_dir)
@@ -864,7 +864,7 @@ def main(argv=None):
     ap.add_argument("--cross-check", action="store_true", help="compare the session rows with scripts/usage-from-log.sh")
     args = ap.parse_args(argv)
     if not args.prices:
-        sys.exit("usage.py: no price table found; pass --prices")
+        sys.exit("usage-report.py: no price table found; pass --prices")
     out = args.out or os.path.join(repo_root, "reports", "usage", args.milestone + ".md")
     body = build(args)
     write_out(out, args.milestone, body)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/usage.py over the redacted fixture in scripts/tests/fixtures/usage/.
+"""Tests for scripts/usage-report.py over the redacted fixture in scripts/tests/fixtures/usage/.
 
 The fixture is a hand-written excerpt shaped like the real Droid log, sidecars, orchestrator transcript,
 progress log and gate records; ids are made up (11111111-... is the mission and its orchestrator). Every
@@ -17,7 +17,7 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPT = os.path.join(HERE, "..", "usage.py")
+SCRIPT = os.path.join(HERE, "..", "usage-report.py")
 FIX = os.path.join(HERE, "fixtures", "usage")
 
 MISSION = "11111111-1111-4111-8111-111111111111"
@@ -58,7 +58,7 @@ def run(extra=(), out=None, check=True, now=NOW):
     args += list(extra)
     proc = subprocess.run(args, capture_output=True, text=True)
     if check and proc.returncode != 0:
-        raise AssertionError("usage.py exit %d\nstdout: %s\nstderr: %s" % (proc.returncode, proc.stdout, proc.stderr))
+        raise AssertionError("usage-report.py exit %d\nstdout: %s\nstderr: %s" % (proc.returncode, proc.stdout, proc.stderr))
     return proc
 
 

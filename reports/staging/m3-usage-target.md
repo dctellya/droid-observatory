@@ -5,11 +5,11 @@ VAL-TOOL-005. Worker model line: `model = claude-sonnet-5-5`.
 
 ## SPEC §9
 
-- Row (F-NEW): `make usage M=<milestone>` runs `scripts/usage.py` (python3 stdlib only) and writes the tables of
+- Row (F-NEW): `make usage M=<milestone>` runs `scripts/usage-report.py` (python3 stdlib only) and writes the tables of
   `reports/usage/<milestone>.md` between `<!-- usage:begin -->` and `<!-- usage:end -->`; prose outside the markers
   is kept, a file without markers gets the block appended, a new file gets a title and the block. The script is
-  named `usage.py` as the feature text says; the contract (VAL-TOOL-005) and `library/tooling.md` say
-  `usage-report.py`, so those two names change to `usage.py`. Sources: `~/.factory/logs/droid-log-single.log*`, the
+  `scripts/usage-report.py`, the name the contract (VAL-TOOL-005) and `library/tooling.md` use (renamed from
+  `usage.py` by m3-gate-hits-and-usage-name). Sources: `~/.factory/logs/droid-log-single.log*`, the
   session sidecars, the orchestrator transcript, `progress_log.jsonl` (`OBSERVATORY_MISSION_DIR`, default the mission
   directory), `config/prices/<newest>.toml`, `reports/gate/*/*.json`. Window `--from` (default: first
   `worker_started` of `<milestone>-*`) to `--to` (default: generation time minus 1 s), compared at second
@@ -51,18 +51,17 @@ VAL-TOOL-005. Worker model line: `model = claude-sonnet-5-5`.
 
 ## Decisions
 
-- D-029 (amend, one line in Consequences): "The per-role tables of a usage report are written by `scripts/usage.py`
+- D-029 (amend, one line in Consequences): "The per-role tables of a usage report are written by `scripts/usage-report.py`
   (`make usage M=<m>`) from the log, the sidecars and the progress log; `scripts/usage-from-log.sh` stays as its
   cross-check."
 
 ## BACKLOG
 
-- B-NEW: `scripts/gate.sh` writes no record for a cache hit, so the usage report cannot state "gates served from
-  cache" or the minutes saved (the Gates section prints `served from cache: not recorded`). Fix: append one line per
-  hit (time, name, tree, the stored `seconds`) to `reports/gate/hits.log`, then add a `Hits` table to `usage.py`.
-- B-NEW: `usage.py` does not read `features.json` (the contract lists it); the milestone window comes from the
+- Closed by m3-gate-hits-and-usage-name (do not file): `scripts/gate.sh` now appends one line per cache hit to
+  `reports/gate/hits.log` and the Gates table of `usage-report.py` reads it.
+- B-NEW: `usage-report.py` does not read `features.json` (the contract lists it); the milestone window comes from the
   `worker_started` entries and the feature id prefix. Add it when a table needs a feature title or a cap per feature.
-- B-NEW: `build()` in `scripts/usage.py` is one long function that emits the tables in order; split it per table when
+- B-NEW: `build()` in `scripts/usage-report.py` is one long function that emits the tables in order; split it per table when
   a second report format (JSON for the app) is wanted.
 - B-NEW: `reports/usage/m2.md` has no markers. `make usage M=m2` appends a generated block at its end; the integrator
   decides whether to wrap the hand-made tables of `m0.md` to `m2.md` or leave them.
@@ -77,5 +76,5 @@ VAL-TOOL-005. Worker model line: `model = claude-sonnet-5-5`.
 ## Library
 
 - `library/tooling.md`, row "Usage report": command `make usage M=<m> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts>
-  --to <ts> --out <path>']`; script `scripts/usage.py`; stdlib only; about 14 s over the 9 log files of 2026-10-25
+  --to <ts> --out <path>']`; script `scripts/usage-report.py`; stdlib only; about 14 s over the 9 log files of 2026-10-25
   (`time make usage M=m3`); the unit test is `python3 scripts/tests/usage_test.py` (also `make check-scripts`).
