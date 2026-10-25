@@ -102,7 +102,7 @@ fn lane_column(
             <h2 class="lane-name">
                 {lane.name.clone()} " "
                 <span
-                    class="count"
+                    class="count mono"
                     aria-label=format!("lane-{number}-count")
                     data-testid=format!("lane-count-{number}")
                 >{lane.event_count}</span>
@@ -131,10 +131,10 @@ fn group_view(lane: &LaneView, group: &RowGroup) -> AnyView {
     let group_for_title = group.clone();
     view! {
         <section class="sublane" aria-label=format!("{kind}-{}", group.key)>
-            <h3>
+            <h3 class="mono">
                 {move || ctx.sessions.with(|sessions| group_for_title.title(sessions))} " "
                 <span class="count">{group.rows.len()}</span>
-                {role.map(|role| view! { <span class=format!("role role-{role}")>{role}</span> })}
+                {role.map(|role| view! { <span class=format!("role mono role-{role}")>{role}</span> })}
             </h3>
             <ul class="rows-list">{rows}</ul>
         </section>
@@ -151,7 +151,7 @@ fn row_view(row: &TimelineRow) -> AnyView {
         Some(milestone) => view! {
             <button
                 type="button"
-                class="kind row-open"
+                class="kind row-open mono"
                 data-testid="row-kind"
                 aria-label=format!("open-details-{}", row.event_id.0)
                 on:click=move |_| ctx.open_details.run(milestone.clone())
@@ -160,9 +160,8 @@ fn row_view(row: &TimelineRow) -> AnyView {
             </button>
         }
         .into_any(),
-        None => {
-            view! { <span class="kind" data-testid="row-kind">{row.kind.clone()}</span> }.into_any()
-        }
+        None => view! { <span class="kind mono" data-testid="row-kind">{row.kind.clone()}</span> }
+            .into_any(),
     };
     view! {
         <li
@@ -174,14 +173,14 @@ fn row_view(row: &TimelineRow) -> AnyView {
             data-model=row.model.as_ref().map(|m| m.0.clone())
             data-feature=row.feature.as_ref().map(|f| f.0.clone())
         >
-            <time data-testid="row-time">{time[11..23].to_owned()}</time>
-            <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
+            <time class="mono" data-testid="row-time">{time[11..23].to_owned()}</time>
+            <span class=format!("role mono role-{}", row.role.as_str())>{row.role.as_str()}</span>
             {kind}
-            {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}
+            {row.model.as_ref().map(|model| view! { <span class="model mono">{model.0.clone()}</span> })}
             {overlay
                 .map(|overlay| {
                     view! {
-                        <span class=format!("overlay overlay-{overlay}") aria-label="overlay-marker">
+                        <span class=format!("overlay mono overlay-{overlay}") aria-label="overlay-marker">
                             {overlay}
                         </span>
                     }
@@ -227,9 +226,9 @@ fn card_view(card: &Card) -> AnyView {
     let marks = view! { <FeatureMarks features=card.features.clone() /> };
     view! {
         <article class="card" aria-label=format!("card-{}", card.milestone)>
-            <h3>{card.milestone.0.clone()}</h3>
+            <h3 class="mono">{card.milestone.0.clone()}</h3>
             <span
-                class=format!("badge badge-{}", badge.as_str())
+                class=format!("badge mono badge-{}", badge.as_str())
                 aria-label="validation-badge"
             >
                 {badge.label()}

@@ -89,7 +89,8 @@ createInterface({ input: process.stdin }).on('line', (text) => {
     }
   } else if (typeof line.id === 'string' && line.id.startsWith('perm-') && line.result) {
     // Droid goes on with the tool once it is allowed or refused, and that output is what makes the
-    // host report the request closed.
+    // host report the request closed. It first tells the host which request was resolved.
+    notify({ type: 'permission_resolved', requestId: line.id });
     notify({
       type: 'tool_result',
       toolUseId: `toolu_${line.id}`,

@@ -283,7 +283,7 @@ pub fn LiveOutputView() -> impl IntoView {
                     {move || hosted.output.with(LiveOutput::total)}
                 </span> " lines"
             </h3>
-            <pre aria-label="live-output-lines">
+            <pre class="mono" aria-label="live-output-lines">
                 {move || {
                     hosted
                         .output

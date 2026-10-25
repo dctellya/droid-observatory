@@ -108,7 +108,7 @@ fn agent_row(entry: &AgentEntry, selected: RwSignal<Option<SessionId>>) -> AnyVi
                     {entry.name.clone()}
                 </button>
             </td>
-            <td class="event-id">{entry.session_id.0.clone()}</td>
+            <td class="event-id mono">{entry.session_id.0.clone()}</td>
             <td>{entry.role.as_str()}</td>
             <td>{status_text(entry.status)}</td>
             <td>{entry.feature.as_ref().map(|f| f.0.clone())}</td>
@@ -173,16 +173,16 @@ fn stream_row(row: &TimelineRow, marker: Option<MarkerKind>) -> AnyView {
     });
     view! {
         <li class="row" class:marker=marker.is_some() data-event-id=row.event_id.0.clone()>
-            <time>{row.at.to_rfc3339_millis()}</time>
-            <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
+            <time class="mono">{row.at.to_rfc3339_millis()}</time>
+            <span class=format!("role mono role-{}", row.role.as_str())>{row.role.as_str()}</span>
             {match label {
                 Some(label) => {
                     view! { <strong class="agent-marker" aria-label=label>{label}</strong> }
                         .into_any()
                 }
-                None => view! { <span class="kind">{row.kind.clone()}</span> }.into_any(),
+                None => view! { <span class="kind mono">{row.kind.clone()}</span> }.into_any(),
             }}
-            {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}
+            {row.model.as_ref().map(|model| view! { <span class="model mono">{model.0.clone()}</span> })}
         </li>
     }
     .into_any()

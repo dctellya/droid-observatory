@@ -153,7 +153,7 @@ pub fn Controls(ctx: ControlCtx, bar: Signal<ControlBar>) -> impl IntoView {
                         view! {
                             <div class="paste">
                                 <p class="mut" data-testid="terminal-instruction">{instruction}</p>
-                                <pre class="raw" data-testid="terminal-text">
+                                <pre class="raw mono" data-testid="terminal-text">
                                     {move || paste.get().unwrap_or_default()}
                                 </pre>
                             </div>
@@ -169,7 +169,7 @@ pub fn Controls(ctx: ControlCtx, bar: Signal<ControlBar>) -> impl IntoView {
                 }}
             </ul>
             <PermissionList ctx=permissions_ctx bar=bar />
-            <p class="result" data-testid="control-result">{move || result.get()}</p>
+            <p class="result mono" data-testid="control-result">{move || result.get()}</p>
         </section>
     }
 }
@@ -351,7 +351,7 @@ pub fn FeatureMarks(features: Vec<FeatureId>) -> impl IntoView {
     let enabled = ctx.enabled;
     view! {
         <Show when=move || enabled.get()>
-            <ul class="feature-marks" aria-label="feature-marks">{rows.clone()}</ul>
+            <ul class="feature-marks mono" aria-label="feature-marks">{rows.clone()}</ul>
         </Show>
     }
     .into_any()

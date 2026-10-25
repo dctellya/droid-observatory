@@ -72,7 +72,7 @@ fn timeline_row(row: &TimelineRow, selected: RwSignal<Option<EventId>>) -> AnyVi
     view! {
         <tr aria-label="timeline-row" class:unmapped=row.unmapped>
             <td>{row.at.to_rfc3339_millis()}</td>
-            <td class="event-id">{id.0}</td>
+            <td class="event-id mono">{id.0}</td>
             <td>{template.with(|template| template.name_of(&row.lane))}</td>
             <td>{row.overlay.map(|overlay| overlay.as_str())}</td>
             <td>{row.kind.clone()}</td>

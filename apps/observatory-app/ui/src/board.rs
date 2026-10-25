@@ -117,22 +117,22 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
         <div class="board" aria-label="board" data-testid="board">
             <header class="top">
                 <h1 aria-label="mission-name" data-testid="mission-name">{summary.name.clone()}</h1>
-                <span class="mode" aria-label="mode">
+                <span class="mode mono" aria-label="mode">
                     {move || if mode_live.get() { "Live" } else { "Replay" }}
                 </span>
                 <dl class="facts">
                     <dt>"Events"</dt>
-                    <dd aria-label="event-count" data-testid="event-count">{move || event_total.with(Vec::len)}</dd>
+                    <dd class="mono" aria-label="event-count" data-testid="event-count">{move || event_total.with(Vec::len)}</dd>
                     <dt>"Shown"</dt>
-                    <dd aria-label="events-shown">{move || board.with(|b| b.event_count)}</dd>
+                    <dd class="mono" aria-label="events-shown">{move || board.with(|b| b.event_count)}</dd>
                     <dt>"Unknown"</dt>
-                    <dd aria-label="unknown-count" data-testid="unknown-count">
+                    <dd class="mono" aria-label="unknown-count" data-testid="unknown-count">
                         {move || unknown_total.with(|events| tray_count(events))}
                     </dd>
                     <dt>"Sessions"</dt>
-                    <dd aria-label="session-count">{move || session_total.with(Vec::len)}</dd>
+                    <dd class="mono" aria-label="session-count">{move || session_total.with(Vec::len)}</dd>
                     <dt>"Mapping"</dt>
-                    <dd aria-label="mapping-version">{summary.mapping_version.clone()}</dd>
+                    <dd class="mono" aria-label="mapping-version">{summary.mapping_version.clone()}</dd>
                 </dl>
                 <ThemeSwitch />
                 <button aria-label="back-to-library" data-testid="back-to-library" on:click=move |_| on_close.run(())>
@@ -233,13 +233,14 @@ fn ScrubberBar(
                     }
                 />
             </label>
-            <output aria-label="scrubber-timestamp">
+            <output class="mono" aria-label="scrubber-timestamp">
                 {move || scrubber.with(|s| s.label(at.get()))}
             </output>
             <label>
                 "Go to time "
                 <input
                     type="text"
+                    class="mono"
                     aria-label="scrubber-time"
                     placeholder="2026-10-22T10:18:11.451Z"
                     on:change=move |ev| {

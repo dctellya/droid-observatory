@@ -156,7 +156,14 @@ pub fn App() -> impl IntoView {
             }
         });
         shell::listen::<HostedStatus>("hosted_status", move |now| {
-            hosted.status.set(Some(now));
+            // Several hosted runs can be alive; the screen follows the one it launched last.
+            let mine = hosted
+                .launched
+                .get_untracked()
+                .is_some_and(|launched| launched.launch_id == now.launch_id);
+            if mine {
+                hosted.status.set(Some(now));
+            }
         });
         shell::listen::<StallBatch>("stall_flag", move |batch| {
             stalls.0.update(|all| {
