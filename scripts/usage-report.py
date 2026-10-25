@@ -35,6 +35,9 @@ CLASSES = ("waits", "decisions and boundary reports", "narration", "unmatched")
 # A log turn and its transcript record carry the same instant; m2 measured a largest difference of 0.003 s
 # over 251 turns, so 3 s only absorbs clock rounding.
 MATCH_TOLERANCE_S = 3.0
+# The Droid log is not time-ordered: m2 and m3 logs hold lines up to 48 s behind an earlier one. Every line is filtered by its
+# own timestamp; the scan only stops once a line is this far past --to, as the log is flushed with a lag well below it.
+LOG_REORDER_MARGIN_S = 600
 # Owner item 4 (M2 boundary): a wait that returns before this is reported as short.
 SHORT_WAIT_S = 60.0
 # Owner item 8: a feature finishes in one round under this many worker turns.
@@ -160,21 +163,27 @@ def scan_logs(files, start, end):
     info = []
     orch_turns = []
     unparsed = unjoined = 0
+    stop = (parse_ts(sec(end) + "+00:00") + timedelta(seconds=LOG_REORDER_MARGIN_S)).strftime("%Y-%m-%dT%H:%M:%S")
     for path in files:
         fname = os.path.basename(path)
         lines = 0
         first = last = None
         n_unparsed = 0
+        past_end = False
         with open(path, errors="replace") as f:
             for line in f:
                 lines += 1
                 m = TS_LINE.match(line)
                 if not m:
+                    lines -= past_end
                     continue
                 ts = m.group(1)
-                if sec(ts) > sec(end):
+                past_end = sec(ts) > sec(end)
+                if past_end:
                     lines -= 1
-                    break
+                    if sec(ts) > stop:
+                        break
+                    continue
                 if first is None:
                     first = ts
                 last = ts
