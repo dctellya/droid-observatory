@@ -337,6 +337,7 @@ fn stall_threshold_comes_from_the_config() {
     );
     let short = InterventionConfig {
         stall_threshold_min: 1,
+        ..InterventionConfig::default()
     };
     assert_eq!(stall::threshold(&short), Duration::from_secs(60));
 }

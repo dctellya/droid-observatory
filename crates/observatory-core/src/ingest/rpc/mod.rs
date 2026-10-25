@@ -16,6 +16,7 @@ mod source;
 mod spool;
 
 pub use control::{Ack, AckOutcome, ControlChannel, ControlError, Sent};
+pub use envelope::{Resolution, resolution_of};
 pub use mapper::RpcMapper;
 pub use open::{
     AskedQuestion, OpenPermission, OpenQuestion, OpenRequests, Prompt, WaitingPermission,

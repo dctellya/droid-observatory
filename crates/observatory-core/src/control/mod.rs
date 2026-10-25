@@ -20,6 +20,10 @@ use crate::model::{
 /// spool; a `sub` no mapped line yields keeps the ids apart from the stream's own events.
 const ACK_SUB: u32 = 1 << 30;
 
+/// The `sub` of the `permission.requested` event the host makes from Droid's
+/// `droid.request_permission` request: the stream maps no event for it.
+const PERMISSION_SUB: u32 = ACK_SUB + 1;
+
 /// The lane of the event an action produces: the first lane of the template for a
 /// mission-level control, the lane of the request for approve and deny.
 fn lane_of(action: &HumanAction, template: &CycleTemplate, about: Option<&Event>) -> LaneId {
@@ -82,6 +86,39 @@ pub fn record(
             SourcePtr::App { action_id },
         ),
     )
+}
+
+/// The `permission.requested` event of a `droid.request_permission` request, which the mapped
+/// stream does not carry. `ptr` is the request's line of the spool, `lane` the lane of the
+/// session that asks; an approve or deny points at this event (`human_actions.payload_ptr`).
+pub fn permission_requested_event(
+    mission: &MissionId,
+    session: &SessionId,
+    at: Timestamp,
+    ptr: SourcePtr,
+    lane: LaneId,
+) -> Event {
+    let offset = match &ptr {
+        SourcePtr::Rpc { byte_offset, .. } | SourcePtr::Jsonl { byte_offset, .. } => *byte_offset,
+        _ => 0,
+    };
+    Event {
+        id: EventId(format!("{session}:{offset}:{PERMISSION_SUB}")),
+        mission_id: mission.clone(),
+        milestone_id: None,
+        feature_id: None,
+        lane,
+        overlay: Some(Overlay::Human),
+        kind: EventKind::PermissionRequested,
+        role: Role::Orchestrator,
+        session_id: Some(session.clone()),
+        model: None,
+        at,
+        duration: None,
+        usage: None,
+        source: ptr,
+        mapping_version: MappingVersion::LATEST,
+    }
 }
 
 /// The event the host's acknowledgement of a control stands for: the hosted stream carries no

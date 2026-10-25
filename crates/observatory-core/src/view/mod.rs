@@ -4,6 +4,7 @@ mod agent_panel;
 mod agents;
 mod board;
 mod card;
+mod controls;
 mod details;
 mod filter;
 mod gate;
@@ -25,6 +26,10 @@ pub use board::{
     pointer_text,
 };
 pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
+pub use controls::{
+    ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch, StallFlagView,
+    StallRow, TERMINAL_INSTRUCTION, terminal_text,
+};
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};

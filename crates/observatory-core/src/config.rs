@@ -356,12 +356,14 @@ impl Default for GithubConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct InterventionConfig {
     pub stall_threshold_min: u64,
+    pub stall_poll_s: u64,
 }
 
 impl Default for InterventionConfig {
     fn default() -> Self {
         Self {
             stall_threshold_min: 20,
+            stall_poll_s: 15,
         }
     }
 }

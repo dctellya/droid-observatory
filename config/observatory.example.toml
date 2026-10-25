@@ -105,6 +105,9 @@ repo = "dctellya/droid-observatory"
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
 # 20 minutes matches the troubleshooting examples in Factory's mission docs.
 stall_threshold_min = 20
+# How often the app looks for stalled features. Short against the threshold, so a flag
+# appears within one poll of crossing it; long enough that reading the events stays cheap.
+stall_poll_s = 15
 
 [metrics]
 # Price table used for cost when the stream does not expose credits (PRD §10.5).

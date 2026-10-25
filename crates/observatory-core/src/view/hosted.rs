@@ -37,7 +37,10 @@ pub struct QuestionRow {
 /// A `droid.request_permission` request that waits, with the answers Droid accepts for it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionRow {
+    /// The JSON-RPC id of Droid's request: what the host answers.
     pub request_id: String,
+    /// The `permission.requested` event the request became; what an approve or deny points at.
+    pub event_id: String,
     pub tools: Vec<String>,
     pub can_approve: bool,
     pub can_deny: bool,

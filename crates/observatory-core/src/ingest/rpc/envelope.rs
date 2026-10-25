@@ -82,6 +82,24 @@ pub(super) enum Incoming {
     Unrecognised(String),
 }
 
+/// A line of the stream that tells the host a control took effect.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Resolution {
+    /// The `permission_resolved` notification that names the id of Droid's request.
+    Permission { request_id: String },
+    /// The `tool_result` of a call, which is how Droid closes an answered `AskUser`.
+    ToolResult { call: String },
+}
+
+/// The control a stream line resolves, if it resolves one.
+pub fn resolution_of(bytes: &[u8]) -> Option<Resolution> {
+    match parse(bytes) {
+        Incoming::PermissionResolved { request_id } => Some(Resolution::Permission { request_id }),
+        Incoming::ToolResult { call, .. } => Some(Resolution::ToolResult { call }),
+        _ => None,
+    }
+}
+
 pub(super) fn parse(bytes: &[u8]) -> Incoming {
     let Ok(Value::Object(line)) = serde_json::from_slice::<Value>(bytes) else {
         return Incoming::Record;
@@ -267,6 +285,19 @@ fn from_millis(millis: i64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_permission_resolved_notification_resolves_the_request_it_names() {
+        let line = notified(&json!({ "type": "permission_resolved", "requestId": "p1" }));
+
+        assert_eq!(
+            resolution_of(&line),
+            Some(Resolution::Permission {
+                request_id: "p1".into()
+            })
+        );
+        assert_eq!(resolution_of(b"{\"type\":\"message\"}"), None);
+    }
+
     use super::*;
 
     fn notified(notification: &Value) -> Vec<u8> {

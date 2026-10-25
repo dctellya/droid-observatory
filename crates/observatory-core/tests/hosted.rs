@@ -88,6 +88,7 @@ fn a_status_lists_the_permission_requests_that_wait() {
     assert!(status.permissions.is_empty());
 
     status.permissions = vec![PermissionRow {
+        event_id: "e".into(),
         request_id: "perm-1".into(),
         tools: vec!["Execute".into()],
         can_approve: true,

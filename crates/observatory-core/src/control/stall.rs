@@ -103,10 +103,40 @@ fn closes_feature(event: &Event) -> bool {
         || matches!(event.source, SourcePtr::App { .. })
 }
 
+/// The name a wait of the mission itself is flagged under: the orchestrator asks a question
+/// that names no feature.
+pub const MISSION_LEVEL: &str = "mission";
+
 /// The activity of each unfinished feature of `events` (in time order): its last event. The
 /// child of a `subagent.spawned` that grows has events of its own, so the last event of a
-/// feature whose worker is alive is never the spawn.
+/// feature whose worker is alive is never the spawn. A question or permission request that
+/// names no feature and has no later event of the mission is a wait of the mission itself.
 pub fn activity_of(events: &[Event]) -> Vec<FeatureActivity> {
+    let mut activity = feature_activity(events);
+    let waiting = events
+        .iter()
+        .filter(|event| !event.kind.is_panel_only())
+        .max_by_key(|event| event.at)
+        .filter(|last| {
+            last.feature_id.is_none()
+                && matches!(
+                    last.kind,
+                    EventKind::QuestionAsked | EventKind::PermissionRequested
+                )
+        });
+    if let Some(last) = waiting {
+        activity.push(FeatureActivity {
+            feature_id: FeatureId(MISSION_LEVEL.to_owned()),
+            last_active_at: last.at,
+            last_kind: last.kind.clone(),
+            repeated: false,
+            child_growing: false,
+        });
+    }
+    activity
+}
+
+fn feature_activity(events: &[Event]) -> Vec<FeatureActivity> {
     let mut features: Vec<(&FeatureId, Vec<&Event>)> = Vec::new();
     for event in events.iter().filter(|event| !event.kind.is_panel_only()) {
         let Some(feature) = &event.feature_id else {
