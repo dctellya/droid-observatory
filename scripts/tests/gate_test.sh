@@ -273,6 +273,23 @@ for sig in TERM HUP; do
   [ -z "$(ls -A "$tmp/gt")" ] || fail "$sig: temp files left behind: $(ls "$tmp/gt")"
 done
 
+# VAL-TOOL-001: `seconds` covers the whole run from the script's entry, tree computation included. A git shim that
+# sleeps 1 s on write-tree plus a 1 s command must record at least 1.9 s (a clock started after the tree reads 1.0).
+real_git=$(command -v git)
+mkdir -p "$tmp/shim"
+cat > "$tmp/shim/git" <<EOS
+#!/bin/sh
+[ "\${1:-}" = write-tree ] && sleep 1
+exec "$real_git" "\$@"
+EOS
+chmod +x "$tmp/shim/git"
+PATH="$tmp/shim:$PATH" sh "$gate" timing -- sleep 1 > /dev/null 2>&1
+timing_tree=$(gate_key)
+timing_seconds=$(jq -r .seconds "reports/gate/$timing_tree/timing.json" 2> /dev/null || echo 0)
+LC_ALL=C awk -v s="$timing_seconds" 'BEGIN { exit !(s >= 1.9) }' \
+  || fail "seconds $timing_seconds omits the tree computation (expected >= 1.9 with a 1 s write-tree and a 1 s command)"
+[ "$(jq -r .exit_code "reports/gate/$timing_tree/timing.json")" = "0" ] || fail "timing record exit_code"
+
 # Argument errors.
 sh "$gate" > /dev/null 2>&1 && fail "no arguments accepted"
 sh "$gate" unit > /dev/null 2>&1 && fail "missing command accepted"
