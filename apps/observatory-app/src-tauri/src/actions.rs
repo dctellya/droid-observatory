@@ -293,4 +293,24 @@ mod tests {
         assert!(!log.contains(MESSAGE), "the line carries the text: {log}");
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn raw_host_controls_log_their_kind_and_text_len_only() {
+        let message = HostControl::Message {
+            text: MESSAGE.to_owned(),
+        };
+        let answer = HostControl::Answer {
+            question_id: "question-1".to_owned(),
+            text: ANSWER.to_owned(),
+        };
+        for (control, text) in [(message, MESSAGE), (answer, ANSWER)] {
+            let shown = format!("{:?}", Redacted(&control));
+            assert!(!shown.contains(text), "the text is logged: {shown}");
+            assert!(shown.contains("text_len"), "no text_len: {shown}");
+        }
+        let approve = HostControl::Approve {
+            request_id: "req-9".to_owned(),
+        };
+        assert!(format!("{:?}", Redacted(&approve)).contains("req-9"));
+    }
 }
