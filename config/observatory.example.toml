@@ -169,6 +169,24 @@ mission_cycle_seconds = [3600, 7200, 14400, 28800, 86400, 172800]
 # Histogram bucket bounds in seconds for a feature cycle: minutes to hours.
 feature_cycle_seconds = [600, 1800, 3600, 7200, 14400]
 
+[e2e]
+# Limits `make e2e` asserts on latencies the app records itself (User Timing measures in the window,
+# JSON lines of the host in OBSERVATORY_TIMING_LOG); a figure above its limit fails the suite.
+# p95 of the `panel:render` measure: replay opened to the Panel holding its numbers, S fixture
+# (661 events over several files). The limit is a ceiling for a debug build, not a target.
+panel_render_p95_ms = 3000
+# p95 of the `event:first_on_board` measure: `events_appended` received by the window to the
+# board having drawn the batch. One reactive pass over the held events; well under the 1 s target.
+event_first_on_board_p95_ms = 500
+# p95 of the host interval from a spool line's arrival to its `events_appended` emit. It contains
+# the `[ui].event_batch_ms` wait (100 ms), so the limit is that wait plus slack for the store write.
+host_append_p95_ms = 300
+# No event of a hosted run may take longer than this from arrival to drawn (FR-L2 and the
+# "each event shows within 1 s" target of the interactive QA path).
+event_visible_max_ms = 1000
+# Fewest samples a latency scenario must have recorded before its percentiles mean anything.
+min_samples = 3
+
 [cycle]
 # The cycle template the board, the digests and the post-mortem input iterate (F-041, D-035):
 # the lanes, their order, the role that owns each, the final event and the clocks are data, so

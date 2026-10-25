@@ -90,6 +90,31 @@ pub struct Config {
     pub metrics: MetricsConfig,
     pub telemetry: TelemetryConfig,
     pub cycle: CycleConfig,
+    pub e2e: E2eConfig,
+}
+
+/// Limits the end-to-end suite (`make e2e`) asserts on the latencies the app records itself:
+/// User Timing measures in the webview and the host timing log (`OBSERVATORY_TIMING_LOG`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct E2eConfig {
+    pub panel_render_p95_ms: u64,
+    pub event_first_on_board_p95_ms: u64,
+    pub host_append_p95_ms: u64,
+    pub event_visible_max_ms: u64,
+    pub min_samples: usize,
+}
+
+impl Default for E2eConfig {
+    fn default() -> Self {
+        Self {
+            panel_render_p95_ms: 3000,
+            event_first_on_board_p95_ms: 500,
+            host_append_p95_ms: 300,
+            event_visible_max_ms: 1000,
+            min_samples: 3,
+        }
+    }
 }
 
 /// Which cycle template the app reads at start-up (F-041, D-035).
@@ -524,6 +549,11 @@ mod tests {
         ("ui", "event_batch_ms"),
         ("ui", "dev_port"),
         ("ui", "live_output_lines"),
+        ("e2e", "panel_render_p95_ms"),
+        ("e2e", "event_first_on_board_p95_ms"),
+        ("e2e", "host_append_p95_ms"),
+        ("e2e", "event_visible_max_ms"),
+        ("e2e", "min_samples"),
         ("store", "path"),
         ("github", "poll_interval_s"),
         ("github", "merge_policy"),
