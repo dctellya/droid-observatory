@@ -4,6 +4,8 @@
 #   scripts/gate.sh --key [<name> -- <command...>]      print the tree id (and the key hash with a command)
 # The tree is the worktree content including uncommitted and untracked files, build-log/ and reports/gate/
 # excluded. Records live in reports/gate/<tree>/<name>.json. FORCE=1 is the same as --force.
+# Each hit appends a tab-separated line to reports/gate/hits.log (time, name, tree, stored seconds, session,
+# session_source); misses and forced runs append nothing.
 set -u
 usage() {
   echo "usage: gate.sh [--force] <name> -- <command...> | gate.sh --key [<name> -- <command...>]" >&2
@@ -70,12 +72,6 @@ fi
 dir="reports/gate/$tree"
 file="$dir/$name.json"
 
-if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
-  echo "cached, proven at $(jq -r .finished_at "$file") by $(jq -r .session "$file")"
-  jq -r '.summary' "$file"
-  exit "$(jq -r .exit_code "$file")"
-fi
-
 session=${DROID_SESSION_ID:-}
 session_source=DROID_SESSION_ID
 if [ -z "$session" ]; then
@@ -93,9 +89,20 @@ if [ -z "$session" ]; then
   fi
 fi
 
+stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
+  # One line per served hit, for the usage report: the stored seconds are the run the hit saved, the session is
+  # the one that was served (the record keeps the one that proved it).
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(stamp)" "$name" "$tree" "$(jq -r .seconds "$file")" "$session" "$session_source" \
+    >> reports/gate/hits.log
+  echo "cached, proven at $(jq -r .finished_at "$file") by $(jq -r .session "$file")"
+  jq -r '.summary' "$file"
+  exit "$(jq -r .exit_code "$file")"
+fi
+
 # Decimal points in the duration must be dots whatever the user's locale, or jq rejects the number.
 now() { LC_ALL=C perl -MTime::HiRes=time -e 'printf "%.3f\n", time' 2> /dev/null || date +%s; }
-stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 if [ "$force" -eq 1 ]; then
   echo "gate $name: forced $tree, running"
