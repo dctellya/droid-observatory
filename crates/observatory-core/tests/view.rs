@@ -6,13 +6,14 @@
 
 use std::path::{Path, PathBuf};
 
+use observatory_core::ingest::SessionInfo;
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
     CycleTemplate, Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, MissionId, ModelId,
     Overlay, Role, SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 use observatory_core::view::{
-    AgentStatus, BoardState, Filter, GateBadge, MarkerKind, ValidationBadge, ViewConfig,
+    AgentStatus, BoardState, Filter, GateBadge, MarkerKind, RowGroup, ValidationBadge, ViewConfig,
     WorkerGrouping, agent_markers, card_lane, details, lane_counts, overlay_markers, raw_line_view,
     scrub, scrub_to, tray_count,
 };
@@ -1570,4 +1571,36 @@ mod render {
         assert_eq!(Scrubber::new(&[]).stops(), 0);
         assert_eq!(Scrubber::new(&[]).label(None), "");
     }
+}
+
+#[test]
+fn a_per_worker_sub_lane_is_headed_by_the_session_name() {
+    let sessions = vec![SessionInfo {
+        id: SessionId("2c04bd42".to_owned()),
+        parent: None,
+        role: Role::Worker,
+        model: None,
+        tag: Some("m0-integrate-s".to_owned()),
+        effort: None,
+    }];
+    let group = |key: &str, role| RowGroup {
+        key: key.to_owned(),
+        label: key.to_owned(),
+        role,
+        rows: Vec::new(),
+    };
+    assert_eq!(
+        group("2c04bd42", Some(Role::Worker)).title(&sessions),
+        "m0-integrate-s"
+    );
+    assert_eq!(
+        group("unknown-session", Some(Role::Worker)).title(&sessions),
+        "unknown-session",
+        "a session the list does not know keeps its id"
+    );
+    assert_eq!(
+        group("2c04bd42", None).title(&sessions),
+        "2c04bd42",
+        "a feature or milestone group keeps its own label"
+    );
 }
