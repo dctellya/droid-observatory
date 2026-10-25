@@ -38,7 +38,24 @@ command -v jq > /dev/null 2>&1 || { echo "gate: jq is required" >&2; exit 2; }
 
 idx=$(mktemp "${TMPDIR:-/tmp}/gateidx.XXXXXX")
 out=$(mktemp "${TMPDIR:-/tmp}/gateout.XXXXXX")
-trap 'rm -f "$idx" "$out" "$out.code"' EXIT HUP INT TERM
+cleanup() { rm -f "$idx" "$out" "$out.code"; }
+# An interrupted run is not a verdict: the handlers stop the command and exit without writing a record, or a later
+# run would replay the half-run as a hit. The command runs in the background and the script waits on it, because a
+# shell defers a trap until its foreground pipeline ends.
+killtree() {
+  for c in $(pgrep -P "$1" 2> /dev/null); do killtree "$c"; done
+  kill "$1" 2> /dev/null
+}
+interrupted() {
+  trap '' HUP INT TERM
+  for c in $(pgrep -P $$ 2> /dev/null); do killtree "$c"; done
+  cleanup
+  exit "$1"
+}
+trap cleanup EXIT
+trap 'interrupted 129' HUP
+trap 'interrupted 130' INT
+trap 'interrupted 143' TERM
 rm -f "$idx"
 
 # The record field is `fingerprint`, not `key`: gitleaks and Droid-Shield read a `key` field holding 40 hex
@@ -112,7 +129,8 @@ fi
 started_at=$(stamp)
 t0=$(now)
 # The command's own exit code travels through a file: a pipe into tee would report tee's.
-{ "$@"; echo $? > "$out.code"; } 2>&1 | tee "$out"
+{ "$@"; echo $? > "$out.code"; } 2>&1 | tee "$out" &
+wait $!
 code=$(cat "$out.code" 2> /dev/null || echo 1)
 t1=$(now)
 finished_at=$(stamp)
