@@ -1,0 +1,43 @@
+# The window suite (owner item 14, VAL-E2E-006): `make e2e` on a macOS runner. Dispatch-only, so it
+# stays outside the 3-minute mission-branch budget (a debug Tauri build and a release trunk build
+# alone are longer than that); the milestone integrator starts it once per milestone and records
+# the run in reports/ci. The embedded WebDriver server is compiled in by the `e2e` cargo feature
+# of this job's build only; no other workflow builds it.
+
+name: e2e
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable; version from rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: trunk@0.22.0,tauri-cli@2.12.4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/observatory-app/e2e/package-lock.json
+      # make e2e builds with --features e2e, runs `npm ci` in apps/observatory-app/e2e and the suite.
+      - name: make e2e
+        run: make e2e
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-reports
+          path: reports/e2e/**

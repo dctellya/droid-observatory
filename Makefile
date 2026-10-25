@@ -25,7 +25,7 @@ GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
         check-all check-scripts check-gate-cache check-integrate integrate usage check-todos check-decisions-index decisions-index check-secrets redact-check \
-        fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
+        fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-24s %s\n", $$1, $$2}'
@@ -179,6 +179,21 @@ ifneq (,$(HAS_TAURI))
 	@cargo tauri build $(if $(BUNDLES),--bundles $(BUNDLES))
 else
 	@echo "app-build: no Tauri app yet, skipped"
+endif
+
+# The window suite (owner item 14): the debug app with the embedded WebDriver server (`e2e` cargo
+# feature, never a release build), driven by WebdriverIO. JUnit and screenshots land in
+# reports/e2e/<E2E_DATE>/; the app's store, spool and fake Droid live in a scratch directory.
+E2E_DATE ?= $(shell date +%Y-%m-%d)
+E2E_RUN_DIR ?= $(or $(TMPDIR),/tmp)/observatory-e2e
+e2e: ## Build the app with --features e2e and run the WebdriverIO suite (reports/e2e/<date>/)
+ifneq (,$(HAS_TAURI))
+	@cargo build -p observatory-cli
+	@cargo tauri build --debug --no-bundle --features e2e
+	@rm -rf "$(E2E_RUN_DIR)" "reports/e2e/$(E2E_DATE)"
+	@cd apps/observatory-app/e2e && npm ci && E2E_DATE=$(E2E_DATE) E2E_RUN_DIR="$(E2E_RUN_DIR)" npx wdio run wdio.conf.ts
+else
+	@echo "e2e: no Tauri app yet, skipped"
 endif
 
 clean: ## Remove build output
