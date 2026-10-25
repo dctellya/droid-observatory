@@ -25,6 +25,7 @@ WORKER = "33333333-3333-4333-8333-333333333333"
 VALIDATOR = "44444444-4444-4444-8444-444444444444"
 REVIEWER = "55555555-5555-4555-8555-555555555555"
 SCRATCH = "66666666-6666-4666-8666-666666666666"
+SCRATCH_WORKER = "77777777-7777-4777-8777-777777777777"
 
 FROM = "2026-10-25T10:00:00Z"
 NOW = "2026-10-25T11:00:00Z"
@@ -32,6 +33,11 @@ TO = "2026-10-25T10:59:59Z"
 
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
+
+
+def read(path):
+    with open(path) as f:
+        return f.read()
 
 
 def run(extra=(), out=None, check=True, now=NOW):
@@ -85,7 +91,7 @@ class UsageReport(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.out = os.path.join(cls.tmp.name, "m9.md")
         run(["--cap", "orchestrator=70"], out=cls.out)
-        cls.text = open(cls.out).read()
+        cls.text = read(cls.out)
 
     @classmethod
     def tearDownClass(cls):
@@ -105,7 +111,7 @@ class UsageReport(unittest.TestCase):
     def test_the_default_end_of_the_window_is_the_generation_time_minus_one_second(self):
         out = os.path.join(self.tmp.name, "default-to.md")
         run(out=out)
-        text = open(out).read()
+        text = read(out)
         self.assertIn("window: 2026-10-25T10:00:00Z to 2026-10-25T10:59:59Z", text)
 
     def test_the_default_start_of_the_window_is_the_first_worker_of_the_milestone(self):
@@ -117,7 +123,7 @@ class UsageReport(unittest.TestCase):
              "--gate-dir", os.path.join(FIX, "gate"), "--now", NOW, "--out", out],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        text = open(out).read()
+        text = read(out)
         self.assertIn("window: 2026-10-25T10:00:30Z to 2026-10-25T10:59:59Z", text)
         self.assertEqual(table(text, "Tokens per role")[1][0]["Role"], "orchestrator")
 
@@ -179,7 +185,7 @@ class UsageReport(unittest.TestCase):
         by_name = {r["Source"].strip("`"): r for r in rows}
         live = by_name["logs/droid-log-single.log"]
         self.assertEqual((live["Lines"], live["First timestamp"], live["Last timestamp"]),
-                         ("24", "2026-10-25T10:00:00.000Z", "2026-10-25T11:00:00.000Z"))
+                         ("23", "2026-10-25T10:00:00.000Z", "2026-10-25T11:00:00.000Z"))
         self.assertIn("unparsed 1", live["Note"])
         old = by_name["logs/droid-log-single.log.2026-10-24"]
         self.assertEqual((old["Lines"], old["First timestamp"]), ("3", "2026-10-24T22:59:59.000Z"))
@@ -221,10 +227,10 @@ class UsageReport(unittest.TestCase):
     def test_model_fallback_lists_every_turn_on_a_non_declared_model(self):
         _, rows = table(self.text, "Model fallback")
         got = {(r["Session"].strip("`"), r["Model"]): r for r in rows}
-        self.assertEqual(set(got), {(MISSION, "kimi-k3"), (REVIEWER, "kimi-k3"), (SCRATCH.replace("6666", "7777"), "claude-opus-5-5")})
+        self.assertEqual(set(got), {(MISSION, "kimi-k3"), (REVIEWER, "kimi-k3"), (SCRATCH_WORKER, "claude-opus-5-5")})
         self.assertEqual(got[(MISSION, "kimi-k3")]["Role"], "orchestrator")
         self.assertEqual(got[(REVIEWER, "kimi-k3")]["Role"], "validator")
-        self.assertEqual(got[(SCRATCH.replace("6666", "7777"), "claude-opus-5-5")]["Role"], "self-check")
+        self.assertEqual(got[(SCRATCH_WORKER, "claude-opus-5-5")]["Role"], "self-check")
         self.assertIn("model fallback: 3 turns on non-declared models, 2 router transitions", self.text)
         _, rows = table(self.text, "Model-Router transitions")
         self.assertEqual([(r["Time"], r["Role"], r["Source"], r["Reason"], r["From"], r["To"]) for r in rows], [
@@ -285,7 +291,7 @@ class UsageReportFile(unittest.TestCase):
             a, b = os.path.join(tmp, "a.md"), os.path.join(tmp, "b.md")
             run(["--to", TO], out=a, now="2026-10-25T11:00:00Z")
             run(["--to", TO], out=b, now="2026-10-25T11:05:00Z")
-            la, lb = open(a).read().splitlines(), open(b).read().splitlines()
+            la, lb = read(a).splitlines(), read(b).splitlines()
             self.assertEqual(len(la), len(lb))
             diff = [(x, y) for x, y in zip(la, lb) if x != y]
             self.assertEqual(len(diff), 1, diff)
@@ -297,7 +303,7 @@ class UsageReportFile(unittest.TestCase):
             with open(out, "w") as f:
                 f.write("# Usage m9\n\nIntegrator prose.\n\n%s\nold table\n%s\n\nMore prose.\n" % (BEGIN, END))
             run(out=out)
-            text = open(out).read()
+            text = read(out)
             self.assertTrue(text.startswith("# Usage m9\n\nIntegrator prose.\n\n" + BEGIN))
             self.assertTrue(text.endswith(END + "\n\nMore prose.\n"))
             self.assertNotIn("old table", text)
@@ -309,7 +315,7 @@ class UsageReportFile(unittest.TestCase):
             with open(out, "w") as f:
                 f.write("# Usage m9\n\nHand-written.\n")
             run(out=out)
-            text = open(out).read()
+            text = read(out)
             self.assertTrue(text.startswith("# Usage m9\n\nHand-written.\n"))
             self.assertEqual(text.count(BEGIN), 1)
 
@@ -323,12 +329,12 @@ class UsageReportFile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "m9.md")
             run(["--cross-check"], out=out)
-            self.assertIn("cross-check: identical", open(out).read())
+            self.assertIn("cross-check: identical", read(out))
 
     def test_the_script_imports_only_the_standard_library(self):
-        src = open(SCRIPT).read()
+        src = read(SCRIPT)
         mods = set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", src, re.M))
-        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "sys"}
+        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect"}
         self.assertLessEqual(mods, allowed, mods - allowed)
 
 

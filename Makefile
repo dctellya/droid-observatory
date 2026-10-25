@@ -24,7 +24,7 @@ COVERAGE_MIN ?= 80
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-scripts check-gate-cache check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-scripts check-gate-cache usage check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build clean
 
 help: ## List targets
@@ -47,6 +47,11 @@ check-scripts: check-gate-cache ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
+	@python3 scripts/tests/usage_test.py
+
+usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
+	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
+	@python3 scripts/usage.py --milestone $(M) --cross-check $(foreach c,$(CAPS),--cap $(c)) $(USAGE_ARGS)
 
 check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
 	@sh scripts/tests/gate_test.sh
