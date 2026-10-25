@@ -54,6 +54,9 @@ indep_tree() {
 }
 gate_key() { sh "$gate" --key | sed -n 1p; }
 json() { jq -r "$2" "reports/gate/$tree/$1.json"; }
+hits_log=reports/gate/hits.log
+hit_count() { if [ -f "$hits_log" ]; then wc -l < "$hits_log" | tr -d ' '; else echo 0; fi; }
+hit_field() { LC_ALL=C awk -F '\t' -v n="$1" 'END { print $n }' "$hits_log"; }
 
 export PATH="$tmp/bin1:$PATH"
 export DROID_SESSION_ID=sess-one
@@ -87,6 +90,7 @@ case "$(json unit .finished_at)" in
   *) fail "finished_at is not RFC 3339 UTC: $(json unit .finished_at)" ;;
 esac
 first_finished=$(json unit .finished_at)
+[ "$(hit_count)" -eq 0 ] || fail "a miss wrote to hits.log"
 # The records are committed: no field may look like an API key to gitleaks.
 if command -v gitleaks > /dev/null 2>&1; then
   gitleaks detect --no-git --no-banner --source reports/gate > "$tmp/leaks.txt" 2>&1 || fail "gitleaks flags the record: $(tail -n 3 "$tmp/leaks.txt")"
@@ -106,15 +110,31 @@ case "$out" in *"compiling noise"*) fail "hit printed command output" ;; esac
 [ $((t1 - t0)) -lt 5 ] || fail "hit took $((t1 - t0)) s"
 [ "$(json unit .finished_at)" = "$first_finished" ] || fail "hit rewrote the record"
 
+# The hit log: one tab-separated line per hit (time, name, tree, stored seconds, session, session_source).
+[ "$(hit_count)" -eq 1 ] || fail "a hit left $(hit_count) hits.log lines, expected 1"
+[ "$(LC_ALL=C awk -F '\t' 'END { print NF }' "$hits_log")" = "6" ] || fail "hits.log line is not 6 tab-separated fields: $(tail -n 1 "$hits_log")"
+case "$(hit_field 1)" in
+  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) ;;
+  *) fail "hits.log time is not RFC 3339 UTC: $(hit_field 1)" ;;
+esac
+[ "$(hit_field 2)" = "unit" ] || fail "hits.log name: $(hit_field 2)"
+[ "$(hit_field 3)" = "$tree" ] || fail "hits.log tree: $(hit_field 3)"
+[ "$(hit_field 4)" = "$(json unit .seconds)" ] || fail "hits.log stored seconds: $(hit_field 4) vs $(json unit .seconds)"
+[ "$(hit_field 5)" = "sess-one" ] || fail "hits.log session: $(hit_field 5)"
+[ "$(hit_field 6)" = "DROID_SESSION_ID" ] || fail "hits.log session_source: $(hit_field 6)"
+
 # A failing command stores its non-zero code and the hit replays it.
 sh "$gate" bad -- sh "$tmp/bad.sh" > "$tmp/bad.out" 2>&1
 rc=$?
 [ "$rc" -eq 3 ] || fail "failing miss exit $rc"
 [ "$(json bad .exit_code)" = "3" ] || fail "failing record exit_code $(json bad .exit_code)"
 case "$(json bad .summary)" in *"test result: FAILED"*) ;; *) fail "failing summary: $(json bad .summary)" ;; esac
+[ "$(hit_count)" -eq 1 ] || fail "a failing miss wrote to hits.log"
 before=$(runs)
 sh "$gate" bad -- sh "$tmp/bad.sh" > "$tmp/bad.hit" 2>&1
 rc=$?
+[ "$(hit_count)" -eq 2 ] || fail "a failing hit did not log: $(hit_count) lines"
+[ "$(hit_field 2)" = "bad" ] || fail "failing hit name in hits.log: $(hit_field 2)"
 [ "$rc" -eq 3 ] || fail "failing hit exit $rc"
 [ "$(runs)" -eq "$before" ] || fail "failing hit ran the command"
 grep -q "^cached, proven at " "$tmp/bad.hit" || fail "failing hit lacks the cached line"
@@ -130,16 +150,20 @@ rc=$?
 [ "$(runs)" -eq "$before" ] || fail "second worktree ran the command"
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "cached, proven at $first_finished by sess-one" ] \
   || fail "second worktree hit line: $(printf '%s\n' "$out" | sed -n 1p)"
+[ "$(cd "$tmp/wt2" && LC_ALL=C awk -F '\t' 'END { print $2 "|" $5 }' reports/gate/hits.log)" = "unit|sess-other" ] \
+  || fail "second worktree hits.log line lacks the hitting session"
 
 # VAL-TOOL-003: --force and FORCE=1 rerun and replace the record.
 sleep 1
 before=$(runs)
+hits_before=$(hit_count)
 out=$(DROID_SESSION_ID=sess-two sh "$gate" --force unit -- sh "$tmp/ok.sh" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] || fail "forced exit $rc"
 [ "$(runs)" -eq $((before + 1)) ] || fail "--force did not run the command"
 case "$out" in *"forced $tree"*) ;; *) fail "no forced line: $out" ;; esac
 [ "$(json unit .session)" = "sess-two" ] || fail "forced session: $(json unit .session)"
+[ "$(hit_count)" -eq "$hits_before" ] || fail "--force wrote to hits.log"
 second_finished=$(json unit .finished_at)
 [ "$second_finished" != "$first_finished" ] || fail "forced finished_at did not advance"
 before=$(runs)
@@ -149,7 +173,9 @@ out=$(sh "$gate" unit -- sh "$tmp/ok.sh" 2>&1)
   || fail "hit after force: $(printf '%s\n' "$out" | sed -n 1p)"
 sleep 1
 before=$(runs)
+hits_before=$(hit_count)
 FORCE=1 sh "$gate" unit -- sh "$tmp/ok.sh" > /dev/null 2>&1
+[ "$(hit_count)" -eq "$hits_before" ] || fail "FORCE=1 wrote to hits.log"
 [ "$(runs)" -eq $((before + 1)) ] || fail "FORCE=1 did not run the command"
 [ "$(json unit .finished_at)" != "$second_finished" ] || fail "FORCE=1 kept the old record"
 
