@@ -88,7 +88,7 @@ impl Hosts {
                 .channel
                 .send(&relay, inner.mapper.open_requests_mut())
                 .map_err(|err| err.to_string())?;
-            log_host_control(launch_id, &action, &relay, &sent.id, sent.method);
+            log_host_control(launch_id, &action, &sent.id, sent.method);
             let key = match &action {
                 HumanAction::Approve { .. } | HumanAction::Deny { .. } => {
                     format!("permission:{}", sent.id)
@@ -119,16 +119,13 @@ impl Hosts {
     }
 }
 
-fn log_host_control(
-    launch_id: &str,
-    _action: &HumanAction,
-    relay: &HostControl,
-    request_id: &str,
-    method: &str,
-) {
+/// The app log reads `HumanAction`, which holds lengths only: the `HostControl` carries the
+/// message, answer or reason text and must never be formatted into a log line (PRD §11.2).
+fn log_host_control(launch_id: &str, action: &HumanAction, request_id: &str, method: &str) {
     tracing::info!(
         launch_id,
-        control = ?relay,
+        control = action.kind(),
+        action = ?action,
         request_id,
         method,
         "host_control"
@@ -167,6 +164,7 @@ pub fn record<R: Runtime>(
         action_id = recorded.action_id,
         event_id = %recorded.event.id,
         kind = action.kind(),
+        action = ?action,
         "human_action"
     );
     let _ = app.emit(
@@ -253,31 +251,18 @@ mod tests {
     #[test]
     fn host_control_log_carries_lengths_not_text() {
         let cases = [
-            (
-                HumanAction::message(MESSAGE),
-                HostControl::Message {
-                    text: MESSAGE.to_owned(),
-                },
-                MESSAGE,
-            ),
+            (HumanAction::message(MESSAGE), MESSAGE),
             (
                 HumanAction::answer(EventId("question-1".to_owned()), ANSWER),
-                HostControl::Answer {
-                    question_id: "question-1".to_owned(),
-                    text: ANSWER.to_owned(),
-                },
                 ANSWER,
             ),
             (
                 HumanAction::mark_skipped(FeatureId("f-1".to_owned()), REASON),
-                HostControl::Message {
-                    text: format!("Skip f-1: {REASON}"),
-                },
                 REASON,
             ),
         ];
-        for (action, relay, text) in cases {
-            let log = logged(|| log_host_control("launch", &action, &relay, "req-1", "message"));
+        for (action, text) in cases {
+            let log = logged(|| log_host_control("launch", &action, "req-1", "message"));
             println!("{log}");
             assert!(!log.contains(text), "the log carries the text: {log}");
             assert!(
