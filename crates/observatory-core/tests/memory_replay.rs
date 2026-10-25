@@ -112,7 +112,7 @@ fn unknown_lines_are_counted_and_their_raw_line_opens_from_the_pointer() {
 
     assert_eq!(replay.summary.unknown_count, 2);
     assert_eq!(tray_count(&replay.events), 2);
-    let board = BoardState::fold(&replay.events, &ViewConfig::default());
+    let board = BoardState::fold(&replay.events, &ViewConfig::default(), &engineering());
     assert_eq!(board.tray_unknown, 2);
     let raw: Vec<&[u8]> = board
         .tray

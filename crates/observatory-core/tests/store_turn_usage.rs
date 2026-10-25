@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use observatory_core::config::{IngestConfig, MissionConfig};
-use observatory_core::model::{Event, EventKind};
+use observatory_core::model::{CycleTemplate, Event, EventKind};
 use observatory_core::store::Store;
 use observatory_core::view::{BoardView, DeclaredModels, ViewConfig, branch_of};
 
@@ -29,6 +29,7 @@ fn digest_of(events: &[Event], name: &str) -> observatory_core::view::BoardDiges
         &ViewConfig::default(),
         &DeclaredModels::from_config(&mission),
         &branch_of(&mission, name),
+        &CycleTemplate::engineering(),
     )
     .digest()
 }

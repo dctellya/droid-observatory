@@ -17,10 +17,18 @@ use observatory_core::mapping::{
     Mapper, MappingVersion, SessionMeta, TreeMapper, Warning, select_version,
 };
 use observatory_core::model::{
-    Event, EventKind, Lane, MilestoneId, MissionId, ModelId, Overlay, Role, SessionId, SourcePtr,
-    TokenUsage,
+    CycleTemplate, Event, EventKind, LaneId, MilestoneId, MissionId, ModelId, Overlay, Role,
+    SessionId, SourcePtr, TokenUsage,
 };
 use serde_json::{Value, json};
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 const SLUG: &str = "2026-10-22-observatory-v1-m0";
 const UPDATE_GOLDEN: &str = "OBSERVATORY_UPDATE_GOLDEN";
@@ -55,7 +63,7 @@ fn map_m0_with(usage_log: bool) -> (usize, Vec<Event>) {
     let tree = SessionTree::discover(&path, &cfg).expect("the M0 capture opens");
     let mut source = JsonlSource::open_tree(&tree, &cfg).expect("every session file opens");
     let version = mapping_version_of(&path).expect("capture header is readable");
-    let mut mapper = TreeMapper::new(&tree, version);
+    let mut mapper = TreeMapper::with_template(&tree, version, engineering());
 
     let mut records = 0;
     let mut events = Vec::new();
@@ -138,7 +146,7 @@ fn golden_path() -> PathBuf {
     fixture("events.json")
 }
 
-fn write_golden(events: &[Event]) {
+fn golden_text(events: &[Event]) -> String {
     let mut text = String::from("[\n");
     for (index, event) in events.iter().enumerate() {
         text.push_str("  ");
@@ -150,7 +158,21 @@ fn write_golden(events: &[Event]) {
         });
     }
     text.push_str("]\n");
-    std::fs::write(golden_path(), text).expect("the golden file is writable");
+    text
+}
+
+fn write_golden(events: &[Event]) {
+    std::fs::write(golden_path(), golden_text(events)).expect("the golden file is writable");
+}
+
+#[test]
+fn golden_is_byte_identical_under_the_default_template() {
+    let (_, events) = map_m0_with_usage_log();
+
+    let text = std::fs::read_to_string(golden_path()).expect("the golden file is committed");
+
+    assert_eq!(golden_text(&events), text, "the golden file, byte for byte");
+    assert_eq!(events.len(), 2394);
 }
 
 #[test]
@@ -267,9 +289,12 @@ fn unknown_count_is_zero_on_m0_capture() {
 #[test]
 fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
     let (_, events) = map_m0();
-    let count = |lane: Lane| events.iter().filter(|event| event.lane == lane).count();
-
-    let phases: Vec<usize> = Lane::ALL.into_iter().map(count).collect();
+    let template = engineering();
+    let phases: Vec<usize> = template
+        .lanes
+        .iter()
+        .map(|spec| events.iter().filter(|event| event.lane == spec.id).count())
+        .collect();
     assert_eq!(phases, [437, 69, 424, 93, 122, 134, 0], "Plan..Gate");
     assert_eq!(phases.iter().sum::<usize>(), events.len());
 
@@ -281,7 +306,7 @@ fn m0_events_fall_into_the_seven_phases_with_human_overlays() {
     assert!(
         overlays
             .iter()
-            .all(|event| event.overlay == Some(Overlay::Human) && event.lane == Lane::Plan)
+            .all(|event| event.overlay == Some(Overlay::Human) && event.lane == lane("plan"))
     );
     assert!(
         events
@@ -318,14 +343,14 @@ fn a_feature_defined_by_a_scrutiny_validator_lands_in_the_scrutiny_lane() {
     assert!(
         of_scrutiny
             .iter()
-            .all(|event| event.role == Role::ScrutinyValidator && event.lane == Lane::Scrutiny),
+            .all(|event| event.role == Role::ScrutinyValidator && event.lane == lane("scrutiny")),
         "scrutiny: {:?}",
         of_scrutiny.iter().map(|e| e.lane).collect::<Vec<_>>()
     );
     assert_eq!(
         events
             .iter()
-            .filter(|event| event.lane == Lane::Plan && by_session(event))
+            .filter(|event| event.lane == lane("plan") && by_session(event))
             .count(),
         0,
         "the session has no event in Plan"
@@ -353,16 +378,16 @@ fn a_feature_defined_follows_the_phase_of_the_session_that_emits_it() {
         (events[0].lane, events[1].lane)
     };
 
-    assert_eq!(lanes(Role::Orchestrator), (Lane::Plan, Lane::Plan));
+    assert_eq!(lanes(Role::Orchestrator), (lane("plan"), lane("plan")));
     assert_eq!(
         lanes(Role::ScrutinyValidator),
-        (Lane::Scrutiny, Lane::Scrutiny)
+        (lane("scrutiny"), lane("scrutiny"))
     );
     assert_eq!(
         lanes(Role::UserTestingValidator),
-        (Lane::UserTesting, Lane::UserTesting)
+        (lane("user_testing"), lane("user_testing"))
     );
-    assert_eq!(lanes(Role::Worker), (Lane::Build, Lane::Plan));
+    assert_eq!(lanes(Role::Worker), (lane("build"), lane("plan")));
 }
 
 #[test]
@@ -504,7 +529,7 @@ fn session_start_takes_the_time_of_the_next_timestamped_record() {
     assert_eq!(second[0].at.to_rfc3339_millis(), at(7));
     assert_eq!(second[0].id.0, format!("{SESSION}:0:0"));
     assert_eq!(second[0].role, Role::Orchestrator);
-    assert_eq!(second[0].lane, Lane::Plan);
+    assert_eq!(second[0].lane, lane("plan"));
 }
 
 #[test]
@@ -528,7 +553,7 @@ fn a_child_session_start_is_a_subagent_spawned_event_of_that_child() {
     assert_eq!(spawned.session_id, Some(SessionId(SESSION.to_owned())));
     assert_eq!(spawned.mission_id, MissionId("mission-1".to_owned()));
     assert_eq!(spawned.role, Role::Worker);
-    assert_eq!(spawned.lane, Lane::Build);
+    assert_eq!(spawned.lane, lane("build"));
     assert_eq!(spawned.at.to_rfc3339_millis(), at(3));
     assert_eq!(finished.len(), 1);
 }
@@ -590,14 +615,18 @@ fn integration_session_events_land_in_integrate() {
         ]
     );
     for event in &events {
-        assert_eq!(event.lane, Lane::Integrate, "{}", event.kind.prd_name());
+        assert_eq!(event.lane, lane("integrate"), "{}", event.kind.prd_name());
         assert_eq!(event.role, Role::Worker, "the role stays the session's");
     }
     let final_gate = child_run(worker_with_milestones(), "final-integrate-mission");
-    assert!(final_gate.iter().all(|event| event.lane == Lane::Integrate));
+    assert!(
+        final_gate
+            .iter()
+            .all(|event| event.lane == lane("integrate"))
+    );
 
     let build = child_run(worker_with_milestones(), "m0-mapping-v1");
-    assert!(build.iter().all(|event| event.lane == Lane::Build));
+    assert!(build.iter().all(|event| event.lane == lane("build")));
 }
 
 #[test]
@@ -610,7 +639,7 @@ fn contract_session_events_land_in_contract() {
 
     assert_eq!(events.len(), 8);
     assert!(
-        events.iter().all(|event| event.lane == Lane::Contract),
+        events.iter().all(|event| event.lane == lane("contract")),
         "{:?}",
         events
             .iter()
@@ -634,7 +663,7 @@ fn human_prompts_in_the_root_amend_the_intent() {
         Role::Orchestrator,
         "the session's role, not Human"
     );
-    assert_eq!(events[0].lane, Lane::Plan);
+    assert_eq!(events[0].lane, lane("plan"));
 
     let injected = json!({"type": "message", "id": "m", "timestamp": at(2),
         "message": {"role": "user", "visibility": "llm_only",
@@ -658,7 +687,7 @@ fn git_commit_and_test_commands_map_to_commit_and_tests_kinds() {
 
     assert_eq!(kinds(&events), ["commit.created", "tests.run"]);
     assert_eq!(events[1].id.0, format!("{SESSION}:0:1"));
-    assert!(events.iter().all(|event| event.lane == Lane::Build));
+    assert!(events.iter().all(|event| event.lane == lane("build")));
 
     let script = assistant(
         2,
@@ -708,7 +737,7 @@ fn make_check_is_a_gate_command_whose_result_decides_passed_or_failed() {
         kinds(&events),
         ["gate_command.passed", "gate_command.failed"]
     );
-    assert!(events.iter().all(|event| event.lane == Lane::Integrate));
+    assert!(events.iter().all(|event| event.lane == lane("integrate")));
     assert_eq!(events[0].duration.unwrap().as_secs(), 3);
 }
 
@@ -766,7 +795,7 @@ fn a_failing_make_check_with_is_error_null_maps_to_gate_command_failed() {
             "gate_command.failed"
         ]
     );
-    assert!(events.iter().all(|event| event.lane == Lane::Integrate));
+    assert!(events.iter().all(|event| event.lane == lane("integrate")));
     assert_eq!(events[0].duration.unwrap().as_secs(), 3);
 
     let mut flagged = Session::new(meta(Role::Worker));
@@ -888,7 +917,7 @@ fn error_results_are_tool_errors_and_hook_blocks_are_named() {
     );
     let events = session.feed(&results);
     assert_eq!(kinds(&events), ["tool.error", "hook.blocked"]);
-    assert!(events.iter().all(|event| event.lane == Lane::Build));
+    assert!(events.iter().all(|event| event.lane == lane("build")));
 }
 
 #[test]
@@ -923,7 +952,7 @@ fn compaction_and_changed_todos_are_orchestrator_events() {
     let compacted = session.feed(&json!({"type": "compaction_state", "id": "c",
         "timestamp": at(9), "summaryKind": "llm_summary"}));
     assert_eq!(kinds(&compacted), ["context.compacted"]);
-    assert_eq!(compacted[0].lane, Lane::Plan);
+    assert_eq!(compacted[0].lane, lane("plan"));
 }
 
 #[test]
@@ -1025,7 +1054,7 @@ fn the_plan_the_questions_and_the_features_come_from_the_orchestrators_tool_call
     );
     assert_eq!(events[1].milestone_id, Some(MilestoneId("s".to_owned())));
     assert_eq!(events[2].milestone_id, Some(MilestoneId("m0".to_owned())));
-    assert!(events.iter().all(|event| event.lane == Lane::Plan));
+    assert!(events.iter().all(|event| event.lane == lane("plan")));
 
     let task = |id: &str, description: &str| {
         assistant(
@@ -1065,7 +1094,7 @@ fn the_plan_the_questions_and_the_features_come_from_the_orchestrators_tool_call
     );
     let asked = session.feed(&ask);
     assert_eq!(kinds(&asked), ["question.asked"]);
-    assert_eq!(asked[0].lane, Lane::Plan);
+    assert_eq!(asked[0].lane, lane("plan"));
     let answered = session.feed(&user(4, json!([tool_result("q", "yes", false)])));
     assert_eq!(kinds(&answered), ["intent.answered"]);
     assert_eq!(answered[0].role, Role::Orchestrator);
@@ -1124,7 +1153,7 @@ fn scrutiny_reports_become_findings_and_a_pass() {
             "scrutiny.passed"
         ]
     );
-    assert!(events.iter().all(|event| event.lane == Lane::Scrutiny));
+    assert!(events.iter().all(|event| event.lane == lane("scrutiny")));
 
     let failing = "**Blocking issues**\n1. broken\n";
     let events = session.feed(&assistant(
@@ -1167,7 +1196,11 @@ fn user_testing_reports_become_scenarios_and_evidence() {
             "qa.evidence"
         ]
     );
-    assert!(events.iter().all(|event| event.lane == Lane::UserTesting));
+    assert!(
+        events
+            .iter()
+            .all(|event| event.lane == lane("user_testing"))
+    );
 }
 
 #[test]
@@ -1206,7 +1239,7 @@ fn lines_and_parts_the_rules_do_not_know_stay_unknown_and_counted() {
         garbage
             .iter()
             .chain(&tool)
-            .all(|event| event.lane == Lane::Build)
+            .all(|event| event.lane == lane("build"))
     );
 }
 

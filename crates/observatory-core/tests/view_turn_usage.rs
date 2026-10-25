@@ -6,13 +6,21 @@ use std::path::{Path, PathBuf};
 use observatory_core::config::MissionConfig;
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
-    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, MissionId, ModelId, Role, SessionId,
-    SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, MissionId, ModelId,
+    Role, SessionId, SourcePtr, Timestamp,
 };
 use observatory_core::view::{
     AgentStatus, BoardState, BoardView, DeclaredModels, Filter, FilterOptions, Scrubber,
     ViewConfig, WorkerGrouping, agent_stream, details, lane_counts, overlay_markers, tray_count,
 };
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -42,7 +50,13 @@ fn cfg(grouping: WorkerGrouping) -> ViewConfig {
 }
 
 fn board(events: &[Event], grouping: WorkerGrouping) -> BoardView {
-    BoardView::build(events, &cfg(grouping), &declared(), "mission/x")
+    BoardView::build(
+        events,
+        &cfg(grouping),
+        &declared(),
+        "mission/x",
+        &engineering(),
+    )
 }
 
 #[test]
@@ -74,14 +88,17 @@ fn turn_usage_events_do_not_appear_in_lane_rows_or_cards() {
             );
         }
 
-        let sa = BoardState::fold(&with, &cfg(grouping));
-        let sb = BoardState::fold(&without, &cfg(grouping));
+        let sa = BoardState::fold(&with, &cfg(grouping), &engineering());
+        let sb = BoardState::fold(&without, &cfg(grouping), &engineering());
         assert_eq!(sa.sublanes, sb.sublanes, "{grouping:?}");
         assert_eq!(sa.cards, sb.cards);
         assert_eq!(sa.lane_counts.to_vec(), [437, 69, 424, 93, 122, 134, 0]);
     }
 
-    assert_eq!(lane_counts(&with), lane_counts(&without));
+    assert_eq!(
+        lane_counts(&with, &engineering()),
+        lane_counts(&without, &engineering())
+    );
     assert_eq!(tray_count(&with), 0);
     assert_eq!(
         overlay_markers(&with, observatory_core::model::Overlay::Human).len(),
@@ -140,7 +157,7 @@ fn event(kind: EventKind, role: Role, session: &str, second: u32) -> Event {
         mission_id: MissionId("mission".to_owned()),
         milestone_id: Some(MilestoneId("m1".to_owned())),
         feature_id: Some(FeatureId("m1-feature".to_owned())),
-        lane: kind.lane(role),
+        lane: engineering().lane_of(&kind, role),
         overlay: kind.overlay(),
         kind,
         role,
@@ -168,7 +185,7 @@ fn agent_stream_and_status_ignore_turn_usage() {
     ];
 
     let stream = agent_stream(&events, &SessionId("w1".to_owned()), None);
-    let state = BoardState::fold(&events, &cfg(WorkerGrouping::PerWorker));
+    let state = BoardState::fold(&events, &cfg(WorkerGrouping::PerWorker), &engineering());
 
     assert_eq!(stream.rows.len(), 2, "the turn is not a row of the stream");
     assert_eq!(
@@ -189,7 +206,7 @@ fn agent_stream_and_status_ignore_turn_usage() {
         "card bookkeeping skips the turn"
     );
     assert_eq!(state.cards[0].last_at, at(3));
-    assert_eq!(state.lane_counts[Lane::Build.number() as usize - 1], 2);
+    assert_eq!(state.lane_counts[lane("build").number() as usize - 1], 2);
 }
 
 #[test]

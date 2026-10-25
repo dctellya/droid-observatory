@@ -17,8 +17,18 @@ use observatory_core::ingest::{
     JsonlSource, SessionTree, Source, mapping_version_of, read_capture,
 };
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta, TreeMapper};
-use observatory_core::model::{Event, EventKind, Lane, ModelId, Role, SessionId, SourcePtr};
+use observatory_core::model::{
+    CycleTemplate, Event, EventKind, LaneId, ModelId, Role, SessionId, SourcePtr,
+};
 use tempfile::TempDir;
+
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 const CURRENT: &str = "droid-log-single.log";
 const SESSION_A: &str = "00000000-0000-4000-8000-000000000001";
@@ -321,7 +331,7 @@ fn attach_maps_an_appended_turn_to_its_session_within_a_poll() {
     assert_eq!(events[0].session_id, Some(SessionId(SESSION_A.to_owned())));
     assert_eq!(
         events[0].lane,
-        Lane::Plan,
+        lane("plan"),
         "the root session is in the Plan phase"
     );
     assert_eq!(attach.usage_counters().turns_elsewhere, 1);
@@ -421,7 +431,10 @@ fn replay_with_usage_log_sums_tokens_per_role_on_m0_fixture() {
         .iter()
         .filter(|event| matches!(event.kind, EventKind::TurnUsage { .. }))
     {
-        let lane = phase.get(&event.session_id).copied().unwrap_or(Lane::Plan);
+        let lane = phase
+            .get(&event.session_id)
+            .copied()
+            .unwrap_or(lane("plan"));
         assert_eq!(event.lane, lane, "{}", event.id);
         assert!(
             matches!(event.source, SourcePtr::UsageLog { .. }),

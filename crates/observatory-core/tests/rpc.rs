@@ -24,7 +24,7 @@ use observatory_core::ingest::rpc::{
 use observatory_core::ingest::{JsonlSource, RawRecord, Source};
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
 use observatory_core::model::{
-    Event, EventKind, Lane, Overlay, Role, SessionId, SourcePtr, Timestamp,
+    CycleTemplate, Event, EventKind, LaneId, Overlay, Role, SessionId, SourcePtr, Timestamp,
 };
 use observatory_core::store::{HostedRun, Store};
 use observatory_core::view::{LaunchConfig, LaunchForm};
@@ -203,7 +203,7 @@ fn attach(file: &Path) -> Vec<Event> {
 
 type Lanes = (
     String,
-    Lane,
+    LaneId,
     Option<Overlay>,
     Role,
     Option<SessionId>,
@@ -216,7 +216,7 @@ type Lanes = (
 fn lane_event(event: &Event) -> Lanes {
     (
         event.kind.prd_name().into_owned(),
-        event.lane,
+        event.lane.clone(),
         event.overlay,
         event.role,
         event.session_id.clone(),
