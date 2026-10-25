@@ -396,8 +396,10 @@ fn hosted_plan_revised_comes_from_the_session_file_and_matches_the_attached_view
     let dir = tempfile::tempdir().unwrap();
     let (stream, _) = droid_stream_of(&common::m0_root());
     assert!(
-        !String::from_utf8_lossy(&stream).contains("todo_state"),
-        "the stream carries no todo_state"
+        !stream
+            .split(|byte| *byte == b'\n')
+            .any(|line| line.starts_with(br#"{"type":"todo_state""#)),
+        "the stream carries no todo_state record"
     );
     let (sessions, file) = sessions_holding(dir.path(), &common::m0_root());
 
@@ -454,7 +456,12 @@ fn hosted_plan_revised_comes_from_the_session_file_and_matches_the_attached_view
 fn a_todo_state_in_both_the_stream_and_the_file_is_one_plan_revised() {
     let dir = tempfile::tempdir().unwrap();
     let (stream, _) = hosted_stream_of(&common::m0_root());
-    assert!(String::from_utf8_lossy(&stream).contains("todo_state"));
+    assert!(
+        stream
+            .split(|byte| *byte == b'\n')
+            .any(|line| line.starts_with(br#"{"type":"todo_state""#)),
+        "this stream carries the record too"
+    );
     let (sessions, _) = sessions_holding(dir.path(), &common::m0_root());
 
     let hosted = host_reading(dir.path(), &stream, &sessions);
@@ -526,7 +533,8 @@ fn a_hosted_run_with_no_session_file_maps_the_stream_alone() {
     let empty = common::config(&dir.path().join("no-sessions"), 50);
 
     let reading = host_reading(dir.path(), &stream, &empty);
-    let alone = host(dir.path(), &stream);
+    let other = tempfile::tempdir().unwrap();
+    let alone = host(other.path(), &stream);
 
     assert_eq!(kind_counts(&reading.events), kind_counts(&alone.events));
     assert!(
@@ -541,26 +549,26 @@ fn a_hosted_run_with_no_session_file_maps_the_stream_alone() {
 fn a_session_file_that_appears_late_still_yields_every_plan_revised() {
     let dir = tempfile::tempdir().unwrap();
     let (stream, _) = droid_stream_of(&common::m0_root());
+    let recorded = dir.path().join("recorded.jsonl");
+    std::fs::write(&recorded, &stream).unwrap();
     let spool_file = observatory_core::ingest::rpc::spool_path(dir.path(), LAUNCH);
-    let mut spool = Spool::create(&spool_file).unwrap();
+    spool_through_fake_process(&recorded, &spool_file);
     let mut source = RpcSource::open(&spool_file, &IngestConfig::default()).unwrap();
+    let mut records = source.next_batch().unwrap();
+    records.extend(source.drain_partial());
     let sessions = common::config(&dir.path().join("sessions"), 50);
     let mut mapper = RpcMapper::new(LAUNCH, MappingVersion::LATEST).with_session_files(&sessions);
-    let lines: Vec<&[u8]> = stream.split_inclusive(|byte| *byte == b'\n').collect();
-    let (early, late) = lines.split_at(lines.len() / 2);
-    let mut events = Vec::new();
-    let mut pump = |lines: &[&[u8]], mapper: &mut RpcMapper| {
-        for line in lines {
-            spool.append_line(line.trim_ascii_end()).unwrap();
-            for record in source.next_batch().unwrap() {
-                events.extend(mapper.map(&record));
-            }
-        }
-    };
+    let (early, late) = records.split_at(records.len() / 2);
 
-    pump(early, &mut mapper);
+    let mut events: Vec<Event> = early.iter().flat_map(|record| mapper.map(record)).collect();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.kind == EventKind::PlanRevised),
+        "the file is not there yet"
+    );
     sessions_holding(dir.path(), &common::m0_root());
-    pump(late, &mut mapper);
+    events.extend(late.iter().flat_map(|record| mapper.map(record)));
     events.extend(mapper.finish());
 
     let attached = attach(&common::m0_root());

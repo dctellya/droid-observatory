@@ -11,6 +11,7 @@ mod envelope;
 mod mapper;
 mod open;
 mod protocol;
+mod session_file;
 mod source;
 mod spool;
 
