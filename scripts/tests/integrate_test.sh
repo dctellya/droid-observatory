@@ -271,6 +271,152 @@ check "unknown branch: says so" grep -q 'wt/nope' "$tmp/nope.out"
 sh scripts/integrate.sh > "$tmp/noargs.out" 2>&1
 check "no arguments: exit 2" [ $? -eq 2 ]
 
+echo "== staging shapes: every bullet and table row is filed, a dry run writes a copy =="
+mkrepo shapes
+mkdir -p reports/staging
+cat > reports/staging/shape-bullets.md <<'EOF'
+# Staging: shape-bullets
+
+## SPEC §9
+
+- Row (F-NEW): bullets row one.
+
+## Decisions
+
+- D-001 (amend, one line): "Amended by shape-bullets."
+
+## BACKLOG
+
+- B-NEW: bullets item; reason: bullets reason.
+
+## Deferred clauses
+
+- VAL-S-001: bullets deferred.
+
+## Library
+
+- lib: bullets library.
+EOF
+cat > reports/staging/shape-none.md <<'EOF'
+# Staging: shape-none
+
+## SPEC §9
+
+None.
+
+## Decisions
+
+none
+
+## BACKLOG
+
+None added.
+
+## Deferred clauses
+
+None.
+
+## Library
+
+None.
+EOF
+cat > reports/staging/shape-plain.md <<'EOF'
+# Staging: shape-plain
+
+## SPEC §9 rows
+
+Rows for the integrator to number:
+
+- Plain row one, no F-NEW marker.
+- Plain row two
+  continues here.
+
+## Decisions
+
+- D-002 consequence 3 amended in words only: plain amendment text.
+- D-001 is new and written by another feature.
+- A decision note with no number.
+
+## BACKLOG
+
+- Plain backlog item without any marker. Reason: it is plain.
+- New: second plain item; reason: second reason.
+- Closed (do not file): plain closure.
+- B-041: done (this feature).
+
+## Deferred clauses
+
+- VAL-P-001: plain deferred.
+
+## Library
+
+- plain library line.
+EOF
+cat > reports/staging/shape-table.md <<'EOF'
+# Staging: shape-table
+
+## SPEC s9
+
+| Id | Row |
+|---|---|
+| F-NEW | Table row one |
+| F-NEW | Table row two |
+
+## BACKLOG
+
+| Item | Reason |
+|---|---|
+| Table item | Table reason |
+EOF
+git add -A
+git commit -q -m "chore: staging files of four shapes"
+clean_before=$(git status --porcelain)
+python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --dry-run "$tmp/dry" > "$tmp/dry.out" 2>&1
+code=$?
+check "shapes dry run: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/dry.out"
+check "shapes dry run: unfiled: 0" grep -qx 'unfiled: 0' "$tmp/dry.out"
+check "shapes dry run: SPEC §9 rows 5" grep -qx 'SPEC §9 rows: 5' "$tmp/dry.out"
+check "shapes dry run: BACKLOG rows 4" grep -qx 'BACKLOG rows: 4' "$tmp/dry.out"
+check "shapes dry run: closures 2" grep -qx 'closures: 2' "$tmp/dry.out"
+check "shapes dry run: decision addenda 2" grep -qx 'decision addenda: 2' "$tmp/dry.out"
+check "shapes dry run: decision notes 2" grep -qx 'decision notes: 2' "$tmp/dry.out"
+check "shapes dry run: deferred clauses 2" grep -qx 'deferred clauses: 2' "$tmp/dry.out"
+check "shapes dry run: library 2" grep -qx 'library: 2' "$tmp/dry.out"
+check "shapes dry run: per-file line" grep -qx 'file shape-plain: spec=2 backlog=2 closures=2 addenda=1 notes=2 deferred=1 library=1' "$tmp/dry.out"
+check "shapes dry run: the repository is untouched" [ "$(git status --porcelain)" = "$clean_before" ]
+check "shapes dry run: staging files kept" [ -f reports/staging/shape-plain.md ]
+check "shapes dry run: copy has the F-003 to F-007 rows" sh -c "grep -q '^| F-007 |' $tmp/dry/SPEC.md && ! grep -q '^| F-008 |' $tmp/dry/SPEC.md"
+check "shapes dry run: plain row continuation joined" grep -qF 'Plain row two continues here.' "$tmp/dry/SPEC.md"
+check "shapes dry run: table row filed" grep -qF 'Table row two' "$tmp/dry/SPEC.md"
+check "shapes dry run: plain backlog bullet filed" grep -qF '| B-003 |' "$tmp/dry/BACKLOG.md"
+check "shapes dry run: table backlog row filed with its reason" grep -qF '| Table item | Table reason (shape-table) |' "$tmp/dry/BACKLOG.md"
+check "shapes dry run: closed bullet not filed as a row" sh -c "! grep -qF 'plain closure' $tmp/dry/BACKLOG.md"
+check "shapes dry run: plain amendment in the copy of D-002" grep -qF 'plain amendment text.' "$tmp/dry/docs/decisions/D-002-decision-2.md"
+check "shapes dry run: the real D-002 has no addendum" sh -c "! grep -q Addendum docs/decisions/D-002-decision-2.md"
+check "shapes dry run: report keeps the closures and notes" sh -c "grep -qF 'plain closure' $tmp/dry/report.md && grep -qF 'A decision note with no number.' $tmp/dry/report.md"
+
+cat > reports/staging/shape-unknown.md <<'EOF'
+# Staging: shape-unknown
+
+## Misc
+
+- A bullet in no known section.
+EOF
+python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --out "$tmp/unknown.md" > "$tmp/unknown.out" 2>&1
+code=$?
+check "unknown section: exit 1" [ "$code" -eq 1 ]
+check "unknown section: unfiled: 1 and the bullet listed" sh -c "grep -qx 'unfiled: 1' $tmp/unknown.out && grep -qF 'A bullet in no known section.' $tmp/unknown.out"
+check "unknown section: nothing was written" sh -c "! grep -q '^| F-003 |' SPEC.md && [ -f reports/staging/shape-plain.md ]"
+rm reports/staging/shape-unknown.md
+
+python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --out "$tmp/real.md" > "$tmp/real.out" 2>&1
+code=$?
+check "shapes real run: exit 0 and unfiled: 0" sh -c "[ $code -eq 0 ] && grep -qx 'unfiled: 0' $tmp/real.out"
+check "shapes real run: five SPEC rows F-003 to F-007" sh -c "grep -q '^| F-007 |' SPEC.md && ! grep -q '^| F-008 |' SPEC.md"
+check "shapes real run: D-001 and D-002 have addenda" sh -c "grep -q '^## Addendum 2026-10-25 (m9 integration, shape-bullets)' docs/decisions/D-001-decision-1.md && grep -q '^## Addendum 2026-10-25 (m9 integration, shape-plain)' docs/decisions/D-002-decision-2.md"
+check "shapes real run: staging files deleted" [ -z "$(ls reports/staging)" ]
+
 echo
 if [ "$failures" -eq 0 ]; then
   echo "integrate_test: all checks passed"
