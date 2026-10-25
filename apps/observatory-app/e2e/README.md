@@ -22,6 +22,12 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 - `specs/hosted.e2e.ts`: a hosted mission with a fake Droid (`fixtures/fake-droid.mjs`). Permission
   list, Approve and Deny (the host writes `proceed_once` and `cancel` to the request id), the AskUser
   sheet, the `intent.answered` row, arrival stamps and the event latency.
+- `specs/controls.e2e.ts` and `specs/stall.e2e.ts`: the control bar, the AskUser sheet and the stall banner,
+  each also in the kit's dark and light themes (cases that press `theme-dark` / `theme-light` and check
+  `data-theme`, so the case PNGs show both).
+- `specs/attached.e2e.ts`: an attached mission. `lib/attach.ts` copies the S session under the run's
+  `[ingest].factory_sessions_dir`; the spec sends a message and reads the `human_actions` row with `sqlite3`
+  and the app log from the newest `wdio-*.log` (no `host_control` line, a `text_len` line).
 - Selectors are `data-testid` attributes. Thresholds come from the `[e2e]` table of
   `config/observatory.example.toml` (`lib/thresholds.ts`); the specs hold no literal limit.
 - Latency is read from User Timing (`performance.getEntriesByType('measure')`: `panel:render`,

@@ -33,7 +33,9 @@ VAL-CTRL-002 to 010, 013, 015, 016, 017 and VAL-UI-001. Worker model line: `mode
 - Row (F-NEW): VAL-UI-001 applied as the owner's answer 6 asked: `ui/theme.css` is a byte copy of
   `ai/design/ui-kit-v2/theme.css`; `ui/style.css` is token-only (no colour literal, no `font-family`; greps: 0 and 0);
   the kit classes `kpi`, `lib`, `chip`, `switch`, `card` are used by the views; no new navigation, no brand work; a
-  theme switch (System, Dark, Light) is the kit's `switch`. No departure from the kit. The `donut.js` component is not
+  theme switch (System, Dark, Light) is the kit's `switch`. The departures from the kit's "Eight rules" (rule 3 board page width, rule 4 page head) are the
+  two proposed rows in `reports/staging/m3-fix-ut-ui-kit-logs-and-attached-e2e.md`; numeric cells (rule 2) and the `.lib`
+  boxes (rule 6) are met there. The `donut.js` component is not
   used: this feature draws no share-of-total chart.
 - Row (F-NEW): the live self-check harness (`live_check.rs`) takes every control through `Hosts::human_action`, runs the
   stall poller and installs a tracing subscriber (closes B-067); `OBSERVATORY_LIVE_HOLD_S` keeps the question
