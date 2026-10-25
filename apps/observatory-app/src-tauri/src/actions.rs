@@ -88,13 +88,7 @@ impl Hosts {
                 .channel
                 .send(&relay, inner.mapper.open_requests_mut())
                 .map_err(|err| err.to_string())?;
-            tracing::info!(
-                launch_id,
-                control = ?relay,
-                request_id = %sent.id,
-                method = sent.method,
-                "host_control"
-            );
+            log_host_control(launch_id, &action, &relay, &sent.id, sent.method);
             let key = match &action {
                 HumanAction::Approve { .. } | HumanAction::Deny { .. } => {
                     format!("permission:{}", sent.id)
@@ -123,6 +117,22 @@ impl Hosts {
         run.status_waiting(&guard.mapper);
         Ok(recorded)
     }
+}
+
+fn log_host_control(
+    launch_id: &str,
+    _action: &HumanAction,
+    relay: &HostControl,
+    request_id: &str,
+    method: &str,
+) {
+    tracing::info!(
+        launch_id,
+        control = ?relay,
+        request_id,
+        method,
+        "host_control"
+    );
 }
 
 /// The event an action concerns, read from the store: the question or request it answers.
@@ -172,4 +182,130 @@ pub fn record<R: Runtime>(
         action_id: recorded.action_id,
         event_id: recorded.event.id.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    use observatory_core::config::Config;
+    use observatory_core::ingest::AttachStatus;
+    use observatory_core::model::{EventId, FeatureId, SessionId};
+    use observatory_core::store::{HostedRun, Store};
+
+    use super::*;
+
+    const MESSAGE: &str = "Keep it to the one feature.";
+    const ANSWER: &str = "salud";
+    const REASON: &str = "blocked on the vendor key";
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            lock(&self.0).extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn logged(run: impl FnOnce()) -> String {
+        let capture = Capture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, run);
+        String::from_utf8(lock(&capture.0).clone()).expect("the log is text")
+    }
+
+    fn shell(name: &str) -> (Shell, std::path::PathBuf) {
+        let cfg = Config::default();
+        let path = std::env::temp_dir().join(format!(
+            "observatory-actions-{name}-{}.sqlite",
+            std::process::id()
+        ));
+        let mut store = Store::open(&path).expect("the store opens");
+        store
+            .record_hosted(&HostedRun {
+                mission_name: "hosted".into(),
+                session: SessionId("mission-1".to_owned()),
+                spool: path.with_extension("jsonl"),
+                droid_version: None,
+                started_at: "2026-10-25T09:00:00.000Z".into(),
+            })
+            .expect("the hosted mission row");
+        let shell = Shell {
+            template: Arc::new(cfg.cycle.load_template().template),
+            store: Mutex::new(store),
+            status: Arc::new(Mutex::new(AttachStatus::default())),
+            cfg,
+        };
+        (shell, path)
+    }
+
+    #[test]
+    fn host_control_log_carries_lengths_not_text() {
+        let cases = [
+            (
+                HumanAction::message(MESSAGE),
+                HostControl::Message {
+                    text: MESSAGE.to_owned(),
+                },
+                MESSAGE,
+            ),
+            (
+                HumanAction::answer(EventId("question-1".to_owned()), ANSWER),
+                HostControl::Answer {
+                    question_id: "question-1".to_owned(),
+                    text: ANSWER.to_owned(),
+                },
+                ANSWER,
+            ),
+            (
+                HumanAction::mark_skipped(FeatureId("f-1".to_owned()), REASON),
+                HostControl::Message {
+                    text: format!("Skip f-1: {REASON}"),
+                },
+                REASON,
+            ),
+        ];
+        for (action, relay, text) in cases {
+            let log = logged(|| log_host_control("launch", &action, &relay, "req-1", "message"));
+            println!("{log}");
+            assert!(!log.contains(text), "the log carries the text: {log}");
+            assert!(
+                log.contains("text_len") || log.contains("reason_len"),
+                "the log carries no length: {log}"
+            );
+        }
+    }
+
+    #[test]
+    fn recorded_action_log_carries_text_len() {
+        let (shell, path) = shell("recorded");
+        let app = tauri::test::mock_app();
+        let action = HumanAction::message(MESSAGE);
+        let log = logged(|| {
+            record(
+                app.handle(),
+                &shell,
+                &MissionId("mission-1".to_owned()),
+                &action,
+                None,
+            )
+            .expect("the action is recorded");
+        });
+        println!("{log}");
+        assert!(log.contains("human_action"), "no human_action line: {log}");
+        assert!(log.contains("text_len"), "the line has no text_len: {log}");
+        assert!(!log.contains(MESSAGE), "the line carries the text: {log}");
+        let _ = std::fs::remove_file(path);
+    }
 }
