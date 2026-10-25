@@ -222,6 +222,19 @@ fn a_session_without_a_feature_id_keeps_its_user_tag_name() {
 }
 
 #[test]
+fn an_orchestrator_session_of_droid_0_249_is_named_by_its_user_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = session(
+        dir.path(),
+        "orchestrator-id",
+        r#"[{"name":"mission-orchestrator"},{"name":"exec"},{"name":"scratch"},
+            {"name":"mission-session","metadata":{"role":"orchestrator","missionId":"m-1"}}]"#,
+        &[("user", "Plan the mission.".into())],
+    );
+    assert_all(&names_of(&path), "scratch");
+}
+
+#[test]
 fn replay_store_and_watcher_agree_on_the_feature_id_name() {
     let tree = SessionTree::discover(&m0_root(), &IngestConfig::default()).unwrap();
     let runner_tags = IngestConfig::default().runner_tags;

@@ -128,6 +128,17 @@ mod tests {
     }
 
     #[test]
+    fn the_orchestrator_runner_tag_of_droid_0_249_is_never_a_rename() {
+        let mut names = SessionNames::new(&crate::config::IngestConfig::default().runner_tags);
+        names.observe(&id(), "scratch");
+        assert!(matches!(
+            names.observe(&id(), "mission-orchestrator"),
+            NameChange::Refused(r) if r.kept == "scratch"
+        ));
+        assert_eq!(names.current(&id()), Some("scratch"));
+    }
+
+    #[test]
     fn a_runner_tag_is_refused_before_the_one_rename_is_used() {
         let mut names = names();
         names.observe(&id(), "s1");
