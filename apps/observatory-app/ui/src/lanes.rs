@@ -1,27 +1,45 @@
 use leptos::prelude::*;
-use observatory_core::model::Lane;
+use observatory_core::model::LaneGrouping;
 use observatory_core::view::{
     BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping, session_name,
 };
 
 use crate::ctx::BoardCtx;
 
-/// The seven phase lanes, left to right (F-028, D-024).
+/// The template's lanes, left to right (F-028, D-024, F-041).
 #[component]
 pub fn Lanes(board: Memo<BoardView>, grouping: RwSignal<WorkerGrouping>) -> impl IntoView {
-    let columns = (0..Lane::ALL.len())
-        .map(|index| {
-            view! {
-                {move || board.with(|b| lane_column(&b.lanes[index], grouping))}
-            }
-        })
-        .collect_view();
-    view! { <div class="lanes">{columns}</div> }
+    view! {
+        <div class="lanes">
+            {move || {
+                board
+                    .with(|b| {
+                        let command_lane = b
+                            .lanes
+                            .iter()
+                            .find(|lane| lane.grouping == LaneGrouping::Milestones)
+                            .map(|lane| lane.name.clone())
+                            .unwrap_or_default();
+                        b.lanes
+                            .iter()
+                            .enumerate()
+                            .map(|(index, lane)| {
+                                lane_column(lane, index + 1, &command_lane, grouping)
+                            })
+                            .collect_view()
+                    })
+            }}
+        </div>
+    }
 }
 
-fn lane_column(lane: &LaneView, grouping: RwSignal<WorkerGrouping>) -> AnyView {
-    let number = lane.lane.number();
-    let toggle = (lane.lane == Lane::Build).then(|| {
+fn lane_column(
+    lane: &LaneView,
+    number: usize,
+    command_lane: &str,
+    grouping: RwSignal<WorkerGrouping>,
+) -> AnyView {
+    let toggle = (lane.grouping == LaneGrouping::Sessions).then(|| {
         view! {
             <button
                 type="button"
@@ -67,7 +85,7 @@ fn lane_column(lane: &LaneView, grouping: RwSignal<WorkerGrouping>) -> AnyView {
                 <p class="gate-state">{p.text.clone()}</p>
                 <p aria-label="gate-branch">"mission branch: " {p.branch.clone()}</p>
                 <p aria-label="gate-last-verdict">
-                    "last gate command (Integrate): " {verdict}
+                    {format!("last gate command ({command_lane}): ")} {verdict}
                 </p>
                 <ul>{clocks}</ul>
             </div>
@@ -81,7 +99,7 @@ fn lane_column(lane: &LaneView, grouping: RwSignal<WorkerGrouping>) -> AnyView {
     view! {
         <section class="lane" aria-label=lane.aria_label.clone()>
             <h2 class="lane-name">
-                {lane.name} " "
+                {lane.name.clone()} " "
                 <span class="count" aria-label=format!("lane-{number}-count")>{lane.event_count}</span>
             </h2>
             {toggle}
@@ -98,7 +116,7 @@ fn group_view(lane: &LaneView, group: &RowGroup) -> AnyView {
     if !lane.grouped {
         return view! { <ul class="rows-list">{rows}</ul> }.into_any();
     }
-    let kind = if lane.lane == Lane::Build {
+    let kind = if lane.grouping == LaneGrouping::Sessions {
         "sublane"
     } else {
         "milestone"

@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use observatory_core::model::CycleTemplate;
 use observatory_core::view::BoardView;
 
 /// Time, tokens per role and model drift against the declared models. Cost and waste arrive
@@ -80,6 +81,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
 /// The overlay filter list: events a person caused, each also marked on its phase lane.
 #[component]
 pub fn OverlayList(board: Memo<BoardView>) -> impl IntoView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     view! {
         <section class="overlay-list" aria-label=move || board.with(|b| b.overlay_human.aria_label.clone())>
             <h2>
@@ -99,7 +101,7 @@ pub fn OverlayList(board: Memo<BoardView>) -> impl IntoView {
                                     view! {
                                         <li aria-label="overlay-human-marker">
                                             {marker.at.to_rfc3339_millis()} " "
-                                            {marker.kind.clone()} " on " {marker.lane.name()}
+                                            {marker.kind.clone()} " on " {template.with(|template| template.name_of(&marker.lane))}
                                         </li>
                                     }
                                 })

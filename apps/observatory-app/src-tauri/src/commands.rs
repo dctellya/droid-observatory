@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use observatory_core::config::{Config, MissionConfig};
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
-use observatory_core::model::{EventId, MissionId, SessionId, Timestamp};
+use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::view::{
     BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus, LaunchConfig,
     Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
@@ -30,7 +30,11 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
     let mut opened = lock(&shell.store)
-        .replay_file(&PathBuf::from(path), &shell.cfg.ingest)
+        .replay_file_with(
+            &PathBuf::from(path),
+            &shell.cfg.ingest,
+            shell.template.clone(),
+        )
         .map_err(text)?;
     opened.live = is_live(&shell, &opened.summary.mission_id);
     Ok(opened)
@@ -104,6 +108,7 @@ pub async fn board(
         &cfg,
         &DeclaredModels::from_config(&mission),
         &branch_of(&mission, &opened.summary.name),
+        &shell.template,
     );
     Ok(board.digest())
 }
@@ -123,7 +128,7 @@ pub async fn host_launch(
     hosts: State<'_, Hosts>,
     config: LaunchConfig,
 ) -> Result<Launched, String> {
-    host::launch(&app, &hosts, &shell.cfg, config).await
+    host::launch(&app, &hosts, &shell.cfg, &shell.template, config).await
 }
 
 /// Pause, resume, message, answer, approve or deny, written to the hosted process.
@@ -163,6 +168,12 @@ pub async fn panel_rendered(mission_id: String, event_ids: Vec<String>, open: bo
 #[tauri::command(rename_all = "snake_case")]
 pub async fn app_config(shell: State<'_, Shell>) -> Result<Config, String> {
     Ok(shell.cfg.clone())
+}
+
+/// The cycle template in effect: the lanes the board draws, their names and the clocks.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn cycle_template(shell: State<'_, Shell>) -> Result<CycleTemplate, String> {
+    Ok(shell.template.as_ref().clone())
 }
 
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {

@@ -16,7 +16,7 @@ use observatory_core::ingest::rpc::{
 };
 use observatory_core::ingest::{EventBatch, RawRecord, Source};
 use observatory_core::mapping::MappingVersion;
-use observatory_core::model::{Event, MissionId, SessionId};
+use observatory_core::model::{CycleTemplate, Event, MissionId, SessionId};
 use observatory_core::store::HostedRun;
 use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
@@ -164,6 +164,7 @@ pub async fn launch<R: Runtime>(
     app: &AppHandle<R>,
     hosts: &Hosts,
     cfg: &Config,
+    template: &Arc<CycleTemplate>,
     config: LaunchConfig,
 ) -> Result<Launched, String> {
     if !std::path::Path::new(&config.repo).is_dir() {
@@ -225,7 +226,7 @@ pub async fn launch<R: Runtime>(
         group: spawned.group,
         inner: Mutex::new(Inner {
             channel,
-            mapper: RpcMapper::new(&launch_id, MappingVersion::V1),
+            mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone()),
         }),
         status: Mutex::new(HostedStatus::starting(&launch_id)),
     });

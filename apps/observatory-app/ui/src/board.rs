@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::config::MissionConfig;
-use observatory_core::model::{EventId, MilestoneId, Timestamp};
+use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
     BoardView, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber, ViewConfig,
     WorkerGrouping, branch_of, tray_count,
@@ -17,11 +17,12 @@ use crate::lanes::Lanes;
 use crate::panel::{OverlayList, Panel};
 use crate::tray::Tray;
 
-/// A capture on the board: header, the six filters, the scrubber, the Panel, the seven phase
+/// A capture on the board: header, the six filters, the scrubber, the Panel, the template's
 /// lanes, the human-overlay list and the unmapped tray. Every figure comes from
 /// `BoardView::build` over the events held, which grow while the capture is live.
 #[component]
 pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     let mission = MissionConfig::default();
     let declared = DeclaredModels::from_config(&mission);
     let agent_declared = declared.clone();
@@ -57,7 +58,9 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
                 grouping: grouping.get(),
                 at: at.get(),
             };
-            events.with(|events| BoardView::build(events, &cfg, &declared, &branch))
+            template.with(|template| {
+                events.with(|events| BoardView::build(events, &cfg, &declared, &branch, template))
+            })
         }
     });
 

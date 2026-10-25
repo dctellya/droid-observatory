@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use observatory_core::model::{EventId, MilestoneId};
+use observatory_core::model::{CycleTemplate, EventId, MilestoneId};
 use observatory_core::view::{TimelineRow, details};
 
 use crate::capture::Capture;
@@ -66,13 +66,14 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
 }
 
 fn timeline_row(row: &TimelineRow, selected: RwSignal<Option<EventId>>) -> AnyView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     let id = row.event_id.clone();
     let open = row.event_id.clone();
     view! {
         <tr aria-label="timeline-row" class:unmapped=row.unmapped>
             <td>{row.at.to_rfc3339_millis()}</td>
             <td class="event-id">{id.0}</td>
-            <td>{row.lane.name()}</td>
+            <td>{template.with(|template| template.name_of(&row.lane))}</td>
             <td>{row.overlay.map(|overlay| overlay.as_str())}</td>
             <td>{row.kind.clone()}</td>
             <td>{row.role.as_str()}</td>

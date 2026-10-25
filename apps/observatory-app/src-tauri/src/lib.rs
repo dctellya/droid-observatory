@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use observatory_core::config::Config;
 use observatory_core::ingest::AttachStatus;
+use observatory_core::model::CycleTemplate;
 use observatory_core::store::Store;
 use tauri::Manager;
 
@@ -20,6 +21,8 @@ use tauri::Manager;
 /// ingest thread holds another) and the attach status the thread publishes.
 pub struct Shell {
     pub cfg: Config,
+    /// The cycle template read once at start-up (F-041); every board and mapper iterates it.
+    pub template: Arc<CycleTemplate>,
     pub store: Mutex<Store>,
     pub status: Arc<Mutex<AttachStatus>>,
 }
@@ -47,9 +50,14 @@ pub fn run() {
         sessions_dir = %cfg.ingest.factory_sessions_dir,
         "startup"
     );
+    let loaded = cfg.cycle.load_template();
+    if let Some(warning) = &loaded.warning {
+        tracing::warn!(%warning, "cycle template");
+    }
     let status = Arc::new(Mutex::new(AttachStatus::default()));
     let shell = Shell {
         cfg: cfg.clone(),
+        template: Arc::new(loaded.template),
         store: Mutex::new(store),
         status: status.clone(),
     };
@@ -82,6 +90,7 @@ pub fn run() {
             commands::host_control,
             commands::host_status,
             commands::app_config,
+            commands::cycle_template,
             commands::panel_rendered,
         ])
         .build(tauri::generate_context!())

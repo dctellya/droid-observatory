@@ -3,7 +3,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
-use observatory_core::model::SessionId;
+use observatory_core::model::{CycleTemplate, SessionId};
 use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines};
 use serde_json::{Value, json};
 
@@ -112,6 +112,10 @@ pub fn App() -> impl IntoView {
             status.set(None);
         });
     });
+    // The template is data the shell read at start-up; the browser host has no shell and keeps
+    // the compiled-in engineering cycle.
+    let template = RwSignal::new(CycleTemplate::engineering());
+    provide_context(template);
     provide_context(AttachCtx {
         status: attach_status,
         open: Callback::new(move |session_id: SessionId| {
@@ -124,6 +128,11 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             if let Ok(now) = shell::invoke::<_, AttachStatus>("list_sessions", &json!({})).await {
                 attach_status.set(now);
+            }
+        });
+        spawn_local(async move {
+            if let Ok(now) = shell::invoke::<_, CycleTemplate>("cycle_template", &json!({})).await {
+                template.set(now);
             }
         });
         spawn_local(async move {

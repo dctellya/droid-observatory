@@ -112,6 +112,7 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
     let store = Store::open(&cfg.store.resolved_path()).expect("the scratch store opens");
     let app = tauri::test::mock_app();
     app.manage(Shell {
+        template: Arc::new(cfg.cycle.load_template().template),
         cfg: cfg.clone(),
         store: Mutex::new(store),
         status: Arc::new(Mutex::new(AttachStatus::default())),
@@ -161,7 +162,8 @@ async fn live_check_a_hosted_scratch_mission_takes_every_control() {
         "tags: {:?} skip_scrutiny: {} skip_user_testing: {}",
         config.tags, config.skip_scrutiny, config.skip_user_testing
     );
-    let launched = launch(&handle, &hosts, &cfg, config)
+    let template = Arc::new(cfg.cycle.load_template().template);
+    let launched = launch(&handle, &hosts, &cfg, &template, config)
         .await
         .expect("the scratch mission launches");
     println!("launched: {launched:?}");
