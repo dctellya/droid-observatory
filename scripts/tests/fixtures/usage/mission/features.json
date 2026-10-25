@@ -1,0 +1,6 @@
+{
+  "features": [
+    {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed"},
+    {"id": "m9-beta", "milestone": "m9", "skillName": "core-worker", "status": "pending"}
+  ]
+}

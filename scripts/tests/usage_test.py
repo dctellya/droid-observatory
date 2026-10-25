@@ -333,6 +333,34 @@ class UsageReport(unittest.TestCase):
         self.assertEqual((got["m9-alpha"]["Rounds"], got["m9-alpha"]["Turns"], got["m9-alpha"]["Over 120 turns"]), ("2", "2", "no"))
         self.assertEqual((got["scrutiny-validator-m9"]["Rounds"], got["scrutiny-validator-m9"]["Turns"]), ("1", "2"))
 
+    def test_feature_size_rows_carry_skill_timestamps_and_sources(self):
+        header, rows = table(self.text, "Feature size")
+        for col in ("Skill", "First ts", "Last ts", "Source"):
+            self.assertIn(col, header)
+        got = {r["Feature"]: r for r in rows}
+        _, sessions = table(self.text, "Tokens per session")
+        w = next(r for r in sessions if r["Session"].strip("`") == WORKER)
+        a = got["m9-alpha"]
+        self.assertEqual((a["Skill"], a["First ts"], a["Last ts"]), ("infra-worker", w["First ts"], w["Last ts"]))
+        self.assertIn("droid-log-single.log", a["Source"])
+        self.assertIn("features.json", a["Source"])
+        self.assertIn("progress_log.jsonl", a["Source"])
+        self.assertEqual(got["scrutiny-validator-m9"]["Skill"], "-")
+
+    def test_the_sources_table_lists_features_json_with_its_feature_count(self):
+        _, rows = table(self.text, "Sources")
+        by_name = {r["Source"].strip("`"): r for r in rows}
+        self.assertEqual(by_name["mission/features.json"]["Lines"], "2")
+
+    def test_subagent_self_check_and_mission_to_date_rows_name_their_source_file(self):
+        for heading in ("Subagents", "Self-check missions", "Mission to date by role"):
+            header, rows = table(self.text, heading)
+            self.assertIn("Source", header, heading)
+            for r in rows:
+                if r.get("Sessions") == "0":
+                    continue
+                self.assertIn("droid-log-single.log", r["Source"], "%s %s" % (heading, r))
+
     def test_mission_to_date_reads_the_whole_log_and_compares_with_the_caps(self):
         _, rows = table(self.text, "Mission to date by role")
         got = {r["Role"]: r for r in rows}
@@ -341,6 +369,29 @@ class UsageReport(unittest.TestCase):
         self.assertEqual(o["First ts"], "2026-10-24T23:00:00.000Z")
         self.assertEqual((got["worker"]["Cap USD-eq"], got["worker"]["Over cap"]), ("-", "-"))
         self.assertEqual(got["other"]["Turns"], "3")
+
+
+class UsageReportMilestoneCap(unittest.TestCase):
+    def report(self, cap):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            run(["--cap", "milestone=" + cap, "--cap", "orchestrator=70"], out=out)
+            return read(out)
+
+    def test_a_milestone_cap_adds_a_total_row_with_over_cap(self):
+        for cap, want in (("5", "yes"), ("110", "no")):
+            text = self.report(cap)
+            _, roles = table(text, "Tokens per role")
+            window_total = next(r for r in roles if r["Role"] == "total")
+            _, rows = table(text, "Mission to date by role")
+            got = {r["Role"]: r for r in rows}
+            m = got["milestone window total"]
+            self.assertEqual((m["USD-eq"], m["Turns"]), (window_total["USD-eq"], window_total["Turns"]))
+            self.assertEqual((m["Cap USD-eq"], m["Over cap"]), (cap, want))
+            t = got["total"]
+            self.assertEqual(t["Turns"], str(sum(int(r["Turns"]) for k, r in got.items() if k not in ("total", "milestone window total"))))
+            self.assertEqual((t["Cap USD-eq"], t["Over cap"]), ("-", "-"))
+            self.assertIn("droid-log-single.log", m["Source"])
 
 
 class UsageReportFile(unittest.TestCase):
