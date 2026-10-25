@@ -14,6 +14,11 @@ Cargo.lock.orig
 /apps/**/gen/schemas/
 node_modules/
 
+# User data in the main checkout (never committed or touched) and Python bytecode, both of which move the gate key
+vscode_target/
+__pycache__/
+*.pyc
+
 # Local tool state
 .lycheecache
 .factory/readiness-report.json

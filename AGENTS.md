@@ -151,14 +151,15 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
 
 - Scratch missions (F-054, owner item 1): a live self-check uses a scratch mission, never the real mission's validators; cheapest
   explicit models, `skipScrutiny` and `skipUserTesting`, reaped before the test reports.
-- Rules 26 to 28 ([ai/RULES.md](ai/RULES.md)): tooling is verified on the day and listed in SPEC `## Tooling` (26); a worktree
-  feature leaves its shared-file rows in a staging file and the integrator merges files (27); gate flow: inner loop per
-  rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs redirected to a
-  file with the exit code pasted (28).
+- Rules 26 to 28 ([ai/RULES.md](ai/RULES.md)): tooling is verified on the day and listed in SPEC `## Tooling` (26); the gate cache by tree hash
+  (`reports/gate/<tree>/<command>.json`, a hit is evidence, `--force` reruns) (27); gate flow: inner
+  loop per rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs
+  redirected to a file with the exit code pasted (28).
 - Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
   BACKLOG rows, deferred clauses, library notes) and commits it with the feature; the integrator merges the files (F-066).
-- Waits: the orchestrator waits on a background Script in one blocking call; there is no `WaitForScript` poll loop, and a
-  wait that returns early is re-issued only after its interrupter is named in the log (F-056).
+- Waits (owner item 6, F-056): the orchestrator starts the mission run as a background Script (`startInBackground`) and
+  ends its turn with one line; the platform delivers the script's output as a message when the run returns and the
+  orchestrator acts then. Zero turns while a worker runs; there is no `WaitForScript` call at all.
 - Model check: after any 402 or resume, the first action of every session (orchestrator, worker, validator, subagent) is to
   read `model` in its own `~/.factory/sessions/<project>/<session-id>.settings.json` and compare it with the mission's
   `model-settings.json`; on a mismatch it stops with one line and does nothing else, and the handoff pastes `model = <value>`.
@@ -197,9 +198,10 @@ When a decision comes with a recommendation and changes neither scope, nor usage
 models per role, the orchestrator takes the recommendation, records it as a SPEC §9 row with the
 alternatives and reports it at the next boundary (rule 24, D-026).
 
-The orchestrator never polls (rule 25, D-027): it waits in one blocking call sized to the feature's remaining
-cap, and a cancelled worker call or a run that does not return is re-dispatched or failed in the same turn, with
-a SPEC §9 row for the cause. While the mission is paused it does nothing until the owner resumes it.
+The orchestrator never polls (rule 25, D-027, F-056): it starts the run in a background Script, ends its turn and acts
+when the output is delivered; it makes no `WaitForScript` call. A cancelled worker call or a run that does not return is
+re-dispatched or failed in the same turn, with a SPEC §9 row for the cause. While the mission is paused it does nothing
+until the owner resumes it.
 
 ## Environment and secrets
 
