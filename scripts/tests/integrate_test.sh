@@ -201,6 +201,28 @@ check "miss: reason shows the diff stat" grep -q 'moved.txt' "$tmp/miss.out"
 check "miss: the gate command ran once" [ "$(runs)" = "$((runs_before + 1))" ]
 check "miss: report says the gate ran" grep -q 'real run' reports/readiness/2026-10-25-m9.md
 
+echo "== inner hit, outer miss: only the lint gate was proven =="
+mkrepo inner
+printf 'GATE := sh scripts/gate.sh\n\ncheck:\n\t@$(GATE) check -- sh -c '"'"'make --no-print-directory lint; echo run >> "$$COUNTER"; echo "test result: ok. 2 passed; 0 failed"'"'"'\n\nlint:\n\t@$(GATE) lint -- sh -c '"'"'echo "lint ran"; echo "test result: ok. 1 passed; 0 failed"'"'"'\n\nusage:\n\t@mkdir -p reports/usage && echo "usage table for $(M)" > reports/usage/$(M).md\n\ndecisions-index:\n\t@sh scripts/gen-decisions-index.sh > docs/decisions/README.md\n' > Makefile
+git add -A
+git commit -q -m "chore: check runs an inner lint gate"
+mkbranch wt/m9 m9-feat
+make -s lint > /dev/null 2>&1
+git add -A reports/gate
+git commit -q -m "chore: lint record only"
+git checkout -q main
+runs_before=$(runs)
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/inner.out" 2>&1
+code=$?
+check "inner: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/inner.out"
+check "inner: the inner lint gate was served from cache" grep -q '^cached, proven at ' "$tmp/inner.out"
+check "inner: the check gate itself ran" [ "$(runs)" = "$((runs_before + 1))" ]
+check "inner: summary says gate MISS" grep -q 'gate: MISS' "$tmp/inner.out"
+check "inner: summary does not say gate HIT" sh -c "! grep -q 'gate: HIT' $tmp/inner.out"
+check "inner: the miss carries a reason" grep -q 'reason: ' "$tmp/inner.out"
+check "inner: report says the gate ran" grep -q 'real run' reports/readiness/2026-10-25-m9.md
+
 echo "== red: the final gate fails =="
 mkrepo red
 mkbranch wt/m9 m9-feat red
