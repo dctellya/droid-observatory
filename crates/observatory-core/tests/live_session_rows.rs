@@ -273,3 +273,26 @@ fn a_runner_tag_never_becomes_a_name() {
         Some("worker-1")
     );
 }
+
+#[test]
+fn a_child_joining_the_tree_does_not_restore_a_refused_name() {
+    let dir = TempDir::new().unwrap();
+    let store_dir = TempDir::new().unwrap();
+    let (mut live, store_path, path) = renamed_worker(&dir, &store_dir, "m3-feature-x");
+    let mut file = session_start("worker-1", None);
+    file.extend(runner_message("m3-feature-y"));
+    std::fs::write(&path, file).unwrap();
+    collect_changes(&mut live, |_, refused| !refused.is_empty());
+
+    let child = session_path(dir.path(), "child-1");
+    append(
+        &child,
+        &session_start("child-1", Some(("worker-1", "tool-1"))),
+    );
+    step_until(&mut live, &store_path, "child-1", |name| name.is_some());
+
+    assert_eq!(
+        stored_name(&store_path, "worker-1").as_deref(),
+        Some("m3-feature-x")
+    );
+}
