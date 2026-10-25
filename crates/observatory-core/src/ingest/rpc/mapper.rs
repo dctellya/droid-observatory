@@ -148,7 +148,7 @@ impl RpcMapper {
 
     /// The events of the end of the spool: call it once, when the process has exited.
     pub fn finish(&mut self) -> Vec<Event> {
-        let mut events = self.from_session_file(None);
+        let mut events = self.map_session_file(None);
         events.extend(self.mapper.as_mut().map(Mapper::finish).unwrap_or_default());
         events
     }
@@ -166,7 +166,7 @@ impl RpcMapper {
         self.mapper.get_or_insert_with(|| {
             Mapper::with_template(SessionMeta::root(launch.clone()), version, template.clone())
         });
-        let mut events = own.map_or_else(Vec::new, |own| self.from_session_file(Some(own)));
+        let mut events = own.map_or_else(Vec::new, |own| self.map_session_file(Some(own)));
         let mapper = self.mapper.as_mut().expect("the mapper was just created");
         let line = RawRecord {
             ptr: record.ptr.clone(),
@@ -179,14 +179,11 @@ impl RpcMapper {
     }
 
     /// The events of the session file's records written up to `until`, or all that are left.
-    fn from_session_file(&mut self, until: Option<Timestamp>) -> Vec<Event> {
+    fn map_session_file(&mut self, until: Option<Timestamp>) -> Vec<Event> {
         let (Some(files), Some(mapper)) = (self.files.as_mut(), self.mapper.as_mut()) else {
             return Vec::new();
         };
         let session = mapper.session().id.clone();
-        if session == self.launch {
-            return Vec::new();
-        }
         let records = match until {
             Some(until) => files.due(&session, until),
             None => files.rest(&session),
