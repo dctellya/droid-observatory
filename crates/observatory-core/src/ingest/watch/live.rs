@@ -2,10 +2,11 @@
 //! The Tauri thread calls `step` in a loop and emits what it returns, so the part that decides
 //! when events leave and what is stored is tested here.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use super::Attach;
+use super::names::{NameChange, RenameRefused, SessionNames, SessionRename};
 use crate::config::Config;
 use crate::ingest::{AttachStatus, EventBatch, EventBatcher, IngestError, SessionRow};
 use crate::model::{Event, MissionId, SessionId};
@@ -20,6 +21,10 @@ pub struct LiveStep {
     /// Sessions seen for the first time, and sessions whose name changed (a tag written after
     /// the file appeared).
     pub discovered: Vec<SessionRow>,
+    /// Names that changed in this step: the one allowed change of a session.
+    pub renamed: Vec<SessionRename>,
+    /// Name changes this step refused: a second change, or a runner tag.
+    pub refused: Vec<RenameRefused>,
     /// Raised by attach in this step; each is raised once.
     pub warnings: Vec<IngestError>,
     /// The store could not take something; the events still go to the UI.
@@ -38,7 +43,7 @@ pub struct LiveIngest {
     /// as often as batches leave.
     hot_poll: Duration,
     hot_until: Instant,
-    announced: HashMap<SessionId, String>,
+    names: SessionNames,
     warnings: Vec<String>,
     unwatched: usize,
     last_status: Option<AttachStatus>,
@@ -57,7 +62,7 @@ impl LiveIngest {
             poll: Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1)),
             hot_poll: Duration::from_millis(cfg.ui.event_batch_ms.max(1)),
             hot_until: Instant::now(),
-            announced: HashMap::new(),
+            names: SessionNames::new(&cfg.ingest.runner_tags),
             warnings: Vec::new(),
             unwatched: 0,
             last_status: None,
@@ -126,7 +131,7 @@ impl LiveIngest {
         let names_due = self.names_checked.elapsed() >= self.poll;
         if !batch.trees.is_empty() || names_due {
             self.names_checked = Instant::now();
-            step.discovered = self.announce_changes(&mut step.errors);
+            self.announce_changes(&mut step);
         }
         step.batches = self.batcher.flush_due(Instant::now());
         let status = self.status();
@@ -168,19 +173,22 @@ impl LiveIngest {
             .collect()
     }
 
-    fn announce_changes(&mut self, errors: &mut Vec<StoreError>) -> Vec<SessionRow> {
-        let mut changed = Vec::new();
+    fn announce_changes(&mut self, step: &mut LiveStep) {
         for row in self.rows() {
-            if self.announced.get(&row.session_id) != Some(&row.name) {
-                if let Err(err) = self.store.set_session_name(&row.session_id, &row.name) {
-                    errors.push(err);
+            match self.names.observe(&row.session_id, &row.name) {
+                NameChange::Unchanged => continue,
+                NameChange::First => {}
+                NameChange::Renamed(rename) => step.renamed.push(rename),
+                NameChange::Refused(refusal) => {
+                    step.refused.push(refusal);
+                    continue;
                 }
-                self.announced
-                    .insert(row.session_id.clone(), row.name.clone());
-                changed.push(row);
             }
+            if let Err(err) = self.store.set_session_name(&row.session_id, &row.name) {
+                step.errors.push(err);
+            }
+            step.discovered.push(row);
         }
-        changed
     }
 
     fn store_and_queue(&mut self, events: Vec<Event>, step: &mut LiveStep) {

@@ -17,6 +17,8 @@ use tempfile::TempDir;
 
 const POLL_MS: u64 = 50;
 const LIMIT: Duration = Duration::from_secs(10);
+/// Long enough for several name polls at `POLL_MS`.
+const SETTLE: Duration = Duration::from_millis(500);
 
 fn live_config(dir: &Path) -> Config {
     let mut cfg = Config::default();
@@ -156,6 +158,18 @@ fn collect_changes(
     (renamed, refused)
 }
 
+/// Steps for a while after the change under test and returns what was refused.
+fn settle(live: &mut LiveIngest) -> (Vec<SessionRename>, Vec<RenameRefused>) {
+    let (mut renamed, mut refused) = (Vec::new(), Vec::new());
+    let started = Instant::now();
+    while started.elapsed() < SETTLE {
+        let step = live.step();
+        renamed.extend(step.renamed);
+        refused.extend(step.refused);
+    }
+    (renamed, refused)
+}
+
 /// A worker session named by its id, then renamed to `feature`; returns the live ingest, the
 /// store path and the file.
 fn renamed_worker(
@@ -192,10 +206,7 @@ fn the_rename_is_reported_with_the_old_and_new_name_and_a_time() {
         Store::open(&store_dir.path().join("rows.sqlite")).unwrap(),
     )
     .unwrap();
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_millis(300) {
-        live.step();
-    }
+    settle(&mut live);
     append(&path, &runner_message("m3-feature-x"));
 
     let (renamed, refused) = collect_changes(&mut live, |renamed, _| !renamed.is_empty());
@@ -222,7 +233,7 @@ fn a_second_name_change_is_refused_logged_once_and_not_stored() {
     file.extend(runner_message("m3-feature-y"));
     std::fs::write(&path, file).unwrap();
     let (renamed, refused) = collect_changes(&mut live, |_, refused| !refused.is_empty());
-    let later = collect_changes(&mut live, |_, _| false);
+    let later = settle(&mut live);
 
     assert!(renamed.is_empty(), "{renamed:?}");
     assert_eq!(refused.len(), 1, "{refused:?}");
