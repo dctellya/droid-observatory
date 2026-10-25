@@ -110,3 +110,32 @@ fn replay_of_a_hosted_spool_writes_pointers_that_inspect_reads_back() {
             .starts_with(r#"{"jsonrpc":"2.0""#)
     );
 }
+
+#[test]
+fn replay_of_a_hosted_spool_reads_plan_revised_from_the_session_file() {
+    let home = tempfile::tempdir().unwrap();
+    let spool = spool_in(home.path());
+    let folder = home.path().join(".factory/sessions/-private-tmp-scratch");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("s-1.jsonl"),
+        concat!(
+            r#"{"type":"session_start","id":"s-1"}"#,
+            "\n",
+            r#"{"type":"todo_state","id":"t1","timestamp":"2026-10-24T05:39:04.100Z","todos":{"todos":[{"id":"1","status":"pending","content":"write the plan","priority":"high"}]}}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    let output = replay(home.path(), &[&spool]);
+
+    assert!(output.status.success(), "{:?}", output.status);
+    let text = String::from_utf8(output.stdout).unwrap();
+    let plans: Vec<&str> = text
+        .lines()
+        .filter(|line| line.contains("plan.revised"))
+        .collect();
+    assert_eq!(plans.len(), 1, "{text}");
+    assert_eq!(text.lines().last(), Some("unknown events: 1"));
+}
