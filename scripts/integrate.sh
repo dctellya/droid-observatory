@@ -95,7 +95,10 @@ if [ "$gcode" -ne 0 ]; then
   echo "integrate: aborted before usage and staging; the merges stay. Fix with a new commit and run the target again."
   exit 1
 fi
-if grep -q '^cached, proven at ' "$tmp/gate.out"; then
+# Only the check gate's own first line decides: the inner lint and test gates print "cached, proven at" too.
+first=$(grep -m 1 -E '^(cached, proven at |gate check: (miss|forced) )' "$tmp/gate.out")
+case "$first" in "cached, proven at "*) check_hit=1 ;; *) check_hit=0 ;; esac
+if [ "$check_hit" -eq 1 ]; then
   gstate=HIT
   proven=$(jq -r '"proven at \(.finished_at) by \(.session)"' "$rec")
   validated=
@@ -110,7 +113,7 @@ else
   for b in $branches; do
     reason="$reason$(git diff --stat "$b" HEAD -- . ':(exclude)build-log' ':(exclude)reports/gate')"
   done
-  [ -n "$reason" ] || reason="the branch carried no gate record for this tree"
+  [ -n "$reason" ] || reason="no check record for this tree on the branches (inner gates may have hit)"
   gnote="no record for the merged tree, the gate ran for real; reason: git diff --stat <branch> HEAD:
 $reason"
   greport="real run, no record for the merged tree"
