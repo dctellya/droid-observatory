@@ -401,6 +401,18 @@ class UsageReportFile(unittest.TestCase):
             run(["--cross-check"], out=out)
             self.assertIn("cross-check: identical", read(out))
 
+    def test_a_line_logged_out_of_order_at_the_window_end_is_still_counted(self):
+        # The real log is not time-ordered (lines up to 48 s backwards): a line past --to is skipped, not a stop.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            run(["--cross-check", "--logs-dir", os.path.join(FIX, "logs-out-of-order")], out=out)
+            text = read(out)
+            _, rows = table(text, "Tokens per role")
+            o = next(r for r in rows if r["Role"] == "orchestrator")
+            self.assertEqual((o["Turns"], o["Input"]), ("2", "3000"))
+            self.assertEqual(o["Last ts"], "2026-10-25T10:59:55.000Z")
+            self.assertIn("cross-check: identical", text)
+
     def test_help_states_when_a_rerun_is_byte_for_byte_reproducible(self):
         proc = subprocess.run([sys.executable, SCRIPT, "--help"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0)
