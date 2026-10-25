@@ -2,6 +2,7 @@
 //! a pointer, never text, so what comes back is what `insert_events` was given, except the
 //! payload of `handed_to_cd` (M4 keeps it in `prs` and `attestations`).
 
+use rusqlite::types::ValueRef;
 use rusqlite::{Row, params};
 use serde::de::DeserializeOwned;
 
@@ -138,7 +139,12 @@ fn event_of(row: &Row<'_>) -> Result<Event, StoreError> {
         id: id.clone(),
         message,
     };
-    let lane = LaneId(row.get(5)?);
+    // A store written before 0002 and read without the migration (read-only open) still holds
+    // the position; it is shown as the unknown id it is.
+    let lane = LaneId(match row.get_ref(5)? {
+        ValueRef::Integer(position) => position.to_string(),
+        _ => row.get::<_, String>(5)?,
+    });
     let overlay = row
         .get::<_, Option<String>>(6)?
         .map(|text| Overlay::parse(&text).ok_or_else(|| bad(format!("overlay {text:?}"))))

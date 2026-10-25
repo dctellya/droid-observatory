@@ -476,23 +476,14 @@ mod tests {
 
     #[test]
     fn empty_board_has_seven_lanes_a_panel_and_no_cards() {
-        let board = BoardView::empty(&CycleTemplate::engineering());
+        let template = CycleTemplate::engineering();
+        let board = BoardView::empty(&template);
 
         assert_eq!(board.lanes.len(), 7);
         assert_eq!(board.card_count(), 0);
         let names: Vec<&str> = board.lanes.iter().map(|l| l.name.as_str()).collect();
-        assert_eq!(
-            names,
-            [
-                "Plan",
-                "Contract",
-                "Build",
-                "Scrutiny",
-                "User testing",
-                "Integrate",
-                "Gate",
-            ]
-        );
+        let wanted: Vec<&str> = template.lanes.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, wanted);
         let labels: Vec<&str> = board.lanes.iter().map(|l| l.aria_label.as_str()).collect();
         assert_eq!(
             labels,

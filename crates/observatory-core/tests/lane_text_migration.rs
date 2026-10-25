@@ -159,3 +159,20 @@ fn the_events_table_takes_any_lane_id_and_refuses_the_legacy_overlay() {
     );
     assert!(cause.is_ok(), "rework_windows.cause holds a lane id");
 }
+
+#[test]
+fn a_store_read_without_the_migration_shows_the_old_position_as_an_unknown_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("observatory.sqlite");
+    store_before_the_feature(&db);
+
+    let store = Store::open_existing(&db).unwrap();
+    let event = store
+        .event(&observatory_core::model::EventId("s:3:0".into()))
+        .unwrap();
+    assert_eq!(event.lane, LaneId::from("3"));
+    assert_eq!(
+        observatory_core::model::CycleTemplate::engineering().lane_text(&event.lane),
+        "3"
+    );
+}
