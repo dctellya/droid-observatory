@@ -40,10 +40,70 @@ pub fn user_tag<'a>(tags: &'a [SidecarTag], runner_tags: &[String]) -> Option<&'
         .map(|tag| tag.name.as_str())
 }
 
-/// What the UI calls a session (FR-L1): its first user tag, else its id. The watcher, the store
-/// and the in-memory replay all name sessions through this one rule.
-pub fn display_name(tags: &[SidecarTag], id: &SessionId, runner_tags: &[String]) -> String {
-    user_tag(tags, runner_tags).map_or_else(|| id.0.clone(), str::to_owned)
+/// What the UI calls a session (FR-L1, F-038): its feature id, else its first user tag, else its
+/// id. The watcher, the store and the in-memory replay all name sessions through this one rule.
+pub fn display_name(
+    feature_id: Option<&str>,
+    tags: &[SidecarTag],
+    id: &SessionId,
+    runner_tags: &[String],
+) -> String {
+    feature_id
+        .or_else(|| user_tag(tags, runner_tags))
+        .map_or_else(|| id.0.clone(), str::to_owned)
+}
+
+/// The runner's sentence in the first user message of a worker session (Droid 0.247, D-036).
+const ASSIGNMENT: &str = "assigned to execute feature \"";
+
+/// The feature id a runner-started session was assigned (D-036): the text parts of the user
+/// messages before the first assistant message. Reads `reader` line by line and stops at the
+/// first assistant message, so a transcript that quotes the sentence later is not renamed.
+pub fn feature_id_in(mut reader: impl BufRead) -> Option<String> {
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line).ok()? == 0 {
+            return None;
+        }
+        let Ok(record) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        match record["message"]["role"].as_str() {
+            Some("assistant") => return None,
+            Some("user") => {}
+            _ => continue,
+        }
+        let content = &record["message"]["content"];
+        let parts: Vec<&str> = match content {
+            Value::String(text) => vec![text.as_str()],
+            Value::Array(parts) => parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect(),
+            _ => Vec::new(),
+        };
+        if let Some(id) = parts.into_iter().find_map(assigned_feature) {
+            return Some(id);
+        }
+    }
+}
+
+/// `<id>` of `assigned to execute feature "<id>"`, when it is a plausible identifier.
+fn assigned_feature(text: &str) -> Option<String> {
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-');
+    text.match_indices(ASSIGNMENT).find_map(|(at, _)| {
+        let rest = &text[at + ASSIGNMENT.len()..];
+        let id = &rest[..rest.find('"')?];
+        (!id.is_empty() && id.chars().all(plain)).then(|| id.to_owned())
+    })
+}
+
+/// `feature_id_in` over the first `head_bytes` of the file at `path`; `None` when the file
+/// cannot be read.
+pub fn feature_id_of(path: &Path, head_bytes: usize) -> Option<String> {
+    let file = File::open(path).ok()?;
+    feature_id_in(BufReader::new(file.take(head_bytes as u64)))
 }
 
 /// One session of a mission, with what its sidecar says.
@@ -60,6 +120,9 @@ pub struct Session {
     pub sidecar: Option<Sidecar>,
     /// The first tag a user wrote, by the `runner_tags` the tree was assembled with.
     pub user_tag: Option<String>,
+    /// The feature the runner assigned the session, read from its first user message (D-036).
+    pub feature_id: Option<String>,
+    name: String,
 }
 
 impl Session {
@@ -83,9 +146,9 @@ impl Session {
             .unwrap_or_default()
     }
 
-    /// What the UI shows as the session name: its user tag, else its id.
+    /// What the UI shows as the session name: see [`display_name`].
     pub fn display_name(&self) -> String {
-        self.user_tag.clone().unwrap_or_else(|| self.id.0.clone())
+        self.name.clone()
     }
 
     /// Name of the first tag, runner-generated or not.
@@ -209,6 +272,8 @@ impl SessionTree {
                 .and_then(|sidecar| sidecar.tags.as_deref())
                 .unwrap_or_default();
             let user_tag = user_tag(tags, runner_tags).map(str::to_owned);
+            let feature_id = files.feature_id(&entry.path)?;
+            let name = display_name(feature_id.as_deref(), tags, &entry.id, runner_tags);
             sessions.push(Session {
                 id: entry.id.clone(),
                 path: entry.path.clone(),
@@ -218,6 +283,8 @@ impl SessionTree {
                 contract: is_contract(version, entry, &attached[..], &mut transcripts)?,
                 sidecar,
                 user_tag,
+                feature_id,
+                name,
             });
         }
         Ok(Self {
@@ -359,6 +426,7 @@ pub(super) trait Files {
     fn head(&self, path: &Path) -> Result<Option<Head>, IngestError>;
     fn sidecar(&self, path: &Path) -> Result<Option<Sidecar>, IngestError>;
     fn transcript(&self, path: &Path) -> Result<Transcript, IngestError>;
+    fn feature_id(&self, path: &Path) -> Result<Option<String>, IngestError>;
 }
 
 struct DiskFiles {
@@ -382,6 +450,13 @@ impl Files for DiskFiles {
     fn transcript(&self, path: &Path) -> Result<Transcript, IngestError> {
         let file = File::open(path).map_err(|source| io_error(path, source))?;
         scan(BufReader::new(file)).map_err(|source| io_error(path, source))
+    }
+
+    fn feature_id(&self, path: &Path) -> Result<Option<String>, IngestError> {
+        let file = File::open(path).map_err(|source| io_error(path, source))?;
+        Ok(feature_id_in(BufReader::new(
+            file.take(self.head_bytes as u64),
+        )))
     }
 }
 

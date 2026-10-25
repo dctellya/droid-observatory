@@ -14,7 +14,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::scan::{Found, is_session_file, scan, stat};
 use crate::config::IngestConfig;
-use crate::ingest::{IngestError, display_name, read_sidecar};
+use crate::ingest::{IngestError, display_name, feature_id_of, read_sidecar};
 use crate::model::SessionId;
 
 const KB: u64 = 1024;
@@ -27,20 +27,26 @@ pub struct DiscoveredSession {
     pub session_id: SessionId,
     /// `callingSessionId` of the first line: set for a child session.
     pub parent: Option<SessionId>,
-    /// The first sidecar tag a user wrote, else the session id (FR-L1).
+    /// The feature id, else the first sidecar tag a user wrote, else the session id (FR-L1, D-036).
     pub name: String,
     pub modified: SystemTime,
     pub size: u64,
 }
 
 /// What the UI calls a session: see [`display_name`]. Reads the sidecar beside `jsonl_path`.
-pub fn session_name(jsonl_path: &Path, id: &SessionId, runner_tags: &[String]) -> String {
+pub fn session_name(
+    jsonl_path: &Path,
+    id: &SessionId,
+    runner_tags: &[String],
+    head_bytes: usize,
+) -> String {
     let sidecar = read_sidecar(jsonl_path).ok().flatten();
     let tags = sidecar
         .as_ref()
         .and_then(|sidecar| sidecar.tags.as_deref())
         .unwrap_or_default();
-    display_name(tags, id, runner_tags)
+    let feature_id = feature_id_of(jsonl_path, head_bytes);
+    display_name(feature_id.as_deref(), tags, id, runner_tags)
 }
 
 pub struct SessionWatcher {
@@ -198,7 +204,7 @@ impl SessionWatcher {
                 .file_stem()
                 .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned())
         }));
-        let name = session_name(&file.path, &session_id, &self.runner_tags);
+        let name = session_name(&file.path, &session_id, &self.runner_tags, self.head_bytes);
         Some(DiscoveredSession {
             path: file.path.clone(),
             parent: text("callingSessionId").map(SessionId),

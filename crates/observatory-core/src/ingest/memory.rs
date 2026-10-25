@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::capture::CaptureHeader;
-use super::sessions::{Files, Head, Transcript, scan};
+use super::sessions::{Files, Head, Transcript, feature_id_in, scan};
 use super::sidecar::{Sidecar, sidecar_path};
 use super::{IngestError, RawRecord, SessionTree, capture_path};
 use crate::config::IngestConfig;
@@ -26,7 +26,7 @@ pub struct SessionInfo {
     pub parent: Option<SessionId>,
     pub role: Role,
     pub model: Option<ModelId>,
-    /// The session name: its first user tag, else its id.
+    /// The session name: its feature id, else its first user tag, else its id.
     pub tag: Option<String>,
     /// Sidecar `reasoningEffort`.
     pub effort: Option<String>,
@@ -92,6 +92,10 @@ impl Files for MemoryFiles<'_> {
             path: path.to_owned(),
             source,
         })
+    }
+
+    fn feature_id(&self, path: &Path) -> Result<Option<String>, IngestError> {
+        Ok(feature_id_in(self.bytes(path)))
     }
 }
 

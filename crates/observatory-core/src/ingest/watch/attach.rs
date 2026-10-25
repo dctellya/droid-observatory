@@ -300,6 +300,7 @@ impl Attach {
                     &tail.found.path,
                     &tail.found.session_id,
                     &self.cfg.runner_tags,
+                    self.cfg.head_bytes(),
                 ),
             })
             .collect()

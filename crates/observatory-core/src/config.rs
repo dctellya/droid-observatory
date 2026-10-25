@@ -213,6 +213,11 @@ pub struct IngestConfig {
 }
 
 impl IngestConfig {
+    /// How much of a file head one read takes: `tail_chunk_kb` in bytes.
+    pub fn head_bytes(&self) -> usize {
+        usize::try_from(self.tail_chunk_kb.saturating_mul(1024)).unwrap_or(usize::MAX)
+    }
+
     /// `factory_logs_dir` with a leading `~/` replaced by `$HOME`.
     pub fn resolved_logs_dir(&self) -> PathBuf {
         expand_home(&self.factory_logs_dir, std::env::var_os("HOME").as_deref())
