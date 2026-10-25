@@ -1,13 +1,20 @@
-# The window suite (owner item 14, VAL-E2E-006): `make e2e` on a macOS runner. Dispatch-only, so it
-# stays outside the 3-minute mission-branch budget (a debug Tauri build and a release trunk build
-# alone are longer than that); the milestone integrator starts it once per milestone and records
-# the run in reports/ci. The embedded WebDriver server is compiled in by the `e2e` cargo feature
+# The window suite (owner item 14, VAL-E2E-006): `make e2e` on a macOS runner. It runs on a pushed tag
+# `e2e-<milestone>` (the integrator tags the integration commit, once per milestone) and by dispatch, so it
+# stays outside the 3-minute mission-branch budget (a debug Tauri build and a release trunk build alone are
+# longer than that). A tag push reads this file from the tagged commit; `workflow_dispatch` alone is resolved
+# against the default branch and does not exist there until the final pull request lands. The embedded WebDriver server is compiled in by the `e2e` cargo feature
 # of this job's build only; no other workflow builds it.
 
 name: e2e
 
 on:
+  push:
+    tags: ["e2e-*"]
   workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

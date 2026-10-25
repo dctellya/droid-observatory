@@ -45,11 +45,21 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 - Run state lives in `$TMPDIR/observatory-e2e` (own config, store, spool, fake Droid); nothing under
   `~/.droid-observatory` is touched.
 
+## CI
+
+`.github/workflows/e2e.yml` runs `make e2e` on `macos-latest`, outside the 3-minute `mission-branch.yml` budget. It
+triggers on a pushed tag `e2e-*` and on `workflow_dispatch`. At a milestone integration the integrator pushes one
+tag at the integration commit (`git tag e2e-m3 <sha> && git push origin e2e-m3`; tags are never moved or deleted)
+and records the run id, conclusion, wall time and the `e2e-reports` artifact name. The tag trigger reads the
+workflow from the tagged commit, so it works before the file exists on `main`; `workflow_dispatch` is resolved
+against the default branch and answers 404 until the final pull request lands. `concurrency` is keyed on the ref
+with `cancel-in-progress: false`, so a second tag never cancels a run in flight.
+
 ## Locked or covered display
 
 DOM reads, `execute/sync` and User Timing do not need a visible window, so the assertions hold with
 the display locked. Screenshots may come back blank or the request may fail; `afterTest` logs the
 failure and carries on. Screenshots for a human come from an attended run or the macOS CI job
-(`.github/workflows/e2e.yml`, dispatch only), never from a validator retrying on a locked display.
+(`.github/workflows/e2e.yml`, see CI below), never from a validator retrying on a locked display.
 The locked-display result of the one run made on 2026-10-25 is recorded in
 `reports/staging/m3-e2e-harness.md`.
