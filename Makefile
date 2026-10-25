@@ -47,6 +47,7 @@ check-scripts: check-gate-cache check-integrate ## Shell tests of the repository
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
+	@sh scripts/tests/agents_md_test.sh
 	@python3 scripts/tests/usage_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
