@@ -226,7 +226,8 @@ pub async fn launch<R: Runtime>(
         group: spawned.group,
         inner: Mutex::new(Inner {
             channel,
-            mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone()),
+            mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone())
+                .with_session_files(&cfg.ingest),
         }),
         status: Mutex::new(HostedStatus::starting(&launch_id)),
     });

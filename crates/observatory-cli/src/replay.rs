@@ -147,7 +147,8 @@ fn replay_spool(
         .and_then(|stem| stem.to_str())
         .ok_or("the spool has no file name")?;
     let mut source = RpcSource::open(file, cfg)?;
-    let mut mapper = RpcMapper::with_template(launch_id, MappingVersion::LATEST, template.clone());
+    let mut mapper = RpcMapper::with_template(launch_id, MappingVersion::LATEST, template.clone())
+        .with_session_files(cfg);
     let mut unknown = 0_u64;
     let mut all = Vec::new();
     loop {
