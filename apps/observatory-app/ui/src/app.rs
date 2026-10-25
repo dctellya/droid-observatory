@@ -4,13 +4,14 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
 use observatory_core::model::{CycleTemplate, SessionId};
-use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines};
+use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
 use crate::backend;
 use crate::board::Board;
 use crate::capture::Capture;
+use crate::controls::StallCtx;
 use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
 use crate::perf;
@@ -89,6 +90,8 @@ pub fn App() -> impl IntoView {
     let attach_status = RwSignal::new(AttachStatus::default());
     let hosted = HostedCtx::new();
     provide_context(hosted);
+    let stalls = StallCtx(RwSignal::new(std::collections::HashMap::new()));
+    provide_context(stalls);
     let launching = RwSignal::new(false);
 
     let open_shell = Callback::new(move |(command, args): (&'static str, Value)| {
@@ -154,6 +157,11 @@ pub fn App() -> impl IntoView {
         });
         shell::listen::<HostedStatus>("hosted_status", move |now| {
             hosted.status.set(Some(now));
+        });
+        shell::listen::<StallBatch>("stall_flag", move |batch| {
+            stalls.0.update(|all| {
+                all.insert(batch.mission_id, batch.flags);
+            });
         });
         shell::listen::<OutputLines>("live_output", move |lines| {
             hosted.output.update(|output| output.push(lines));
@@ -250,7 +258,7 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <main class="app" aria-label="observatory">
+        <main class="observatory" aria-label="observatory">
             {move || match current.get() {
                 None if launching.get() => {
                     view! { <LaunchScreen on_close=Callback::new(move |()| launching.set(false)) /> }

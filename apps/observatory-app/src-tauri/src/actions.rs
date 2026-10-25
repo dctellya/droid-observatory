@@ -8,7 +8,7 @@ use observatory_core::control::{self, HumanAction};
 use observatory_core::ingest::EventBatch;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::model::{Event, MissionId, Timestamp};
-use serde::{Deserialize, Serialize};
+use observatory_core::view::ActionRecorded;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::Shell;
@@ -18,13 +18,6 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// What `human_action` answers: the `human_actions` row and its event.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActionRecorded {
-    pub action_id: u64,
-    pub event_id: String,
 }
 
 /// The host control that carries `action` to the process; `None` for a control that reaches no

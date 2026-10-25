@@ -1,12 +1,14 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::config::{Config, UiConfig};
+use observatory_core::model::MissionId;
 use observatory_core::view::{
-    AUTONOMY_LEVELS, ControlSent, HostedState, HostedStatus, LaunchError, LaunchField, LaunchForm,
-    Launched, LiveOutput,
+    AUTONOMY_LEVELS, ControlBar, ControlSent, HostedState, HostedStatus, LaunchError, LaunchField,
+    LaunchForm, Launched, LiveOutput,
 };
 use serde_json::json;
 
+use crate::controls::{ControlCtx, Controls};
 use crate::shell;
 
 /// What the launch screen, the agent panel and the root share about the hosted run: the run the
@@ -190,21 +192,6 @@ fn field_view(
     }
 }
 
-fn send(hosted: HostedCtx, launch_id: String, control: serde_json::Value) {
-    spawn_local(async move {
-        let args = json!({ "launch_id": launch_id, "control": control });
-        match shell::invoke::<_, ControlSent>("host_control", &args).await {
-            Ok(sent) => hosted.sent.update(|all| all.push(sent)),
-            Err(message) => hosted.sent.update(|all| {
-                all.push(ControlSent {
-                    request_id: "-".to_owned(),
-                    method: format!("refused: {message}"),
-                });
-            }),
-        }
-    });
-}
-
 fn state_text(state: &HostedState) -> String {
     match state {
         HostedState::Starting => "starting".to_owned(),
@@ -219,15 +206,25 @@ fn state_text(state: &HostedState) -> String {
 /// The hosted run: what was spawned, pause/resume/message, the questions that wait, what was
 /// written and acknowledged, and its output.
 fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
-    let launch_id = launched.launch_id.clone();
-    let message = RwSignal::new(String::new());
     let status = move || hosted.status.get();
-    let control = {
-        let launch_id = launch_id.clone();
-        move |body: serde_json::Value| send(hosted, launch_id.clone(), body)
+    let control = ControlCtx {
+        mission: MissionId(launched.session_id.clone()),
+        launch_id: Some(launched.launch_id.clone()),
+        hosted,
+        result: RwSignal::new(None),
+        paste: RwSignal::new(None),
+        stalled: Signal::derive(Vec::new),
+        enabled: Signal::derive(|| true),
     };
-    let (pause, resume) = (control.clone(), control.clone());
-    let say = control.clone();
+    let bar = Signal::derive(move || {
+        ControlBar::hosted(
+            &hosted
+                .status
+                .get()
+                .unwrap_or_else(|| HostedStatus::starting("")),
+            None,
+        )
+    });
     view! {
         <section class="hosted" aria-label="hosted-run" data-testid="hosted-run">
             <h2>"Hosted mission"</h2>
@@ -245,88 +242,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
             <p>
                 "Spool " <code aria-label="hosted-spool">{launched.spool.clone()}</code>
             </p>
-            <div class="controls">
-                <button
-                    type="button"
-                    aria-label="host-pause"
-                    on:click=move |_| pause(json!({ "kind": "pause" }))
-                >
-                    "Pause"
-                </button>
-                <button
-                    type="button"
-                    aria-label="host-resume"
-                    on:click=move |_| resume(json!({ "kind": "resume" }))
-                >
-                    "Resume"
-                </button>
-                <input
-                    type="text"
-                    aria-label="host-message-text"
-                    prop:value=move || message.get()
-                    on:input=move |ev| message.set(event_target_value(&ev))
-                />
-                <button
-                    type="button"
-                    aria-label="host-message"
-                    on:click=move |_| {
-                        let text = message.get_untracked();
-                        if !text.trim().is_empty() {
-                            say(json!({ "kind": "message", "text": text }));
-                            message.set(String::new());
-                        }
-                    }
-                >
-                    "Message"
-                </button>
-            </div>
-            <h3>"Questions"</h3>
-            <ul aria-label="host-questions" data-testid="host-questions">
-                {
-                    let launch_id = launch_id.clone();
-                    move || {
-                        status()
-                            .map(|s| s.questions)
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|question| question_view(hosted, launch_id.clone(), question))
-                            .collect_view()
-                    }
-                }
-            </ul>
-            <h3>"Permission requests"</h3>
-            <ul aria-label="host-permissions" data-testid="host-permissions">
-                {
-                    let launch_id = launch_id.clone();
-                    move || {
-                        status()
-                            .map(|s| s.permissions)
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|permission| permission_view(hosted, launch_id.clone(), permission))
-                            .collect_view()
-                    }
-                }
-            </ul>
-            <h3>"Written to the process"</h3>
-            <ul aria-label="host-sent">
-                {move || {
-                    hosted
-                        .sent
-                        .get()
-                        .into_iter()
-                        .map(|sent| {
-                            view! {
-                                <li aria-label="host-sent-row" data-testid="host-sent-row">
-                                    <code>{sent.request_id}</code>
-                                    " "
-                                    {sent.method}
-                                </li>
-                            }
-                        })
-                        .collect_view()
-                }}
-            </ul>
+            <Controls ctx=control bar=bar />
             <h3>"Acknowledged by Droid"</h3>
             <ul aria-label="host-acks" data-testid="host-acks">
                 {move || {
@@ -352,101 +268,6 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
             </ul>
             <LiveOutputView />
         </section>
-    }
-}
-
-fn question_view(
-    hosted: HostedCtx,
-    launch_id: String,
-    question: observatory_core::view::QuestionRow,
-) -> impl IntoView {
-    let answer = RwSignal::new(String::new());
-    let event_id = question.event_id.clone();
-    view! {
-        <li aria-label="host-question" data-testid="ask-user-sheet">
-            <code>{question.event_id.clone()}</code>
-            " "
-            {question.prompts.join(" / ")}
-            " "
-            <input
-                type="text"
-                aria-label="host-answer-text" data-testid="host-answer-text"
-                prop:value=move || answer.get()
-                on:input=move |ev| answer.set(event_target_value(&ev))
-            />
-            <button
-                type="button"
-                aria-label="host-answer" data-testid="host-answer"
-                on:click=move |_| {
-                    let text = answer.get_untracked();
-                    if !text.trim().is_empty() {
-                        send(
-                            hosted,
-                            launch_id.clone(),
-                            json!({ "kind": "answer", "question_id": event_id, "text": text }),
-                        );
-                        answer.set(String::new());
-                    }
-                }
-            >
-                "Answer"
-            </button>
-        </li>
-    }
-}
-
-fn permission_view(
-    hosted: HostedCtx,
-    launch_id: String,
-    permission: observatory_core::view::PermissionRow,
-) -> impl IntoView {
-    let request_id = permission.request_id.clone();
-    let (approve_id, deny_id) = (permission.request_id.clone(), permission.request_id.clone());
-    let (approve_launch, deny_launch) = (launch_id.clone(), launch_id);
-    let tools = if permission.tools.is_empty() {
-        "permission".to_owned()
-    } else {
-        permission.tools.join(", ")
-    };
-    view! {
-        <li
-            aria-label="host-permission"
-            data-testid="host-permission"
-            data-request-id=request_id
-        >
-            <code>{permission.request_id}</code>
-            " "
-            {tools}
-            " "
-            <button
-                type="button"
-                aria-label="host-approve" data-testid="host-approve"
-                disabled=!permission.can_approve
-                on:click=move |_| {
-                    send(
-                        hosted,
-                        approve_launch.clone(),
-                        json!({ "kind": "approve", "request_id": approve_id }),
-                    );
-                }
-            >
-                "Approve"
-            </button>
-            <button
-                type="button"
-                aria-label="host-deny" data-testid="host-deny"
-                disabled=!permission.can_deny
-                on:click=move |_| {
-                    send(
-                        hosted,
-                        deny_launch.clone(),
-                        json!({ "kind": "deny", "request_id": deny_id }),
-                    );
-                }
-            >
-                "Deny"
-            </button>
-        </li>
     }
 }
 

@@ -4,6 +4,7 @@ mod attach;
 mod backend;
 mod board;
 mod capture;
+mod controls;
 mod ctx;
 mod details;
 mod lanes;

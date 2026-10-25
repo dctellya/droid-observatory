@@ -8,13 +8,13 @@ use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::view::{
-    BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus, LaunchConfig,
-    Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
+    ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
+    LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
 };
 use tauri::{AppHandle, State};
 
 use crate::Shell;
-use crate::actions::{self, ActionRecorded};
+use crate::actions;
 use crate::host::{self, Hosts};
 use crate::logging;
 

@@ -4,6 +4,7 @@ use observatory_core::view::{
     BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping, session_name,
 };
 
+use crate::controls::{FeatureMarks, stall_marker};
 use crate::ctx::BoardCtx;
 
 /// The template's lanes, left to right (F-028, D-024, F-041).
@@ -222,6 +223,8 @@ fn card_view(card: &Card) -> AnyView {
     .map(|text| view! { <p class="now">{text}</p> });
     let milestone = card.milestone.clone();
     let details = card.milestone.clone();
+    let marker = stall_marker(card.features.clone());
+    let marks = view! { <FeatureMarks features=card.features.clone() /> };
     view! {
         <article class="card" aria-label=format!("card-{}", card.milestone)>
             <h3>{card.milestone.0.clone()}</h3>
@@ -235,7 +238,9 @@ fn card_view(card: &Card) -> AnyView {
             <p class="meta" aria-label="card-features">
                 {card.features.len()} " features" {(!features.is_empty()).then(|| format!(": {features}"))}
             </p>
+            {marker}
             {now}
+            {marks}
             <button
                 type="button"
                 aria-label=format!("details-{}", details)

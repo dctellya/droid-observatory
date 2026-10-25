@@ -4,16 +4,18 @@ use leptos::prelude::*;
 use observatory_core::config::MissionConfig;
 use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
-    BoardView, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber, ViewConfig,
-    WorkerGrouping, branch_of, tray_count,
+    BoardView, ControlBar, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber,
+    ViewConfig, WorkerGrouping, branch_of, tray_count,
 };
 
 use crate::agents::AgentPanel;
 use crate::attach::AttachPanel;
 use crate::capture::Capture;
+use crate::controls::{ControlCtx, Controls, StallBannerView, StallCtx, ThemeSwitch};
 use crate::ctx::BoardCtx;
 use crate::details::DetailsView;
 use crate::lanes::Lanes;
+use crate::launch::HostedCtx;
 use crate::panel::{OverlayList, Panel};
 use crate::tray::Tray;
 
@@ -64,6 +66,46 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
         }
     });
 
+    let tauri = crate::shell::is_tauri();
+    let hosted = expect_context::<HostedCtx>();
+    let mission = capture.mission_id().clone();
+    let launch_id = hosted
+        .launched
+        .get_untracked()
+        .filter(|launched| launched.session_id == mission.0)
+        .map(|launched| launched.launch_id);
+    let stalls = expect_context::<StallCtx>();
+    let stalled = Signal::derive({
+        let mission = mission.0.clone();
+        move || {
+            stalls
+                .0
+                .with(|all| all.get(&mission).cloned().unwrap_or_default())
+        }
+    });
+    let live_now = capture.live.clone();
+    let hosted_launch = launch_id.is_some();
+    let enabled = Signal::derive(move || tauri && (hosted_launch || live_now.get()));
+    let control = ControlCtx {
+        mission,
+        launch_id: launch_id.clone(),
+        hosted,
+        result: RwSignal::new(None),
+        paste: RwSignal::new(None),
+        stalled,
+        enabled,
+    };
+    provide_context(control.clone());
+    let bar = Signal::derive({
+        let events = events.clone();
+        move || match (&launch_id, hosted.status.get()) {
+            (Some(_), Some(status)) => {
+                events.with(|events| ControlBar::hosted(&status, Some(events)))
+            }
+            _ => events.with(|events| ControlBar::attached(events)),
+        }
+    });
+
     let summary = capture.summary.clone();
     let live = capture.live.clone();
     let mode_live = live.clone();
@@ -92,6 +134,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
                     <dt>"Mapping"</dt>
                     <dd aria-label="mapping-version">{summary.mapping_version.clone()}</dd>
                 </dl>
+                <ThemeSwitch />
                 <button aria-label="back-to-library" data-testid="back-to-library" on:click=move |_| on_close.run(())>
                     "Library"
                 </button>
@@ -105,6 +148,8 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
                     }
                 })}
             <AttachPanel />
+            <StallBannerView flags=stalled />
+            {move || enabled.get().then(|| view! { <Controls ctx=control.clone() bar=bar /> })}
             <FilterBar filter=filter options=options />
             <ScrubberBar scrubber=scrubber at=at live=state_live />
             <Panel board=board />
