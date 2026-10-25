@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Event, EventId, EventKind, Lane, Overlay, Role, SessionId, Timestamp};
+use crate::model::{
+    CycleTemplate, Event, EventId, EventKind, LaneId, Overlay, Role, SessionId, Timestamp,
+};
 
 /// FR-B6: the events up to and including `at`. `events` must be in time order, as the store and
 /// the mapping deliver them.
@@ -17,19 +19,17 @@ pub fn tray_count(events: &[Event]) -> u64 {
 }
 
 /// Events per phase, in lane order. Must equal the per-phase counts of the CLI replay.
-pub fn lane_counts(events: &[Event]) -> [u64; Lane::ALL.len()] {
-    let mut counts = [0; Lane::ALL.len()];
+pub fn lane_counts(events: &[Event], template: &CycleTemplate) -> Vec<u64> {
+    let mut counts = vec![0; template.lanes.len()];
     for event in events.iter().filter(|event| !event.kind.is_panel_only()) {
-        counts[lane_index(event.lane)] += 1;
+        if let Some(index) = template.index(&event.lane) {
+            counts[index] += 1;
+        }
     }
     counts
 }
 
-pub(super) fn lane_index(lane: Lane) -> usize {
-    usize::from(lane.number() - 1)
-}
-
-/// The events a person (or the commander) caused, for the overlay filter.
+/// The events a person (or the officer) caused, for the overlay filter.
 pub fn overlay_markers(events: &[Event], overlay: Overlay) -> Vec<&Event> {
     events
         .iter()
@@ -37,14 +37,14 @@ pub fn overlay_markers(events: &[Event], overlay: Overlay) -> Vec<&Event> {
         .collect()
 }
 
-/// One marker of the overlay filter: an event a person (or the commander) caused, with the
-/// phase lane it sits on.
+/// One marker of the overlay filter: an event a person (or the officer) caused, with the
+/// lane it sits on.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlayMarker {
     pub event_id: EventId,
     /// The dotted PRD name.
     pub kind: String,
-    pub lane: Lane,
+    pub lane: LaneId,
     pub role: Role,
     pub session_id: Option<SessionId>,
     pub at: Timestamp,
@@ -63,7 +63,7 @@ impl OverlayMarker {
         Self {
             event_id: event.id.clone(),
             kind: event.kind.prd_name().into_owned(),
-            lane: event.lane,
+            lane: event.lane.clone(),
             role: event.role,
             session_id: event.session_id.clone(),
             at: event.at,

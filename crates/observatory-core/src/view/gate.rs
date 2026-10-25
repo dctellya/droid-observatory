@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Event, EventKind, Role, SourcePtr};
+use crate::model::{CycleTemplate, Event, EventKind, Role, SourcePtr};
 
 /// State of the PR's checks, the header of the Gate lane.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,12 +71,10 @@ pub struct GateGroup {
 
 /// Text of the Gate lane before a PR exists (PRD §8).
 const PENDING_TEXT: &str = "gate: pending (no PR)";
-const CYCLE_CLOCK: &str = "engineering cycle time";
-const LEAD_CLOCK: &str = "lead time to production: delivery platform's clock";
 /// The placeholder of the branch pattern that stands for the mission name.
 const NAME_PLACEHOLDER: &str = "<name>";
 
-/// One of the two clocks the board names. `value` stays empty until M5 computes it (the lead
+/// One of the clocks the template names for the final lane. `value` stays empty until M5 computes it (the lead
 /// time to production is never computed here).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClockLabel {
@@ -92,7 +90,7 @@ pub struct GatePlaceholder {
     pub branch: String,
     pub gate_runs: u64,
     pub last_gate_command: Option<GateVerdict>,
-    pub clocks: [ClockLabel; 2],
+    pub clocks: Vec<ClockLabel>,
 }
 
 /// The mission branch for a mission name (`[mission].branch_pattern`).
@@ -102,20 +100,26 @@ pub fn mission_branch(pattern: &str, name: &str) -> String {
 
 impl GateGroup {
     /// The placeholder, while the gate is pending and no PR number is known.
-    pub fn placeholder(&self, branch: &str) -> Option<GatePlaceholder> {
+    pub fn placeholder(&self, branch: &str, template: &CycleTemplate) -> Option<GatePlaceholder> {
         if self.badge != GateBadge::Pending || self.pr_number.is_some() {
             return None;
         }
-        let clock = |label: &str| ClockLabel {
-            label: label.to_owned(),
-            value: None,
-        };
+        let clocks = template
+            .lane(template.final_lane())
+            .into_iter()
+            .flat_map(|lane| &lane.clocks)
+            .filter_map(|id| template.clocks.iter().find(|clock| clock.id == *id))
+            .map(|clock| ClockLabel {
+                label: clock.label.clone(),
+                value: None,
+            })
+            .collect();
         Some(GatePlaceholder {
             text: PENDING_TEXT.to_owned(),
             branch: branch.to_owned(),
             gate_runs: self.gate_runs,
             last_gate_command: self.last_gate_command,
-            clocks: [clock(CYCLE_CLOCK), clock(LEAD_CLOCK)],
+            clocks,
         })
     }
 

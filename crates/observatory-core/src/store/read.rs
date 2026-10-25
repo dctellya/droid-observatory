@@ -9,7 +9,7 @@ use super::rows::PointerColumns;
 use super::{Store, StoreError};
 use crate::mapping::MappingVersion;
 use crate::model::{
-    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, MissionId, ModelId, Overlay, Role,
+    Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, MissionId, ModelId, Overlay, Role,
     SessionId, Timestamp, TokenUsage,
 };
 use crate::view::MissionRow;
@@ -138,14 +138,10 @@ fn event_of(row: &Row<'_>) -> Result<Event, StoreError> {
         id: id.clone(),
         message,
     };
-    let lane_number: i64 = row.get(5)?;
-    let lane = u8::try_from(lane_number)
-        .ok()
-        .and_then(Lane::from_number)
-        .ok_or_else(|| bad(format!("lane {lane_number} is not a phase")))?;
+    let lane = LaneId(row.get(5)?);
     let overlay = row
         .get::<_, Option<String>>(6)?
-        .map(|text| from_wire::<Overlay>(&text).ok_or_else(|| bad(format!("overlay {text:?}"))))
+        .map(|text| Overlay::parse(&text).ok_or_else(|| bad(format!("overlay {text:?}"))))
         .transpose()?;
     let pointer = PointerColumns {
         source: row.get(14)?,

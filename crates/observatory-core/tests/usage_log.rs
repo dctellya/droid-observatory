@@ -17,17 +17,11 @@ use observatory_core::ingest::{
     JsonlSource, SessionTree, Source, mapping_version_of, read_capture,
 };
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta, TreeMapper};
-use observatory_core::model::{
-    CycleTemplate, Event, EventKind, LaneId, ModelId, Role, SessionId, SourcePtr,
-};
+use observatory_core::model::{Event, EventKind, LaneId, ModelId, Role, SessionId, SourcePtr};
 use tempfile::TempDir;
 
 fn lane(id: &str) -> LaneId {
     LaneId::from(id)
-}
-
-fn engineering() -> CycleTemplate {
-    CycleTemplate::engineering()
 }
 
 const CURRENT: &str = "droid-log-single.log";
@@ -425,7 +419,7 @@ fn replay_with_usage_log_sums_tokens_per_role_on_m0_fixture() {
     let phase: HashMap<_, _> = events
         .iter()
         .filter(|event| event.kind == EventKind::UsageReported)
-        .map(|event| (event.session_id.clone(), event.lane))
+        .map(|event| (event.session_id.clone(), event.lane.clone()))
         .collect();
     for event in events
         .iter()
@@ -433,7 +427,7 @@ fn replay_with_usage_log_sums_tokens_per_role_on_m0_fixture() {
     {
         let lane = phase
             .get(&event.session_id)
-            .copied()
+            .cloned()
             .unwrap_or(lane("plan"));
         assert_eq!(event.lane, lane, "{}", event.id);
         assert!(

@@ -1,0 +1,125 @@
+# The engineering cycle (D-024, D-032, D-035): the seven mission phases from the spec to the
+# PR's checks going green. The cycle is data, not code: this file is compiled into
+# observatory-core as the default template and is the only place besides
+# `model/cycle.rs` that names the lanes. `[cycle].template` in the config selects another
+# file with the same shape.
+#
+# Lanes are listed left to right; the board number of a lane is its position.
+# `kinds` fix the lane of an event kind whoever emits it (PRD names). A kind in no lane takes
+# the lane whose `home_for` lists the emitting role. `grouping` splits a lane's rows:
+# `sessions` into a worker or feature sub-lane each, `milestones` into one section per
+# milestone. `clocks` lists the clocks shown in the lane header.
+
+name = "engineering"
+final_event = "handed_to_cd"
+
+[[lanes]]
+id = "plan"
+name = "Plan"
+owner_role = "orchestrator"
+home_for = ["orchestrator", "human"]
+kinds = [
+  "intent.created",
+  "intent.amended",
+  "question.asked",
+  "intent.answered",
+  "plan.created",
+  "feature.defined",
+  "milestone.defined",
+  "plan.revised",
+  "escalation.raised",
+  "milestone.completed",
+  "mission.paused",
+  "mission.resumed",
+  "mission.completed",
+  "approval.requested",
+  "approval.given",
+  "question.answered",
+]
+
+[[lanes]]
+id = "contract"
+name = "Contract"
+kinds = ["spec.versioned"]
+
+[[lanes]]
+id = "build"
+name = "Build"
+owner_role = "worker"
+home_for = ["worker", "unresolved"]
+grouping = "sessions"
+
+[[lanes]]
+id = "scrutiny"
+name = "Scrutiny"
+owner_role = "scrutiny_validator"
+home_for = ["scrutiny_validator"]
+kinds = [
+  "finding.blocking",
+  "finding.non_blocking",
+  "rework.requested",
+  "rework.resolved",
+  "scrutiny.passed",
+]
+
+[[lanes]]
+id = "user_testing"
+name = "User testing"
+owner_role = "user_testing_validator"
+home_for = ["user_testing_validator"]
+kinds = ["qa.scenario.passed", "qa.scenario.failed", "qa.evidence"]
+
+[[lanes]]
+id = "integrate"
+name = "Integrate"
+owner_role = "orchestrator"
+grouping = "milestones"
+kinds = [
+  "integration.merged",
+  "integration.conflict",
+  "integration.conflict_resolved",
+  "gate_command.run",
+  "gate_command.passed",
+  "gate_command.failed",
+  "pr.opened",
+]
+
+[[lanes]]
+id = "gate"
+name = "Gate"
+owner_role = "external"
+home_for = ["external"]
+clocks = ["engineering_cycle", "lead_time_to_production"]
+kinds = [
+  "review.outcome",
+  "pr.review_requested",
+  "check.started",
+  "check.passed",
+  "check.failed",
+  "check.required_missing",
+  "ruleset.blocked",
+  "attestation.recorded",
+  "attestation.verified",
+  "handed_to_cd",
+]
+
+# Engineering cycle time runs from a feature's `feature.defined` to the final event; a feature
+# the plan never defined starts at its first `task.started` and is counted in `fallback_used`.
+[[clocks]]
+id = "engineering_cycle"
+label = "engineering cycle time"
+start = "feature.defined"
+start_fallback = "task.started"
+end = "handed_to_cd"
+
+# Named on the board, never computed here: it is the delivery platform's clock.
+[[clocks]]
+id = "lead_time_to_production"
+label = "lead time to production: delivery platform's clock"
+
+# D-024 rules 2 to 4 and D-032 as lane ids.
+[rules]
+integration_session = "integrate"
+contract_session = "contract"
+orchestrator_commit = "integrate"
+kind_follows_emitter = ["feature.defined"]

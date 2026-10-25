@@ -10,19 +10,13 @@ use observatory_core::ingest::{
     JsonlSource, SessionTree, Source, mapping_version_of, read_capture, sidecar_path,
 };
 use observatory_core::mapping::TreeMapper;
-use observatory_core::model::{
-    CycleTemplate, Event, EventId, EventKind, LaneId, SourcePtr, Timestamp,
-};
+use observatory_core::model::{Event, EventId, EventKind, LaneId, SourcePtr, Timestamp};
 use observatory_core::store::{CaptureInfo, EventScope, Store, StoreError, TimeRange};
 use rusqlite::Connection;
 use serde_json::Value;
 
 fn lane(id: &str) -> LaneId {
     LaneId::from(id)
-}
-
-fn engineering() -> CycleTemplate {
-    CycleTemplate::engineering()
 }
 
 const SLUG: &str = "2026-10-22-observatory-v1-m0";
@@ -514,7 +508,11 @@ fn opening_a_store_twice_applies_the_schema_once() {
     drop(Store::open(&db).expect("parent directories are created"));
     drop(Store::open(&db).expect("an existing store opens"));
 
-    assert_eq!(query_count(&db, "SELECT count(*) FROM schema_version"), 1);
+    assert_eq!(
+        query_count(&db, "SELECT count(*) FROM schema_version"),
+        2,
+        "0001 and 0002, each applied once"
+    );
     assert_eq!(query_count(&db, "SELECT count(*) FROM mapping_versions"), 1);
 }
 
@@ -572,7 +570,14 @@ fn the_overlay_column_marks_the_human_events_and_lane_counts_are_the_phases() {
     );
     assert_eq!(
         by_lane,
-        ["1:437", "2:69", "3:424", "4:93", "5:122", "6:134"]
+        [
+            "build:424",
+            "contract:69",
+            "integrate:134",
+            "plan:437",
+            "scrutiny:93",
+            "user_testing:122"
+        ]
     );
 }
 

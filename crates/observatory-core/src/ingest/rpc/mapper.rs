@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -6,7 +7,7 @@ use super::envelope::{Incoming, parse};
 use super::open::OpenRequests;
 use crate::ingest::RawRecord;
 use crate::mapping::{Mapper, MappingVersion, SessionMeta};
-use crate::model::{Event, EventKind, SessionId};
+use crate::model::{CycleTemplate, Event, EventKind, SessionId};
 
 /// Maps the lines of a spool through mapping v1, the rules that map a session file: the
 /// stream's messages are turned back into the file's records in memory and the events point
@@ -18,16 +19,28 @@ use crate::model::{Event, EventKind, SessionId};
 pub struct RpcMapper {
     launch: SessionId,
     version: MappingVersion,
+    template: Arc<CycleTemplate>,
     mapper: Option<Mapper>,
     open: OpenRequests,
     protocol: BTreeMap<String, u64>,
 }
 
 impl RpcMapper {
+    /// A mapper for the engineering cycle (D-024).
     pub fn new(launch_id: &str, version: MappingVersion) -> Self {
+        Self::with_template(launch_id, version, CycleTemplate::engineering())
+    }
+
+    /// A mapper that assigns events to the lanes of `template` (F-041).
+    pub fn with_template(
+        launch_id: &str,
+        version: MappingVersion,
+        template: impl Into<Arc<CycleTemplate>>,
+    ) -> Self {
         Self {
             launch: SessionId(launch_id.to_owned()),
             version,
+            template: template.into(),
             mapper: None,
             open: OpenRequests::default(),
             protocol: BTreeMap::new(),
@@ -58,7 +71,11 @@ impl RpcMapper {
             Incoming::Record => self.feed(record, record.bytes.clone()),
             Incoming::Session { id, record: line } => {
                 self.mapper.get_or_insert_with(|| {
-                    Mapper::new(SessionMeta::root(SessionId(id)), self.version)
+                    Mapper::with_template(
+                        SessionMeta::root(SessionId(id)),
+                        self.version,
+                        self.template.clone(),
+                    )
                 });
                 self.feed(record, line)
             }
@@ -116,10 +133,10 @@ impl RpcMapper {
     }
 
     fn feed(&mut self, record: &RawRecord, bytes: Vec<u8>) -> Vec<Event> {
-        let (launch, version) = (&self.launch, self.version);
-        let mapper = self
-            .mapper
-            .get_or_insert_with(|| Mapper::new(SessionMeta::root(launch.clone()), version));
+        let (launch, version, template) = (&self.launch, self.version, &self.template);
+        let mapper = self.mapper.get_or_insert_with(|| {
+            Mapper::with_template(SessionMeta::root(launch.clone()), version, template.clone())
+        });
         let line = RawRecord {
             ptr: record.ptr.clone(),
             session_id: mapper.session().id.clone(),

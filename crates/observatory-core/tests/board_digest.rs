@@ -4,10 +4,14 @@
 use std::path::Path;
 
 use observatory_core::config::MissionConfig;
-use observatory_core::model::{CycleTemplate, Event, LaneId};
+use observatory_core::model::{CycleTemplate, Event};
 use observatory_core::view::{
     BoardDigest, BoardView, DeclaredModels, ViewConfig, branch_of, lane_counts, tray_count,
 };
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
 
 fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))

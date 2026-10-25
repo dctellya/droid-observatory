@@ -3,7 +3,7 @@
 //! the mapping version.
 //!
 //! The phase column is one of the seven mission phases (D-024: 1 Plan, 2 Contract, 3 Build,
-//! 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate). "Home phase" is `Lane::home(role)`
+//! 4 Scrutiny, 5 User testing, 6 Integrate, 7 Gate). "Home phase" is the role's home lane in the template
 //! (Orchestrator and Human: Plan; Worker and Unresolved: Build; scrutiny validator: Scrutiny;
 //! user-testing validator: User testing; External: Gate), except that a role-neutral kind of an
 //! integration session (feature id `^(m[0-9]+|final)-integrate-`) is Integrate and one of a
@@ -35,7 +35,7 @@
 //! | scrutiny validator report text | `finding.blocking`, `finding.non_blocking`, `scrutiny.passed` | Scrutiny |
 //! | user-testing validator report text | `qa.scenario.passed`, `qa.scenario.failed`, `qa.evidence` | User testing |
 //! | thinking, plain text, empty user messages, `Script` (its inner `Execute` calls are their own records), other tool calls and their results | no event | none |
-//! | any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | `Lane::home(role)` |
+//! | any other `type`, content part type, tool name or `agent_turn_outcome` reason | `Unknown`, counted | the role's home lane in the template |
 //!
 //! An event's `role` is always the role of its session (the capture header's role is the oracle
 //! for it); a person's words are told apart by the kind, not by a `Human` role.

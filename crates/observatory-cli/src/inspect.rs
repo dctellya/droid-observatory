@@ -8,14 +8,19 @@ use std::path::Path;
 
 use observatory_core::ingest::JsonlSource;
 use observatory_core::ingest::usage_log::{LogLine, parse_line};
-use observatory_core::model::{EventId, SourcePtr};
+use observatory_core::model::{CycleTemplate, EventId, SourcePtr};
 use observatory_core::store::Store;
 
 /// Writes the line the stored pointer of `id` names, byte for byte and without a newline, so
 /// the output compares equal to the file slice. For a `turn.usage` event it writes the parsed
 /// row instead (`session`, `role`, `lane`, `log_ts`, `model` and the five token counts, one
 /// `name: value` per line). The store is opened read-only; the files are only read.
-pub fn inspect(store: &Path, id: &str, out: &mut impl Write) -> Result<(), Box<dyn Error>> {
+pub fn inspect(
+    store: &Path,
+    id: &str,
+    template: &CycleTemplate,
+    out: &mut impl Write,
+) -> Result<(), Box<dyn Error>> {
     let store = Store::open_existing(store)?;
     let line = match store.pointer(&EventId(id.to_owned()))? {
         SourcePtr::Jsonl {
@@ -48,7 +53,7 @@ pub fn inspect(store: &Path, id: &str, out: &mut impl Write) -> Result<(), Box<d
             let model = event.model.map_or_else(String::new, |id| id.to_string());
             writeln!(out, "session: {session}")?;
             writeln!(out, "role: {}", event.role.as_str())?;
-            writeln!(out, "lane: {} {}", event.lane.number(), event.lane.name())?;
+            writeln!(out, "lane: {}", template.lane_text(&event.lane))?;
             writeln!(out, "log_ts: {}", turn.log_ts.to_rfc3339_millis())?;
             writeln!(out, "model: {model}")?;
             writeln!(out, "input: {}", turn.input)?;

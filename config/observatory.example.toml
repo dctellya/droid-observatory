@@ -168,3 +168,12 @@ mission_switch_min_interval_min = 30
 mission_cycle_seconds = [3600, 7200, 14400, 28800, 86400, 172800]
 # Histogram bucket bounds in seconds for a feature cycle: minutes to hours.
 feature_cycle_seconds = [600, 1800, 3600, 7200, 14400]
+
+[cycle]
+# The cycle template the board, the digests and the post-mortem input iterate (F-041, D-035):
+# the lanes, their order, the role that owns each, the final event and the clocks are data, so
+# a team whose cycle is not the engineering one writes a file instead of changing code.
+# "engineering" is the compiled-in seven-lane cycle of D-024 (config/cycles/engineering.toml);
+# any other value is the path of a template file (a leading ~/ is your home). A file that is
+# missing or invalid falls back to "engineering" and the app shows why.
+template = "engineering"

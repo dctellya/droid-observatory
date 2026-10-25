@@ -140,7 +140,7 @@ fn role_neutral_kinds_take_the_role_home_phase() {
         assert_eq!(engineering().fixed_lane(kind), None, "{}", kind.prd_name());
         for role in ROLES {
             assert_eq!(
-                lane_of(&kind, role),
+                lane_of(kind, role),
                 engineering().home(role).clone(),
                 "{} {role:?}",
                 kind.prd_name()
@@ -456,7 +456,7 @@ fn unknown_event_keeps_raw_type_and_byte_offset() {
         raw_type: "todo_state".to_owned(),
     };
     assert_eq!(kind.prd_name(), "unknown.event");
-    assert_eq!(engineering().fixed_lane(kind), None);
+    assert_eq!(engineering().fixed_lane(&kind), None);
     assert_eq!(lane_of(&kind, Role::Unresolved), lane("build"));
 
     let mut event = event_with(jsonl_pointer(), kind);

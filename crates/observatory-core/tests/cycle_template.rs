@@ -496,10 +496,13 @@ fn a_lane_follows_the_home_of_its_emitting_role_when_the_template_says_so() {
         defined.iter().all(|e| e.lane == LaneId::from("check")),
         "the validator's feature.defined lands in the home of its role"
     );
-    let orchestrator = events
-        .iter()
-        .find(|e| matches!(e.kind, EventKind::FeatureDefined) && e.role == Role::Orchestrator);
-    assert_eq!(orchestrator.map(|e| &e.lane), Some(&LaneId::from("spec")));
+    assert!(
+        events
+            .iter()
+            .filter(|e| matches!(e.kind, EventKind::FeatureDefined) && !e.role.is_validator())
+            .all(|e| e.lane == LaneId::from("spec")),
+        "every other role keeps the fixed lane of the kind"
+    );
 
     let without_rule = FOUR_STEP.replace(
         r#"kind_follows_emitter = ["feature.defined"]"#,

@@ -41,6 +41,11 @@ impl Role {
         }
     }
 
+    /// The roles that review work: they name the features they review in their own lane (D-032).
+    pub fn is_validator(self) -> bool {
+        matches!(self, Role::ScrutinyValidator | Role::UserTestingValidator)
+    }
+
     pub fn parse(text: &str) -> Option<Role> {
         Role::ALL.into_iter().find(|role| role.as_str() == text)
     }

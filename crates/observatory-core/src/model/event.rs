@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::mapping::MappingVersion;
 
+use super::cycle::LaneId;
 use super::ids::{EventId, FeatureId, MilestoneId, MissionId, ModelId, SessionId};
 use super::kind::EventKind;
-use super::lane::Lane;
 use super::overlay::Overlay;
 use super::role::Role;
 use super::timestamp::Timestamp;
@@ -60,7 +60,7 @@ pub struct Event {
     pub mission_id: MissionId,
     pub milestone_id: Option<MilestoneId>,
     pub feature_id: Option<FeatureId>,
-    pub lane: Lane,
+    pub lane: LaneId,
     /// Set for events a person caused; serialised only when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlay: Option<Overlay>,

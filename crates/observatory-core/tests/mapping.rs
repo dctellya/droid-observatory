@@ -345,7 +345,10 @@ fn a_feature_defined_by_a_scrutiny_validator_lands_in_the_scrutiny_lane() {
             .iter()
             .all(|event| event.role == Role::ScrutinyValidator && event.lane == lane("scrutiny")),
         "scrutiny: {:?}",
-        of_scrutiny.iter().map(|e| e.lane).collect::<Vec<_>>()
+        of_scrutiny
+            .iter()
+            .map(|e| e.lane.clone())
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         events
@@ -375,7 +378,7 @@ fn a_feature_defined_follows_the_phase_of_the_session_that_emits_it() {
         });
         let events = session.feed(&task);
         assert_eq!(kinds(&events), ["task.assigned", "feature.defined"]);
-        (events[0].lane, events[1].lane)
+        (events[0].lane.clone(), events[1].lane.clone())
     };
 
     assert_eq!(lanes(Role::Orchestrator), (lane("plan"), lane("plan")));
@@ -643,7 +646,7 @@ fn contract_session_events_land_in_contract() {
         "{:?}",
         events
             .iter()
-            .map(|event| (event.kind.prd_name().into_owned(), event.lane))
+            .map(|event| (event.kind.prd_name().into_owned(), event.lane.clone()))
             .collect::<Vec<_>>()
     );
     assert!(events.iter().all(|event| event.role == Role::Worker));

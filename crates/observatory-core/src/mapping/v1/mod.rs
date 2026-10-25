@@ -28,6 +28,7 @@ mod kinds;
 mod roles;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -40,7 +41,8 @@ pub(in crate::mapping) use roles::resolve_role;
 use super::{MappingVersion, SessionMeta};
 use crate::ingest::{RawRecord, UsageTurn};
 use crate::model::{
-    Event, EventId, EventKind, FeatureId, Lane, MilestoneId, ModelId, Role, SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, ModelId, Role,
+    SourcePtr, Timestamp,
 };
 use kinds::{Outcome, Tool};
 
@@ -51,6 +53,7 @@ const TYPED_BY_HUMAN: &str = "cli_tui";
 
 /// What the rules remember of one session between its lines.
 pub(super) struct State {
+    template: Arc<CycleTemplate>,
     first_at: Option<Timestamp>,
     last_at: Option<Timestamp>,
     /// Time of the first timestamped line since the last `agent_turn_outcome`.
@@ -84,8 +87,9 @@ enum CallKind {
 }
 
 impl State {
-    pub(super) fn new(session: &SessionMeta) -> Self {
+    pub(super) fn new(session: &SessionMeta, template: Arc<CycleTemplate>) -> Self {
         Self {
+            template,
             first_at: None,
             last_at: None,
             turn_at: None,
@@ -120,6 +124,7 @@ impl State {
 
 /// The events of one line under construction.
 struct Rec<'a> {
+    template: &'a CycleTemplate,
     session: &'a SessionMeta,
     version: MappingVersion,
     ptr: &'a SourcePtr,
@@ -135,7 +140,7 @@ struct Rec<'a> {
 impl Rec<'_> {
     fn push(&mut self, kind: EventKind) -> &mut Event {
         let sub = self.sub_base + u32::try_from(self.events.len()).unwrap_or(u32::MAX);
-        let lane = lane_of(&kind, self.session, self.feature.as_ref());
+        let lane = lane_of(self.template, &kind, self.session, self.feature.as_ref());
         let overlay = kind.overlay();
         self.events.push(Event {
             id: EventId(format!("{}:{}:{sub}", self.session.id, self.offset)),
@@ -171,30 +176,32 @@ impl Rec<'_> {
     }
 }
 
-/// The phase of an event (D-024). The kind's own phase wins; role-neutral kinds of an
-/// integration or contract session take that session's phase; the rest take the role's.
+/// The lane of an event (D-024). The kind's own lane wins; role-neutral kinds of an
+/// integration or contract session take that session's lane; the rest take the role's.
 /// `feature` is the session's feature, not the one a `Task` call names.
 ///
-/// A `feature.defined` is the one fixed-phase kind that follows its emitter (D-032): a
-/// validator that names the features it reviews is working in its own phase, not planning.
-fn lane_of(kind: &EventKind, session: &SessionMeta, feature: Option<&FeatureId>) -> Lane {
-    if matches!(kind, EventKind::FeatureDefined) {
-        match session.role {
-            Role::ScrutinyValidator => return Lane::Scrutiny,
-            Role::UserTestingValidator => return Lane::UserTesting,
-            _ => {}
-        }
+/// A kind the template lists in `kind_follows_emitter` (`feature.defined`) follows its emitter
+/// when that is a validator (D-032): a validator that names the features it reviews is working
+/// in its own lane, not planning.
+fn lane_of(
+    template: &CycleTemplate,
+    kind: &EventKind,
+    session: &SessionMeta,
+    feature: Option<&FeatureId>,
+) -> LaneId {
+    if template.follows_emitter(kind) && session.role.is_validator() {
+        return template.home(session.role).clone();
     }
-    if kind.fixed_lane().is_some() || matches!(kind, EventKind::Unknown { .. }) {
-        return kind.lane(session.role);
+    if template.fixed_lane(kind).is_some() || matches!(kind, EventKind::Unknown { .. }) {
+        return template.lane_of(kind, session.role);
     }
     if feature.is_some_and(|feature| roles::is_integration_feature(&feature.0)) {
-        return Lane::Integrate;
+        return template.rules.integration_session.clone();
     }
     if session.contract {
-        return Lane::Contract;
+        return template.rules.contract_session.clone();
     }
-    kind.lane(session.role)
+    template.lane_of(kind, session.role)
 }
 
 pub(super) fn map_record(
@@ -224,7 +231,9 @@ pub(super) fn map_record(
     let at = state
         .last_at
         .unwrap_or(Timestamp(time::OffsetDateTime::UNIX_EPOCH));
+    let template = state.template.clone();
     let mut rec = Rec {
+        template: &template,
         session,
         version,
         ptr: &record.ptr,
@@ -300,7 +309,7 @@ pub(super) fn turn_usage(
         mission_id: session.mission_id.clone(),
         milestone_id: state.milestone(),
         feature_id: state.feature.clone(),
-        lane: lane_of(&kind, session, state.feature.as_ref()),
+        lane: lane_of(&state.template, &kind, session, state.feature.as_ref()),
         overlay: None,
         kind,
         role: session.role,
@@ -321,10 +330,11 @@ pub(super) fn turn_usage(
 /// The events of the lines that had no time, now timed by the line that followed them.
 fn release_pending(state: &mut State, session: &SessionMeta, at: Timestamp) -> Vec<Event> {
     let (feature, milestone) = (state.feature.clone(), state.milestone());
+    let template = state.template.clone();
     let mut events = std::mem::take(&mut state.pending);
     for event in &mut events {
         // The feature is only known once the session's first prompt has been read.
-        event.lane = lane_of(&event.kind, session, feature.as_ref());
+        event.lane = lane_of(&template, &event.kind, session, feature.as_ref());
         event.at = at;
         event.feature_id = feature.clone();
         event.milestone_id = milestone.clone();
@@ -354,7 +364,9 @@ pub(super) fn finish(
     let Some(ptr) = state.last_ptr.clone() else {
         return events;
     };
+    let template = state.template.clone();
     let mut rec = Rec {
+        template: &template,
         session,
         version,
         ptr: &ptr,

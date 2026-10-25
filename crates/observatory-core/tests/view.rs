@@ -17,6 +17,14 @@ use observatory_core::view::{
     scrub, scrub_to, tray_count,
 };
 
+fn lane(id: &str) -> LaneId {
+    LaneId::from(id)
+}
+
+fn engineering() -> CycleTemplate {
+    CycleTemplate::engineering()
+}
+
 fn golden() -> Vec<Event> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/streams/2026-10-22-observatory-v1-m0.events.json");
@@ -259,7 +267,10 @@ fn every_milestone_of_the_m0_capture_has_a_card_in_its_open_lane() {
             .iter()
             .rev()
             .find(|e| is_open_by_the_book(e))
-            .map_or_else(|| mine.last().map(|e| e.lane), |e| Some(e.lane))
+            .map_or_else(
+                || mine.last().map(|e| e.lane.clone()),
+                |e| Some(e.lane.clone()),
+            )
             .expect("a card has events");
         assert_eq!(card.lane, expected, "card {}", card.milestone);
     }
@@ -1171,7 +1182,7 @@ mod render {
 
     use observatory_core::config::MissionConfig;
     use observatory_core::model::{
-        CycleTemplate, Event, EventKind, LaneId, MilestoneId, Overlay, Role, Timestamp,
+        Event, EventKind, LaneId, MilestoneId, Overlay, Role, Timestamp,
     };
     use observatory_core::view::{
         BoardView, DeclaredModels, Filter, FilterField, FilterOptions, GateBadge, GateVerdict,
@@ -1179,7 +1190,7 @@ mod render {
         overlay_marker_rows,
     };
 
-    use super::golden;
+    use super::{engineering, golden, lane};
 
     const BRANCH: &str = "mission/observatory-v1";
 
@@ -1191,11 +1202,11 @@ mod render {
         BoardView::build(events, cfg, &declared(), BRANCH, &engineering())
     }
 
-    fn lane(board: &BoardView, lane: &str) -> &observatory_core::view::LaneView {
+    fn view_of(board: &BoardView, lane: LaneId) -> &observatory_core::view::LaneView {
         board
             .lanes
             .iter()
-            .find(|view| view.lane.as_str() == lane)
+            .find(|view| view.lane == lane)
             .expect("the template has the lane")
     }
 
@@ -1292,7 +1303,7 @@ mod render {
         let board = build(&events, &ViewConfig::default());
         assert_eq!(board.overlay_human.aria_label, "overlay-human");
         assert_eq!(board.overlay_human.markers.len(), 70);
-        let plan = lane(&board, lane("plan"));
+        let plan = view_of(&board, lane("plan"));
         let marked = plan
             .groups
             .iter()
@@ -1306,7 +1317,7 @@ mod render {
     fn integrate_timeline_lists_gate_runs_per_milestone() {
         let events = golden();
 
-        let groups = integrate_timeline(&events);
+        let groups = integrate_timeline(&events, &engineering());
 
         let rows: usize = groups.iter().map(|g| g.rows.len()).sum();
         assert_eq!(rows, 134);
@@ -1338,11 +1349,11 @@ mod render {
 
         let board = build(&events, &ViewConfig::default());
 
-        let gate = lane(&board, lane("gate"));
+        let gate = view_of(&board, lane("gate"));
         assert_eq!(gate.event_count, 0);
         let placeholder = gate.placeholder.as_ref().expect("no PR: a placeholder");
         assert_eq!(placeholder.text, "gate: pending (no PR)");
-        assert_eq!(placeholder.branch, BRANCH, &engineering());
+        assert_eq!(placeholder.branch, BRANCH);
         assert_eq!(placeholder.last_gate_command, last_verdict);
         assert_eq!(placeholder.gate_runs, 35);
         let clocks: Vec<(&str, Option<&str>)> = placeholder
@@ -1392,7 +1403,7 @@ mod render {
             assert_eq!(view.card_count, view.cards.len());
         }
 
-        let build_lane = lane(&board, lane("build"));
+        let build_lane = view_of(&board, lane("build"));
         assert!(build_lane.grouped);
         assert_eq!(
             build_lane.groups.len(),
@@ -1412,7 +1423,7 @@ mod render {
                 ..ViewConfig::default()
             },
         );
-        let regrouped = lane(&per_feature, lane("build"));
+        let regrouped = view_of(&per_feature, lane("build"));
         assert_eq!(regrouped.event_count, build_lane.event_count);
         let features: std::collections::BTreeSet<_> = events
             .iter()
@@ -1421,13 +1432,13 @@ mod render {
             .collect();
         assert_eq!(regrouped.groups.len(), features.len());
         assert!(regrouped.groups.iter().all(|g| g.role.is_none()));
-        let integrate = lane(&board, lane("integrate"));
+        let integrate = view_of(&board, lane("integrate"));
         assert_eq!(
             integrate.groups.len(),
-            integrate_timeline(&events).len(),
+            integrate_timeline(&events, &engineering()).len(),
             "Integrate groups its rows per milestone"
         );
-        assert!(!lane(&board, lane("plan")).grouped);
+        assert!(!view_of(&board, lane("plan")).grouped);
     }
 
     #[test]
@@ -1458,7 +1469,7 @@ mod render {
             .sum();
         assert_eq!(rows, expected.len());
         for empty in [lane("plan"), lane("scrutiny"), lane("user_testing")] {
-            assert_eq!(lane(&board, empty).event_count, 0, "{empty:?}");
+            assert_eq!(view_of(&board, empty.clone()).event_count, 0, "{empty:?}");
         }
         assert_eq!(board.overlay_human.markers.len(), 0);
     }

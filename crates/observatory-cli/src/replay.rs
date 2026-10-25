@@ -11,11 +11,17 @@ use observatory_core::ingest::{
     JsonlSource, RawRecord, SessionTree, Source, UsageLogSource, UsageTurn, select_mapping_of,
 };
 use observatory_core::mapping::{Mapper, MappingVersion, TreeMapper};
-use observatory_core::model::{Event, EventKind, Role, SessionId};
+use observatory_core::model::{CycleTemplate, Event, EventKind, Role, SessionId};
 use observatory_core::store::{CaptureInfo, HostedRun, Store};
 
 /// A spool line is a JSON-RPC envelope; a session line never carries this key first.
 const SPOOL_FIRST_KEY: &str = r#"{"jsonrpc":"#;
+
+/// What a replay reads besides the file: the ingest limits and the cycle whose lanes name the events.
+pub struct Setup<'a> {
+    pub ingest: &'a IngestConfig,
+    pub template: &'a CycleTemplate,
+}
 
 /// Writes `<time>\t<lane>\t<kind>\t<session>` per event, then `unknown events: N`.
 /// Child sessions found beside `file` or in `<slug>.children/` are replayed with it unless
@@ -30,16 +36,17 @@ pub fn replay(
     file: &Path,
     root_only: bool,
     usage_logs: &[PathBuf],
-    cfg: &IngestConfig,
+    setup: &Setup<'_>,
     mut store: Option<&mut Store>,
     out: &mut impl Write,
     warnings: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
+    let (cfg, template) = (setup.ingest, setup.template);
     if is_spool(file)? {
         if !usage_logs.is_empty() {
             return Err("--usage-log joins turns to session files, not to a hosted spool".into());
         }
-        return replay_spool(file, cfg, store, out, warnings);
+        return replay_spool(file, cfg, template, store, out, warnings);
     }
     let (version, warning) = select_mapping_of(file)?;
     let tree = SessionTree::discover(file, cfg)?;
@@ -51,14 +58,17 @@ pub fn replay(
     }
     let (mut source, mut mapper) = if root_only {
         let source = JsonlSource::open(file, cfg)?;
-        let root = Mapper::new(tree.meta(tree.root()), version);
+        let root = Mapper::with_template(tree.meta(tree.root()), version, template.clone());
         (
             source,
             Mapping::Root(Box::new(root), tree.root().id.clone()),
         )
     } else {
         let source = JsonlSource::open_tree(&tree, cfg)?;
-        (source, Mapping::Tree(TreeMapper::new(&tree, version)))
+        (
+            source,
+            Mapping::Tree(TreeMapper::with_template(&tree, version, template.clone())),
+        )
     };
 
     let mut unknown = 0_u64;
@@ -80,7 +90,7 @@ pub fn replay(
         if let Some(store) = store.as_deref_mut() {
             store.insert_events(&events)?;
         }
-        print_events(&events, &mut unknown, out)?;
+        print_events(&events, template, &mut unknown, out)?;
         if at_eof {
             break;
         }
@@ -100,7 +110,7 @@ pub fn replay(
         if let Some(store) = store.as_deref_mut() {
             store.insert_events(&events)?;
         }
-        print_events(&events, &mut unknown, out)?;
+        print_events(&events, template, &mut unknown, out)?;
         print_totals(&events, out)?;
         writeln!(out, "join mismatches: {}", log.join_mismatches())?;
         writeln!(out, "turns of other sessions: {elsewhere}")?;
@@ -127,6 +137,7 @@ fn is_spool(file: &Path) -> Result<bool, Box<dyn Error>> {
 fn replay_spool(
     file: &Path,
     cfg: &IngestConfig,
+    template: &CycleTemplate,
     store: Option<&mut Store>,
     out: &mut impl Write,
     warnings: &mut impl Write,
@@ -136,7 +147,7 @@ fn replay_spool(
         .and_then(|stem| stem.to_str())
         .ok_or("the spool has no file name")?;
     let mut source = RpcSource::open(file, cfg)?;
-    let mut mapper = RpcMapper::new(launch_id, MappingVersion::LATEST);
+    let mut mapper = RpcMapper::with_template(launch_id, MappingVersion::LATEST, template.clone());
     let mut unknown = 0_u64;
     let mut all = Vec::new();
     loop {
@@ -154,7 +165,7 @@ fn replay_spool(
         if at_eof {
             events.extend(mapper.finish());
         }
-        print_events(&events, &mut unknown, out)?;
+        print_events(&events, template, &mut unknown, out)?;
         all.extend(events);
         if at_eof {
             break;
@@ -217,17 +228,18 @@ fn print_totals(events: &[Event], out: &mut impl Write) -> Result<(), Box<dyn Er
 
 fn print_events(
     events: &[Event],
+    template: &CycleTemplate,
     unknown: &mut u64,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
     for event in events {
         *unknown += u64::from(matches!(event.kind, EventKind::Unknown { .. }));
-        writeln!(out, "{}", event_line(event))?;
+        writeln!(out, "{}", event_line(event, template))?;
     }
     Ok(())
 }
 
-fn event_line(event: &Event) -> String {
+fn event_line(event: &Event, template: &CycleTemplate) -> String {
     let kind = match &event.kind {
         EventKind::Unknown { raw_type } => format!("{}({raw_type})", event.kind.prd_name()),
         known => known.prd_name().into_owned(),
@@ -237,10 +249,9 @@ fn event_line(event: &Event) -> String {
         .as_ref()
         .map_or_else(String::new, ToString::to_string);
     format!(
-        "{}\t{} {}\t{kind}\t{session}",
+        "{}\t{}\t{kind}\t{session}",
         event.at.to_rfc3339_millis(),
-        event.lane.number(),
-        event.lane.name()
+        template.lane_text(&event.lane)
     )
 }
 

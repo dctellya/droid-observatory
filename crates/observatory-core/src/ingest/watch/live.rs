@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::ingest::{AttachStatus, EventBatch, EventBatcher, IngestError, SessionRow};
 use crate::model::{Event, MissionId, SessionId};
 use crate::store::{CaptureInfo, Store, StoreError};
+use std::sync::Arc;
 
 /// What one `LiveIngest::step` has for the shell to emit.
 #[derive(Default)]
@@ -49,7 +50,8 @@ impl LiveIngest {
     /// by the first step. Fails when the directory cannot be read.
     pub fn start(cfg: &Config, store: Store) -> Result<Self, IngestError> {
         Ok(Self {
-            attach: Attach::start(&cfg.ingest)?,
+            attach: Attach::start(&cfg.ingest)?
+                .with_template(Arc::new(cfg.cycle.load_template().template)),
             store,
             batcher: EventBatcher::new(Duration::from_millis(cfg.ui.event_batch_ms)),
             poll: Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1)),

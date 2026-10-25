@@ -102,7 +102,7 @@ impl Store {
                     event.session_id.as_ref().map(ToString::to_string),
                     event.milestone_id.as_ref().map(ToString::to_string),
                     event.feature_id.as_ref().map(ToString::to_string),
-                    event.lane.number(),
+                    event.lane.as_str(),
                     event.overlay.map(Overlay::as_str),
                     event.kind.prd_name(),
                     raw_type(&event.kind),

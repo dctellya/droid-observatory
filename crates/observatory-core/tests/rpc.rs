@@ -24,7 +24,7 @@ use observatory_core::ingest::rpc::{
 use observatory_core::ingest::{JsonlSource, RawRecord, Source};
 use observatory_core::mapping::{Mapper, MappingVersion, SessionMeta};
 use observatory_core::model::{
-    CycleTemplate, Event, EventKind, LaneId, Overlay, Role, SessionId, SourcePtr, Timestamp,
+    Event, EventKind, LaneId, Overlay, Role, SessionId, SourcePtr, Timestamp,
 };
 use observatory_core::store::{HostedRun, Store};
 use observatory_core::view::{LaunchConfig, LaunchForm};

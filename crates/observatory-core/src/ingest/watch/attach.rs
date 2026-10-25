@@ -12,7 +12,8 @@ use crate::ingest::{
     read_sidecar,
 };
 use crate::mapping::{Mapper, SessionMeta};
-use crate::model::{Event, EventId, MissionId, Role, SessionId};
+use crate::model::{CycleTemplate, Event, EventId, MissionId, Role, SessionId};
+use std::sync::Arc;
 
 const MB: u64 = 1024 * 1024;
 /// Parent links followed while looking for a session's root, so a cycle in the files ends.
@@ -184,6 +185,7 @@ pub struct Attach {
     warned: HashSet<PathBuf>,
     polled: bool,
     excluded: HashSet<SessionId>,
+    template: Arc<CycleTemplate>,
 }
 
 impl Attach {
@@ -199,7 +201,15 @@ impl Attach {
             warned: HashSet::new(),
             polled: false,
             excluded: HashSet::new(),
+            template: Arc::new(CycleTemplate::engineering()),
         })
+    }
+
+    /// Assigns the events of sessions attached from now on to the lanes of `template`.
+    #[must_use]
+    pub fn with_template(mut self, template: Arc<CycleTemplate>) -> Self {
+        self.template = template;
+        self
     }
 
     /// Never attach the session `id`, and drop its tail if it is attached: a hosted mission's
@@ -424,7 +434,7 @@ impl Attach {
         let version = mapping_version_of(&found.path)?;
         Ok(Tail {
             modified: found.modified,
-            mapper: Mapper::new(meta, version),
+            mapper: Mapper::with_template(meta, version, self.template.clone()),
             source,
             index_to,
             finished: false,

@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::CycleTemplate;
+
 /// Environment variable that overrides the config file location.
 pub const CONFIG_ENV: &str = "OBSERVATORY_CONFIG";
 
@@ -87,6 +89,64 @@ pub struct Config {
     pub intervention: InterventionConfig,
     pub metrics: MetricsConfig,
     pub telemetry: TelemetryConfig,
+    pub cycle: CycleConfig,
+}
+
+/// Which cycle template the app reads at start-up (F-041, D-035).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CycleConfig {
+    /// `engineering` (the compiled-in template) or the path of a template file; a leading `~/`
+    /// is replaced by `$HOME`.
+    pub template: String,
+}
+
+impl Default for CycleConfig {
+    fn default() -> Self {
+        Self {
+            template: ENGINEERING_TEMPLATE.into(),
+        }
+    }
+}
+
+/// The name that selects the compiled-in template.
+const ENGINEERING_TEMPLATE: &str = "engineering";
+
+/// A template with the reason the configured one was not used, if it was not.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadedTemplate {
+    pub template: CycleTemplate,
+    pub warning: Option<String>,
+}
+
+impl CycleConfig {
+    /// The configured template. A file that is missing or invalid never stops the app: the
+    /// engineering template is used and the warning names the file and the reason.
+    pub fn load_template(&self) -> LoadedTemplate {
+        if self.template == ENGINEERING_TEMPLATE {
+            return LoadedTemplate {
+                template: CycleTemplate::engineering(),
+                warning: None,
+            };
+        }
+        let path = expand_home(&self.template, std::env::var_os("HOME").as_deref());
+        let loaded = std::fs::read_to_string(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|text| CycleTemplate::from_toml(&text).map_err(|error| error.to_string()));
+        match loaded {
+            Ok(template) => LoadedTemplate {
+                template,
+                warning: None,
+            },
+            Err(reason) => LoadedTemplate {
+                template: CycleTemplate::engineering(),
+                warning: Some(format!(
+                    "cycle template {}: {reason}; using the engineering template",
+                    path.display()
+                )),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

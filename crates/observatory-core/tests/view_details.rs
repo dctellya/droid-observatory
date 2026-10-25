@@ -7,17 +7,13 @@ use observatory_core::config::MissionConfig;
 use observatory_core::ingest::SessionInfo;
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
-    Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, ModelId, Role, SessionId,
-    SourcePtr, Timestamp, TokenUsage,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, ModelId, Role,
+    SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 use observatory_core::view::{
     AgentStatus, BoardState, DeclaredModels, Filter, IdleReason, MarkerKind, ViewConfig,
     WorkerGrouping, agent_entries, agent_stream, details, session_name,
 };
-
-fn lane(id: &str) -> LaneId {
-    LaneId::from(id)
-}
 
 fn engineering() -> CycleTemplate {
     CycleTemplate::engineering()

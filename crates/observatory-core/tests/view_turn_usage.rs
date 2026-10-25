@@ -206,7 +206,10 @@ fn agent_stream_and_status_ignore_turn_usage() {
         "card bookkeeping skips the turn"
     );
     assert_eq!(state.cards[0].last_at, at(3));
-    assert_eq!(state.lane_counts[lane("build").number() as usize - 1], 2);
+    assert_eq!(
+        state.lane_counts[engineering().index(&lane("build")).unwrap()],
+        2
+    );
 }
 
 #[test]

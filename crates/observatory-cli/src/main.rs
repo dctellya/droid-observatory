@@ -60,6 +60,11 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     let (config, config_file) = Config::load_with_origin(None)?;
+    let loaded = config.cycle.load_template();
+    if let Some(warning) = &loaded.warning {
+        eprintln!("observatory-cli: warning: {warning}");
+    }
+    let template = loaded.template;
     match command {
         Command::Replay {
             file,
@@ -81,7 +86,10 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 &file,
                 root_only,
                 &usage_log,
-                &config.ingest,
+                &replay::Setup {
+                    ingest: &config.ingest,
+                    template: &template,
+                },
                 store.as_mut(),
                 &mut out,
                 &mut io::stderr().lock(),
@@ -92,7 +100,7 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Inspect { event_id, store } => {
             let store = store.unwrap_or_else(|| config.store.resolved_path());
             let mut out = BufWriter::new(io::stdout().lock());
-            inspect::inspect(&store, &event_id, &mut out)?;
+            inspect::inspect(&store, &event_id, &template, &mut out)?;
             out.flush()?;
             Ok(())
         }

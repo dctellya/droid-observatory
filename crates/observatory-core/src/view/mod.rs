@@ -11,6 +11,7 @@ mod hosted;
 mod launch;
 mod library;
 mod live_output;
+mod post_mortem;
 mod scrub;
 mod scrubber;
 mod state;
@@ -35,6 +36,7 @@ pub use launch::{
 };
 pub use library::{LibraryEntry, MissionRow, library};
 pub use live_output::{LiveOutput, OutputLines};
+pub use post_mortem::{ClockReading, LaneSummary, PostMortemInput, post_mortem_input};
 pub use scrub::{ScrubbedLine, scrub};
 pub use scrubber::{
     OverlayMarker, Scrubber, lane_counts, overlay_marker_rows, overlay_markers, scrub_to,
