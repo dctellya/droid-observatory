@@ -82,3 +82,11 @@ Oracle on the M0 capture, `grep -o 'assigned to execute feature \\"[^\\]*\\"'` o
 - A session whose runner changes the sentence is named by tag or id again (the failure is a name, not an error).
   The sentence is the runner's wording in Droid 0.247; a test over the M0 capture pins it.
 - Sessions read through `Task` (reviewers, explorers) have no feature id and keep their tag or id.
+
+## Addendum 2026-10-25 (m3 integration, m3-fix-ut-core-naming-and-docs)
+
+runner tag list gains `mission-orchestrator` (Droid 0.249 writes it first on an orchestrator session, before `exec`), in `IngestConfig::default()` and `config/observatory.example.toml`; a live orchestrator is named by its user tag again and a rename to `mission-orchestrator` is refused.
+
+## Addendum 2026-10-25 (m3 integration, m3-live-session-rows)
+
+D-036 consequence 3 amended in words only (no file edit here): the second `session_discovered` for a renamed session is accompanied by `session_renamed`; a later change is refused, not announced.

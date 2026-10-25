@@ -248,3 +248,7 @@ D-023 amended by D-024).
 - [D-020](D-020-pii-in-fixtures-is-redacted-at-capture.md): the fixture hash tables; the golden hash is
   refrozen at the M1 integration, the fixture hashes stay.
 - SPEC §1, §3, §5.2, §9 F-028, §10; `architecture.md` §5.
+
+## Addendum 2026-10-25 (m3 integration, m3-fix-ut-core-naming-and-docs)
+
+the seven phases are now the default cycle template `config/cycles/engineering.toml` (F-041, D-035); the `Lane` enum is history.

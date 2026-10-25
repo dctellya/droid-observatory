@@ -98,3 +98,7 @@ Notifications and requests read: `droid.session_notification` (all events), `dro
   shapes come from the binary's schemas and are covered by tests on hand-made lines.
 - Probe sessions created by the capture sit in `~/.factory/sessions/-private-tmp-rpc-probe` (three sessions, no
   secrets); they are not fixtures and are not committed.
+
+## Addendum 2026-10-25 (m3 integration, m3-hosted-todo-state)
+
+The hosted mapper also reads `todo_state` from the child's session file (`RpcMapper::with_session_files`, `m3-hosted-todo-state`); the stream has no notification for it. The spool alone, without the session file, still lacks `plan.revised`.

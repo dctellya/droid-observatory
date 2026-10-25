@@ -82,3 +82,11 @@ extraction; `reports/usage/<milestone>.md` carries its per-role table from M1 on
 - **Store:** the `source` CHECK was widened in place in `0001_init.sql` (scratch stores from before `b600c8c`
   must be recreated). The store keeps `input`, `output` and `cache_read` of a turn only; `reasoning` and
   `total_input` read back as 0 (BACKLOG B-043).
+
+## Addendum 2026-10-25 (m3 integration, m3-gate-hits-and-usage-name)
+
+the script is `scripts/usage-report.py` (already named so in the m3-usage-target staging file, which this feature corrected).
+
+## Addendum 2026-10-25 (m3 integration, m3-usage-target)
+
+The per-role tables of a usage report are written by `scripts/usage-report.py` (`make usage M=<m>`) from the log, the sidecars and the progress log; `scripts/usage-from-log.sh` stays as its cross-check.

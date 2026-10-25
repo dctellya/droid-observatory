@@ -68,3 +68,7 @@ owner's machine (Haiku for all roles, scratch repo under `target/scratch`).
 - The process group is reaped on window close: SIGTERM goes to the group, then SIGKILL after
   `[mission].reap_grace_ms` if members remain; `host_reaped` is logged. The process is stopped by the host, not
   left to finish.
+
+## Addendum 2026-10-25 (m3 integration, m3-controls-ui-and-stall)
+
+the approve and deny acknowledgement is the `permission_resolved` notification, not a response to the host's reply (Droid sends none). Amend the line "the host's own responses are not in the stream" to say the host now maps `permission_resolved` to `permission.granted` or `permission.denied` (B-075).

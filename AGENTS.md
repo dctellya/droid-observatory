@@ -16,7 +16,8 @@ PRD: `ai/prd/droid-observatory-prd.md` (its §7, §8 and §13 are superseded by 
 Spec: `SPEC.md` (approved 2026-10-22, amended v0.4 at the M0 to M1 boundary; the mission plans from it).
 
 Current state: the walking skeleton (S), the stream capture and mapping milestone (M0), the board in replay and
-attach (M1) and the host (M2, on 2026-10-24: `RpcSource`, launch form, hosted launch recipe D-034, live output) are
+attach (M1), the host (M2, on 2026-10-24: `RpcSource`, launch form, hosted launch recipe D-034, live output) and the
+controls (M3, on 2026-10-25: human actions, stall flag, cycle template D-035, e2e harness D-037) are
 integrated on `mission/observatory-v1`: core crate, canonical `Event`, mapping v1 with
 its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the
 usage-log source (`turn.usage` is Panel data, D-029), a Leptos board with Details and agents views (D-030: go) and the

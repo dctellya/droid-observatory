@@ -80,3 +80,7 @@ Counts on the committed M0 golden (`jq`, before the change): `feature_defined` 6
 - The `feature.defined` row of D-023's kinds table and of D-024's kinds table states Plan without the
   exception; the integrator adds the reference to this decision (shared files, `m3-integrate-m2`). The
   rule table in `mapping/v1/kinds.rs` already carries it.
+
+## Addendum 2026-10-25 (m3 integration, m3-fix-ut-core-naming-and-docs)
+
+the Scrutiny rule for `feature.defined` is the template rule `kind_follows_emitter` (D-035).

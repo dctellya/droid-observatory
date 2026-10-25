@@ -25,15 +25,20 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
   the orchestrator's spend split (waits, decisions, narration) against the 30 USD-eq stop, the mission-level 320 cap,
   the model-fallback (void) sessions, the self-check missions, the reconciliation with Mission Control (F-045) and the
   tokens per role.
+  `usage/m3.md`: milestone M3, written by `make usage M=m3`: window total 210.98 USD-eq against the cap 110, the
+  orchestrator 68.81 against 30, mission to date 990.09 (past 950), the gates run and served from cache, the feature size
+  table and the scorecard (re-issued waits, turns per feature, validation overhead, model-check lines).
 - `ci/<date>-<milestone>.md`: the `mission-checks` runs on the integration pushes: run ids, wall
   times, per-job durations, verdict against the 3-minute budget. `ci/2026-10-23-s.md`: S, red.
   `ci/2026-10-23-m0.md`: M0, green, 1 min 45 s. `ci/2026-10-24-m1.md`: M1, green, 3 min 48 s (over budget). `ci/2026-10-24-m2.md`: M2, green, cold merge run 2 min 48 s
   reported apart, warm runs against the 3 min budget (F-039), per-job seconds and the critical-path split (B-056).
+  `ci/2026-10-25-m3.md`: M3, the `mission-checks` runs of the integration pushes and the macOS `e2e` run (tag `e2e-m3`).
 - `readiness/<date>-<milestone>.json`: Agent Readiness report at an integration.
   `2026-10-23-s.json`: 42 of 66, hand re-evaluation of the criteria S changed (see its `method`).
   `2026-10-23-m0.json`: 44 of 66, hand re-evaluation of the criteria M0 changed.
   `2026-10-24-m1.json`: 45 of 66, hand re-evaluation of the criteria M1 changed; `2026-10-24-m1.md`: warm
   build times at the M1 integration (`make check` 92.700 s, `cargo llvm-cov` alone 121.731 s) and per-feature compile cost.
+  `2026-10-25-m3.md`: the M3 integration report (merges, gate, merged staging notes, warm build times, coverage 94.21 %).
   `2026-10-24-m2.json`: hand re-evaluation of the criteria M2 changed; `2026-10-24-m2.md`: warm build times at the M2
   integration (`make check` 118.050 s, `cargo llvm-cov` alone 133.599 s) and per-feature compile cost.
 - `post-mortem/observatory-v1-<milestone>.md`: the delivery post-mortem per milestone (clocks per lane and phase, signatures,
@@ -41,4 +46,4 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
 - `staging/<feature-id>.md`: what a feature in a worktree wants written in the shared files (SPEC §9 rows, D-row
   amendments, BACKLOG rows, deferred clauses); committed with the feature and merged by the integrator (F-066; the gate cache is rule 27).
 - `screenshots/<date>-<milestone>.png`: the owner's unlocked-display screenshot per integration.
-  Expected at S: `screenshots/2026-10-23-s.png`; at M0: `screenshots/2026-10-23-m0.png`; at M1: `screenshots/2026-10-24-m1.png`; at M2: `screenshots/2026-10-24-m2.png`.
+  Expected at S: `screenshots/2026-10-23-s.png`; at M0: `screenshots/2026-10-23-m0.png`; at M1: `screenshots/2026-10-24-m1.png`; at M2: `screenshots/2026-10-24-m2.png`; at M3: `screenshots/2026-10-25-m3.png` (neither the M2 nor the M3 file exists yet, SPEC §9 F-136 Q2).
