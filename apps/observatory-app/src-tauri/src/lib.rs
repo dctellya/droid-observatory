@@ -64,7 +64,10 @@ pub fn run() {
 
     let (exclude, excluded) = std::sync::mpsc::channel();
     let grace = std::time::Duration::from_millis(cfg.mission.reap_grace_ms);
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    builder
         .manage(shell)
         .manage(host::Hosts::new(exclude))
         .setup(move |app| {

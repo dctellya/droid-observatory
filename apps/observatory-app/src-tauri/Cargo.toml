@@ -11,16 +11,23 @@ publish.workspace = true
 name = "observatory_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+e2e = ["dep:tauri-plugin-wdio-webdriver"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 observatory-core.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["json"] }
 tauri = { version = "2.12.5", features = [] }
+# Embedded W3C WebDriver server for the end-to-end suite. Its README: never in a production build, so it
+# is optional and only the `e2e` feature (make e2e) turns it on.
+tauri-plugin-wdio-webdriver = { version = "1.5.1", optional = true }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "process", "macros", "time", "sync", "io-util"] }
 
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
 serde_json.workspace = true
+toml.workspace = true
