@@ -61,6 +61,9 @@ hit_field() { LC_ALL=C awk -F '\t' -v n="$1" 'END { print $n }' "$hits_log"; }
 export PATH="$tmp/bin1:$PATH"
 export DROID_SESSION_ID=sess-one
 
+# The hit log is committed with the records: the repository must not ignore it.
+git -C "$root" check-ignore -q reports/gate/hits.log && fail "reports/gate/hits.log is gitignored"
+
 # VAL-TOOL-004 (1): the key prints the independent tree.
 tree=$(indep_tree)
 [ -n "$tree" ] || fail "independent tree is empty"

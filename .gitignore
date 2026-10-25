@@ -20,6 +20,9 @@ node_modules/
 .factory/*.local.json
 *.log
 !build-log/**/*.jsonl
+# The gate hit log is a record like reports/gate/<tree>/*.json; the usage fixture carries sample logs.
+!reports/gate/hits.log
+!scripts/tests/fixtures/usage/**/*.log
 
 # OS
 .DS_Store

@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -261,15 +262,60 @@ class UsageReport(unittest.TestCase):
         self.assertIn("mission_run_started", u["Resume"])
         self.assertIn("throttled: 1200.000 s = 20.00 min", self.text)
 
-    def test_gates_run_come_from_the_records_in_the_window(self):
-        _, rows = table(self.text, "Gates")
+    def test_gate_runs_come_from_the_records_in_the_window(self):
+        _, rows = table(self.text, "Gate runs")
         self.assertEqual([(r["Gate"], r["Tree"], r["Exit"], r["Seconds"], r["Started"], r["Session"].strip("`")) for r in rows], [
             ("check", "t1", "0", "60.000", "2026-10-25T10:55:00Z", WORKER),
             ("test", "t1", "0", "40.000", "2026-10-25T10:55:10Z", WORKER),
         ])
         self.assertIn("gate runs in the window: 2", self.text)
         self.assertIn("gate seconds run: 100.000", self.text)
-        self.assertIn("served from cache: not recorded", self.text)
+
+    def test_the_gates_table_counts_runs_and_cache_hits_per_gate_and_in_total(self):
+        header, rows = table(self.text, "Gates")
+        self.assertEqual(header, ["Kind", "Gate", "Command", "Count", "Seconds", "Minutes", "First", "Last", "Source"])
+        got = {(r["Kind"], r["Gate"]): r for r in rows}
+        self.assertEqual(len(got), len(rows))
+        cells = lambda k, g: tuple(got[(k, g)][c] for c in ("Command", "Count", "Seconds", "Minutes", "First", "Last", "Source"))
+        self.assertEqual(cells("gates run", "check"), (
+            "`make check`", "1", "60.000", "1.00", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`reports/gate/*/check.json`"))
+        self.assertEqual(cells("gates run", "test")[1:4], ("1", "40.000", "0.67"))
+        self.assertEqual(cells("gates run", "all"), (
+            "-", "2", "100.000", "1.67", "2026-10-25T10:55:00Z", "2026-10-25T10:56:00Z", "`reports/gate/*/*.json`"))
+        self.assertEqual(cells("gates served from cache", "check"), (
+            "`make check`", "2", "120.000", "2.00", "2026-10-25T10:57:00Z", "2026-10-25T10:57:30Z", "`reports/gate/hits.log`"))
+        self.assertEqual(cells("gates served from cache", "test")[1:6], ("1", "40.000", "0.67", "2026-10-25T10:58:00Z", "2026-10-25T10:58:00Z"))
+        self.assertEqual(cells("gates served from cache", "all")[1:4], ("3", "160.000", "2.67"))
+        self.assertIn("gates served from cache: 3, minutes saved: 2.67", self.text)
+        self.assertNotIn("not recorded", self.text)
+
+    def test_a_report_without_a_hit_log_states_zero_hits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = os.path.join(tmp, "gate")
+            shutil.copytree(os.path.join(FIX, "gate"), gate)
+            os.remove(os.path.join(gate, "hits.log"))
+            out = os.path.join(tmp, "m9.md")
+            run(["--gate-dir", gate], out=out)
+            text = read(out)
+            self.assertIn("gates served from cache: 0, minutes saved: 0.00", text)
+            _, rows = table(text, "Gates")
+            self.assertEqual([r["Count"] for r in rows if r["Kind"] == "gates served from cache"], ["0"])
+
+    def test_the_sidecar_section_states_the_mtimes_it_read(self):
+        text = self.text[self.text.index("### Sidecar readings"):]
+        sidecar_dir = os.path.join(FIX, "sessions", "-home-user-proj")
+        mtimes = {}
+        for name in os.listdir(sidecar_dir):
+            if name.endswith(".settings.json"):
+                mtimes[name[:-len(".settings.json")]] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(os.path.join(sidecar_dir, name))))
+        oldest, newest = min(mtimes.values()), max(mtimes.values())
+        self.assertIn("sidecars read: %d, oldest mtime %s, newest mtime %s" % (len(mtimes), oldest, newest), text)
+        lines = text.splitlines()
+        per_session = lines.index("#### Sidecar totals per session (cumulative)")
+        header = [c.strip() for c in lines[per_session + 2].strip().strip("|").split("|")]
+        self.assertIn("Modified", header)
+        first = [c.strip() for c in lines[per_session + 4].strip().strip("|").split("|")]
+        self.assertEqual(first[header.index("Modified")], mtimes[first[0].strip("`")])
 
     def test_validation_overhead_is_the_validator_session_wall_time(self):
         _, rows = table(self.text, "Validation overhead")
@@ -353,6 +399,13 @@ class UsageReportFile(unittest.TestCase):
             out = os.path.join(tmp, "m9.md")
             run(["--cross-check"], out=out)
             self.assertIn("cross-check: identical", read(out))
+
+    def test_help_states_when_a_rerun_is_byte_for_byte_reproducible(self):
+        proc = subprocess.run([sys.executable, SCRIPT, "--help"], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0)
+        flat = " ".join(proc.stdout.split())
+        self.assertIn("--to at least 5 minutes before the generation time", flat)
+        self.assertIn("Sidecar readings can move while a session is live", flat)
 
     def test_the_script_imports_only_the_standard_library(self):
         src = read(SCRIPT)
