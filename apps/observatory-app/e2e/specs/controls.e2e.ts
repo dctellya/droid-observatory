@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { browser, expect } from '@wdio/globals';
 import { FAKE_DROID_LOG, WAIT_MS } from '../lib/env.js';
 import { allById, byId, hasRowKind, launchHosted, openBoardOf, waitForCount } from '../lib/hosted.js';
+import { pageBackground, setTheme } from '../lib/theme.js';
 
 const BRANCH = 'mission/e2e-controls';
 
@@ -72,6 +73,20 @@ describe('the control bar of a hosted mission on its board', () => {
     await second.$('[data-testid="host-deny"]').click();
     await waitForCount('host-permission', 0);
     await waitForKind('permission.denied');
+  });
+
+  it('the dark theme paints the control bar and the AskUser sheet on the kit surfaces', async () => {
+    const light = await pageBackground();
+    await setTheme('dark');
+    await expect(byId('control-bar')).toBeDisplayed();
+    await expect(byId('ask-user-sheet')).toBeDisplayed();
+    expect(await pageBackground()).not.toBe(light);
+  });
+
+  it('the light theme paints the control bar and the AskUser sheet on the kit surfaces', async () => {
+    await setTheme('light');
+    await expect(byId('control-bar')).toBeDisplayed();
+    await expect(byId('ask-user-sheet')).toBeDisplayed();
   });
 
   it('the AskUser sheet answers the question and an intent.answered row follows', async () => {

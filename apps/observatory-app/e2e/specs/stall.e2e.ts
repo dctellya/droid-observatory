@@ -1,5 +1,6 @@
 import { browser, expect } from '@wdio/globals';
 import { byId, launchHosted, openBoardOf, waitForCount } from '../lib/hosted.js';
+import { pageBackground, setTheme } from '../lib/theme.js';
 
 const BRANCH = 'mission/e2e-stall';
 /** The threshold of the run (one minute, lib/env.ts) plus two polls and the time to start. */
@@ -25,5 +26,17 @@ describe('the stall banner of a hosted mission that waits on the human', () => {
     await expect(byId('stall-link')).toHaveText(
       'docs/runbooks/stalled-mission.md#waiting-on-human',
     );
+  });
+
+  it('the dark theme paints the stall banner on the kit surfaces', async () => {
+    const light = await pageBackground();
+    await setTheme('dark');
+    await expect(byId('stall-banner')).toBeDisplayed();
+    expect(await pageBackground()).not.toBe(light);
+  });
+
+  it('the light theme paints the stall banner on the kit surfaces', async () => {
+    await setTheme('light');
+    await expect(byId('stall-banner')).toBeDisplayed();
   });
 });
