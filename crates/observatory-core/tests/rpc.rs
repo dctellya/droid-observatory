@@ -87,6 +87,17 @@ fn create_message(session: &str, record: &Value) -> Value {
 /// notification, so they stay session records. Returns the stream and the number of chatter
 /// lines (those with no lane event of their own).
 fn hosted_stream_of(file: &Path) -> (Vec<u8>, u64) {
+    stream_of(file, true)
+}
+
+/// What Droid 0.247.0 really prints: the stream has no counterpart of a `todo_state` record
+/// (round 2 of `m2-host-shell-and-launch`: 18 hosted events against 21 attached), so the
+/// record is left out. Only the session file carries it.
+fn droid_stream_of(file: &Path) -> (Vec<u8>, u64) {
+    stream_of(file, false)
+}
+
+fn stream_of(file: &Path, keep_todo_state: bool) -> (Vec<u8>, u64) {
     let mut out = Vec::new();
     let mut chatter = 0;
     let mut chat = |out: &mut Vec<u8>, session: &str, kind: &str| {
@@ -117,6 +128,7 @@ fn hosted_stream_of(file: &Path) -> (Vec<u8>, u64) {
                     "turnId": record["turnId"], "tokenUsage": { "inputTokens": 0 },
                 }),
             ))),
+            Some("todo_state") if !keep_todo_state => {}
             _ => {
                 out.extend_from_slice(raw.as_bytes());
                 out.push(b'\n');
@@ -149,6 +161,15 @@ struct Hosted {
 }
 
 fn host(dir: &Path, stream: &[u8]) -> Hosted {
+    host_with(dir, stream, None)
+}
+
+/// A host that also reads the session file of the hosted child below `sessions`.
+fn host_reading(dir: &Path, stream: &[u8], sessions: &IngestConfig) -> Hosted {
+    host_with(dir, stream, Some(sessions))
+}
+
+fn host_with(dir: &Path, stream: &[u8], sessions: Option<&IngestConfig>) -> Hosted {
     let source_file = dir.join("recorded.jsonl");
     std::fs::write(&source_file, stream).unwrap();
     let spool = observatory_core::ingest::rpc::spool_path(dir, LAUNCH);
@@ -156,6 +177,9 @@ fn host(dir: &Path, stream: &[u8]) -> Hosted {
 
     let mut source = RpcSource::open(&spool, &IngestConfig::default()).expect("the spool opens");
     let mut mapper = RpcMapper::new(LAUNCH, MappingVersion::LATEST);
+    if let Some(sessions) = sessions {
+        mapper = mapper.with_session_files(sessions);
+    }
     let (mut events, mut records) = (Vec::new(), Vec::new());
     loop {
         let mut batch = source.next_batch().expect("the spool reads");
@@ -317,26 +341,240 @@ fn spool_is_byte_identical_to_the_process_stdout() {
     }
 }
 
+fn kind_counts<'a>(events: impl IntoIterator<Item = &'a Event>) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for event in events {
+        *counts
+            .entry(event.kind.prd_name().into_owned())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn without_usage_reported(events: &[Event]) -> Vec<&Event> {
+    events
+        .iter()
+        .filter(|event| event.kind != EventKind::UsageReported)
+        .collect()
+}
+
+/// A sessions directory laid out as Droid does, `<sessions>/<cwd-slug>/<session-id>.jsonl`,
+/// holding a copy of `file`: the config that points at it and the copy.
+fn sessions_holding(dir: &Path, file: &Path) -> (IngestConfig, PathBuf) {
+    let session = JsonlSource::open(file, &IngestConfig::default())
+        .unwrap()
+        .root_session_id()
+        .to_string();
+    let sessions = dir.join("sessions");
+    let folder = sessions.join("-private-tmp-scratch");
+    std::fs::create_dir_all(&folder).unwrap();
+    let copy = folder.join(format!("{session}.jsonl"));
+    std::fs::copy(file, &copy).unwrap();
+    (common::config(&sessions, 50), copy)
+}
+
 #[test]
 fn host_and_attach_of_the_same_mission_agree_on_event_count() {
     let dir = tempfile::tempdir().unwrap();
-    let (stream, _) = hosted_stream_of(&common::m0_root());
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    let (sessions, _) = sessions_holding(dir.path(), &common::m0_root());
 
-    let hosted = host(dir.path(), &stream);
+    let hosted = host_reading(dir.path(), &stream, &sessions);
     let attached = attach(&common::m0_root());
 
     assert!(!attached.is_empty());
-    assert_eq!(hosted.events.len(), attached.len());
-    let kinds = |events: &[Event]| {
-        let mut counts = BTreeMap::new();
-        for event in events {
-            *counts
-                .entry(event.kind.prd_name().into_owned())
-                .or_insert(0) += 1;
-        }
-        counts
+    let expected = without_usage_reported(&attached);
+    assert_eq!(hosted.events.len(), expected.len());
+    assert_eq!(
+        kind_counts(&hosted.events),
+        kind_counts(expected.iter().copied())
+    );
+}
+
+#[test]
+fn hosted_plan_revised_comes_from_the_session_file_and_matches_the_attached_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    assert!(
+        !String::from_utf8_lossy(&stream).contains("todo_state"),
+        "the stream carries no todo_state"
+    );
+    let (sessions, file) = sessions_holding(dir.path(), &common::m0_root());
+
+    let hosted = host_reading(dir.path(), &stream, &sessions);
+    let attached = attach(&common::m0_root());
+
+    let expected = without_usage_reported(&attached);
+    let plan = |events: &[&Event]| -> Vec<String> {
+        events
+            .iter()
+            .filter(|event| event.kind == EventKind::PlanRevised)
+            .map(|event| event.id.to_string())
+            .collect()
     };
-    assert_eq!(kinds(&hosted.events), kinds(&attached));
+    let attached_plan = plan(&expected);
+    assert!(!attached_plan.is_empty(), "the capture revises its plan");
+    let hosted_events: Vec<&Event> = hosted.events.iter().collect();
+    assert_eq!(plan(&hosted_events), attached_plan, "same ids as attach");
+    assert_eq!(hosted.events.len(), expected.len());
+    for (index, (hosted_event, attached_event)) in hosted.events.iter().zip(&expected).enumerate() {
+        let (mut hosted_lane, attached_lane) =
+            (lane_event(hosted_event), lane_event(attached_event));
+        let turn_outcome = matches!(&hosted_event.source, SourcePtr::Rpc { path, byte_offset, byte_len }
+            if String::from_utf8_lossy(&JsonlSource::read_at(path, *byte_offset, *byte_len).unwrap())
+                .contains("agent_turn_completed"));
+        if turn_outcome {
+            (hosted_lane.5, hosted_lane.6) = (attached_lane.5, attached_lane.6);
+        }
+        assert_eq!(hosted_lane, attached_lane, "event {index}");
+    }
+    for event in hosted
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::PlanRevised)
+    {
+        let SourcePtr::Jsonl {
+            path,
+            byte_offset,
+            byte_len,
+        } = &event.source
+        else {
+            panic!(
+                "plan.revised points into the session file: {:?}",
+                event.source
+            );
+        };
+        assert_eq!(path, &file);
+        let raw = JsonlSource::read_at(path, *byte_offset, *byte_len).unwrap();
+        assert!(String::from_utf8_lossy(&raw).contains("\"todo_state\""));
+    }
+}
+
+#[test]
+fn a_todo_state_in_both_the_stream_and_the_file_is_one_plan_revised() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = hosted_stream_of(&common::m0_root());
+    assert!(String::from_utf8_lossy(&stream).contains("todo_state"));
+    let (sessions, _) = sessions_holding(dir.path(), &common::m0_root());
+
+    let hosted = host_reading(dir.path(), &stream, &sessions);
+    let attached = attach(&common::m0_root());
+
+    assert_eq!(hosted.events.len(), attached.len());
+    assert_eq!(kind_counts(&hosted.events), kind_counts(&attached));
+    let mut ids: Vec<String> = hosted.events.iter().map(|e| e.id.to_string()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), hosted.events.len(), "no id twice");
+}
+
+#[test]
+fn the_store_holds_each_hosted_plan_revised_once_however_often_it_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    let (sessions, _) = sessions_holding(dir.path(), &common::m0_root());
+    let first = host_reading(dir.path(), &stream, &sessions);
+    let again = tempfile::tempdir().unwrap();
+    let second = host_reading(again.path(), &stream, &sessions);
+    let attached = attach(&common::m0_root());
+    let db = dir.path().join("observatory.sqlite");
+    let mut store = Store::open(&db).unwrap();
+    store
+        .record_hosted(&HostedRun {
+            mission_name: "hosted".into(),
+            session: first.mapper.session_id().cloned().unwrap(),
+            spool: first.spool.clone(),
+            droid_version: None,
+            started_at: "2026-10-24T05:39:04.000Z".into(),
+        })
+        .unwrap();
+
+    store.insert_events(&first.events).unwrap();
+    let added_again = store.insert_events(&second.events).unwrap();
+    let attached_plan: Vec<Event> = attached
+        .iter()
+        .filter(|event| event.kind == EventKind::PlanRevised)
+        .cloned()
+        .collect();
+    let added_by_attach = store.insert_events(&attached_plan).unwrap();
+
+    assert_eq!(added_again, 0, "a second read of the same run adds nothing");
+    assert_eq!(added_by_attach, 0, "attach adds no second plan.revised");
+    let conn = Connection::open(&db).unwrap();
+    let (rows, distinct): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT id) FROM events",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(rows, distinct);
+    let plans: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'plan.revised'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(usize::try_from(plans).unwrap(), attached_plan.len());
+}
+
+#[test]
+fn a_hosted_run_with_no_session_file_maps_the_stream_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    let empty = common::config(&dir.path().join("no-sessions"), 50);
+
+    let reading = host_reading(dir.path(), &stream, &empty);
+    let alone = host(dir.path(), &stream);
+
+    assert_eq!(kind_counts(&reading.events), kind_counts(&alone.events));
+    assert!(
+        !reading
+            .events
+            .iter()
+            .any(|event| event.kind == EventKind::PlanRevised)
+    );
+}
+
+#[test]
+fn a_session_file_that_appears_late_still_yields_every_plan_revised() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    let spool_file = observatory_core::ingest::rpc::spool_path(dir.path(), LAUNCH);
+    let mut spool = Spool::create(&spool_file).unwrap();
+    let mut source = RpcSource::open(&spool_file, &IngestConfig::default()).unwrap();
+    let sessions = common::config(&dir.path().join("sessions"), 50);
+    let mut mapper = RpcMapper::new(LAUNCH, MappingVersion::LATEST).with_session_files(&sessions);
+    let lines: Vec<&[u8]> = stream.split_inclusive(|byte| *byte == b'\n').collect();
+    let (early, late) = lines.split_at(lines.len() / 2);
+    let mut events = Vec::new();
+    let mut pump = |lines: &[&[u8]], mapper: &mut RpcMapper| {
+        for line in lines {
+            spool.append_line(line.trim_ascii_end()).unwrap();
+            for record in source.next_batch().unwrap() {
+                events.extend(mapper.map(&record));
+            }
+        }
+    };
+
+    pump(early, &mut mapper);
+    sessions_holding(dir.path(), &common::m0_root());
+    pump(late, &mut mapper);
+    events.extend(mapper.finish());
+
+    let attached = attach(&common::m0_root());
+    let plans = |events: &[Event]| {
+        let mut ids: Vec<String> = events
+            .iter()
+            .filter(|event| event.kind == EventKind::PlanRevised)
+            .map(|event| event.id.to_string())
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert!(!plans(&attached).is_empty());
+    assert_eq!(plans(&events), plans(&attached));
 }
 
 fn written_lines(channel: &ControlChannel<Vec<u8>>) -> Vec<Value> {
