@@ -127,6 +127,16 @@ class Agg:
         if model not in self.models or a.first < self.models[model]:
             self.models[model] = a.first
 
+    def merge(self, other):
+        self.sessions |= other.sessions
+        for k in ("turns", "i", "o", "cr", "cw", "rs", "unpriced", "usd"):
+            setattr(self, k, getattr(self, k) + getattr(other, k))
+        if other.first and (self.first is None or other.first < self.first):
+            self.first = other.first
+        if other.last and (self.last is None or other.last > self.last):
+            self.last = other.last
+        self.files |= other.files
+
 
 def read_jsonl(path):
     out = []
@@ -547,6 +557,12 @@ def build(args):
     pl_path = os.path.join(mission_dir, "progress_log.jsonl")
     progress = read_jsonl(pl_path) if os.path.exists(pl_path) else []
     pl_label = os.path.basename(mission_dir.rstrip("/")) + "/progress_log.jsonl"
+    ft_path = os.path.join(mission_dir, "features.json")
+    ft_label = os.path.basename(mission_dir.rstrip("/")) + "/features.json"
+    skills = {}
+    if os.path.exists(ft_path):
+        with open(ft_path) as f:
+            skills = {x["id"]: x.get("skillName") or "-" for x in json.load(f).get("features", []) if "id" in x}
     start = args.start
     if not start:
         firsts = [r["timestamp"] for _, r in progress
@@ -616,6 +632,8 @@ def build(args):
         src_rows.append(["`sessions/%s/%s.jsonl`" % (os.path.basename(os.path.dirname(tpath)), mission_id), len(bounded),
                          ts_or_dash(bounded[0] if bounded else None), ts_or_dash(bounded[-1] if bounded else None),
                          "orchestrator transcript, assistant records up to the window end"])
+    if skills:
+        src_rows.append(["`%s`" % ft_label, len(skills), "-", "-", "feature id to skill (the Skill column of Feature size)"])
     n_sidecars = len({sid for sid, _ in upto if sid in sidecars})
     src_rows.append(["`sessions/*/*.settings.json` (sidecars)", n_sidecars, "-", "-", "sidecars of the sessions with a log turn up to the window end"])
     src_rows.append(["`%s`" % os.path.basename(args.prices), len(prices), "-", "-", "models priced"])
@@ -659,6 +677,7 @@ def build(args):
             total.first = a.first
         if a.last and (total.last is None or a.last > total.last):
             total.last = a.last
+    window_total = total
     rows.append(["total", len(total.sessions)] + agg_cells(total)[:7] + [total.unpriced,
                                                                          ts_or_dash(total.first), ts_or_dash(total.last), ", ".join(sorted(total.files)) or "-"])
     hdr = ["Role", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "Reasoning", "USD-eq", "Unpriced turns",
@@ -725,9 +744,10 @@ def build(args):
     for role in ROLES:
         a = sub.get(role)
         if a:
-            rows.append([role, len(a.sessions), a.turns, a.i, a.o, a.cr, a.cw, usd(a.usd), a.unpriced, a.first, a.last])
+            rows.append([role, len(a.sessions), a.turns, a.i, a.o, a.cr, a.cw, usd(a.usd), a.unpriced, a.first, a.last,
+                         ", ".join(sorted(a.files)) or "-"])
     for r in md_table(["Caller role", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "USD-eq", "Unpriced turns",
-                       "First ts", "Last ts"], rows):
+                       "First ts", "Last ts", "Source"], rows):
         emit(r)
     emit("")
 
@@ -738,9 +758,10 @@ def build(args):
     rows = []
     for mid, a in sorted(sc.items(), key=lambda kv: kv[1].first):
         rows.append(["`%s`" % mid, len(a.sessions), a.turns, a.i, a.o, a.cr, a.cw, usd(a.usd), a.unpriced,
-                     ", ".join(m for m, _ in sorted(a.models.items(), key=lambda kv: kv[1])), a.first, a.last])
+                     ", ".join(m for m, _ in sorted(a.models.items(), key=lambda kv: kv[1])), a.first, a.last,
+                     ", ".join(sorted(a.files)) or "-"])
     for r in md_table(["Mission", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "USD-eq", "Unpriced turns",
-                       "Models", "First ts", "Last ts"], rows):
+                       "Models", "First ts", "Last ts", "Source"], rows):
         emit(r)
     emit("")
 
@@ -853,15 +874,22 @@ def build(args):
     for sid, a in by_sess.items():
         c = clf.of(sid)
         if c["role"] in ("worker", "validator") and c["kind"] == "root" and c["feature"]:
-            f = feats.setdefault(c["feature"], [[], 0])
+            f = feats.setdefault(c["feature"], [[], 0, None, None, set()])
             f[0].append(sid)
             f[1] += a.turns
-    rows = [[f, rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])), v[1], "yes" if v[1] > FEATURE_TURN_CAP else "no"]
+            f[2] = a.first if f[2] is None else min(f[2], a.first)
+            f[3] = a.last if f[3] is None else max(f[3], a.last)
+            f[4] |= a.files
+    rows = [[f, skills.get(f, "-"), rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])), v[1],
+             "yes" if v[1] > FEATURE_TURN_CAP else "no", v[2], v[3],
+             "`%s`; %s%s" % (", ".join(sorted(v[4])), pl_label, "; " + ft_label if f in skills else "")]
             for f, v in sorted(feats.items())]
-    for r in md_table(["Feature", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP], rows):
+    for r in md_table(["Feature", "Skill", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP, "First ts", "Last ts",
+                       "Source"], rows):
         emit(r)
     emit("")
-    emit("Rounds are the `worker_started` entries for the feature in `%s`; turns are the model turns of its root sessions in the window." % pl_label)
+    emit("Rounds are the `worker_started` entries for the feature in `%s`; turns and the first and last timestamps are those of its root "
+         "sessions' log turns in the window; the skill is the feature's `skillName` in `%s`." % (pl_label, ft_label))
     emit("")
 
     # Mission to date
@@ -869,18 +897,25 @@ def build(args):
     emit("")
     caps = dict(c.split("=", 1) for c in args.cap)
     td = aggregate(upto, lambda sid, m: role_of(sid))
-    rows = []
-    for role in ROLES:
-        a = td.get(role) or Agg()
-        cap = caps.get(role)
+
+    def to_date_row(label, a, cap):
         over = "-" if cap is None else ("yes" if a.usd > float(cap) else "no")
-        rows.append([role, len(a.sessions), a.turns, a.i, a.o, a.cr, a.cw, usd(a.usd), a.unpriced, cap if cap is not None else "-", over,
-                     ts_or_dash(a.first), ts_or_dash(a.last)])
+        return [label, len(a.sessions), a.turns, a.i, a.o, a.cr, a.cw, usd(a.usd), a.unpriced, cap if cap is not None else "-", over,
+                ts_or_dash(a.first), ts_or_dash(a.last), ", ".join(sorted(a.files)) or "-"]
+
+    rows = [to_date_row(role, td.get(role) or Agg(), caps.get(role)) for role in ROLES]
+    mission_total = Agg()
+    for a in td.values():
+        mission_total.merge(a)
+    rows.append(to_date_row("total", mission_total, caps.get("total")))
+    rows.append(to_date_row("milestone window total", window_total, caps.get("milestone")))
     for r in md_table(["Role", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "USD-eq", "Unpriced turns",
-                       "Cap USD-eq", "Over cap", "First ts", "Last ts"], rows):
+                       "Cap USD-eq", "Over cap", "First ts", "Last ts", "Source"], rows):
         emit(r)
     emit("")
-    emit("Every log line up to the end of the window, no start bound; caps are those passed with `--cap role=USD`.")
+    emit("Role rows and `total` are every log line up to the end of the window, no start bound. `milestone window total` is the "
+         "total row of Tokens per role (the window only). Caps are those passed with `--cap role=USD`, `--cap total=USD` and "
+         "`--cap milestone=USD`.")
     # Sidecars: lifetime totals of sessions that may still be running, so the one section that can change between runs.
     emit("")
     emit("### Sidecar readings")
