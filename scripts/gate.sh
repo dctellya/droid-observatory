@@ -39,6 +39,8 @@ out=$(mktemp "${TMPDIR:-/tmp}/gateout.XXXXXX")
 trap 'rm -f "$idx" "$out" "$out.code"' EXIT HUP INT TERM
 rm -f "$idx"
 
+# The record field is `fingerprint`, not `key`: gitleaks and Droid-Shield read a `key` field holding 40 hex
+# characters as an API key and block the commit of the records.
 # `git rm --cached` drops the committed copies of the excluded paths: the exclude pathspec only stops
 # the working tree's changes, and HEAD's copy would otherwise make a commit of the records change the key.
 tree=$(GIT_INDEX_FILE="$idx" sh -c 'git read-tree HEAD &&
@@ -68,7 +70,7 @@ fi
 dir="reports/gate/$tree"
 file="$dir/$name.json"
 
-if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.key // empty' "$file" 2> /dev/null)" = "$key" ]; then
+if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
   echo "cached, proven at $(jq -r .finished_at "$file") by $(jq -r .session "$file")"
   jq -r '.summary' "$file"
   exit "$(jq -r .exit_code "$file")"
@@ -114,11 +116,11 @@ summary=$(grep -E '^test result:|^TOTAL|generated [0-9]+ warning|^error(\[[A-Z0-
 [ -n "$summary" ] || summary="(no output)"
 
 mkdir -p "$dir"
-jq -n --arg name "$name" --arg tree "$tree" --arg key "$key" --arg tool "$tool" --arg command "$cmd" \
+jq -n --arg name "$name" --arg tree "$tree" --arg fingerprint "$key" --arg tool "$tool" --arg command "$cmd" \
   --argjson exit_code "$code" --arg summary "$summary" --argjson seconds "$seconds" \
   --arg started_at "$started_at" --arg finished_at "$finished_at" \
   --arg session "$session" --arg session_source "$session_source" \
-  '{name: $name, tree: $tree, key: $key, tool: $tool, command: $command, exit_code: $exit_code,
+  '{name: $name, tree: $tree, fingerprint: $fingerprint, tool: $tool, command: $command, exit_code: $exit_code,
     summary: $summary, seconds: $seconds, started_at: $started_at, finished_at: $finished_at,
     session: $session, session_source: $session_source}' > "$file.tmp" && mv "$file.tmp" "$file"
 exit "$code"

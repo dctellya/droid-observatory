@@ -87,6 +87,10 @@ case "$(json unit .finished_at)" in
   *) fail "finished_at is not RFC 3339 UTC: $(json unit .finished_at)" ;;
 esac
 first_finished=$(json unit .finished_at)
+# The records are committed: no field may look like an API key to gitleaks.
+if command -v gitleaks > /dev/null 2>&1; then
+  gitleaks detect --no-git --no-banner --source reports/gate > "$tmp/leaks.txt" 2>&1 || fail "gitleaks flags the record: $(tail -n 3 "$tmp/leaks.txt")"
+fi
 
 # VAL-TOOL-002: a hit replays the verdict without running, under 5 s.
 t0=$(date +%s)

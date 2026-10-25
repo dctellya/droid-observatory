@@ -55,9 +55,10 @@ Lines for `library/tooling.md`, section "Gate cache":
 - The session in a record comes from `DROID_SESSION_ID`, then `FACTORY_SESSION_ID` (the Droid shell exports
   it; verified 2026-10-25 in a worker shell), then the newest `~/.factory/sessions/*/*.settings.json` by mtime,
   then `unknown`; the record's `session_source` names which. Override the directory with `GATE_SESSIONS_DIR`.
-- Record fields: `name, tree, key, tool, command, exit_code, summary, seconds, started_at, finished_at, session,
-  session_source`. A hit needs `key` (hash of tree, tool and command) to match, so a changed command or toolchain
-  on the same tree and name is a miss that replaces the record.
+- Record fields: `name, tree, fingerprint, tool, command, exit_code, summary, seconds, started_at, finished_at,
+  session, session_source`. A hit needs `fingerprint` (hash of tree, tool and command) to match, so a changed
+  command or toolchain on the same tree and name is a miss that replaces the record. The field is not called
+  `key`: gitleaks and Droid-Shield read `"key": "<40 hex>"` as an API key and block the commit of the records.
 - Key sequence, amended: `GIT_INDEX_FILE=$tmp sh -c 'git read-tree HEAD && git rm -r -q --cached
   --ignore-unmatch -- build-log reports/gate && git add -A -- . ":(exclude)build-log" ":(exclude)reports/gate"
   && git write-tree'`.
