@@ -493,7 +493,7 @@ mod tests {
         let template = CycleTemplate::engineering();
         let board = BoardView::empty(&template);
 
-        assert_eq!(board.lanes.len(), 7);
+        assert_eq!(board.lanes.len(), template.lanes.len());
         assert_eq!(board.card_count(), 0);
         let names: Vec<&str> = board.lanes.iter().map(|l| l.name.as_str()).collect();
         let wanted: Vec<&str> = template.lanes.iter().map(|l| l.name.as_str()).collect();
