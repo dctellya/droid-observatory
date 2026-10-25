@@ -19,7 +19,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 observatory-core.workspace = true
-serde.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["json"] }
 tauri = { version = "2.12.5", features = [] }
