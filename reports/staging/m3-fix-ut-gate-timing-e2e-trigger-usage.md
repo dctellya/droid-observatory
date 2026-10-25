@@ -5,7 +5,7 @@ Feature `m3-fix-ut-gate-timing-e2e-trigger-usage` (fix 3 of 3 after M3 user-test
 
 ## SPEC §9
 
-- Row (rule 24, D-026), e2e CI trigger: `.github/workflows/e2e.yml` runs on a pushed tag `e2e-*` plus
+- Row (F-NEW): e2e CI trigger (rule 24, D-026): `.github/workflows/e2e.yml` runs on a pushed tag `e2e-*` plus
   `workflow_dispatch`, with `concurrency: {group: e2e-${{ github.ref }}, cancel-in-progress: false}`. The integrator
   pushes one tag per milestone at the integration commit (`git tag e2e-m3 <sha> && git push origin e2e-m3`; tags are
   never moved or deleted) and pastes the run id, conclusion, wall time and artifact name. The tag trigger reads the
@@ -15,10 +15,10 @@ Feature `m3-fix-ut-gate-timing-e2e-trigger-usage` (fix 3 of 3 after M3 user-test
   milestone); `push` on `mission/**` with a `paths` filter (rejected: fires on every code push, a hotfix after the
   merge commit would overlap or, with cancel-in-progress true, cancel the run at the integration sha). Changes neither
   scope, caps nor models. Cost: one macOS run per milestone (25 to 35 minutes cold, free on a public repository).
-- Row (F-NEW), VAL-TOOL-001: `scripts/gate.sh` starts `started_at` and the `seconds` clock at entry (before the tree
+- Row (F-NEW): VAL-TOOL-001: `scripts/gate.sh` starts `started_at` and the `seconds` clock at entry (before the tree
   computation and the tool-version calls), so `seconds` covers the whole script run. The record's `exit_code` stays the
   command's own code (make reports it as `Error N` and exits 2; contract C-3).
-- Row (F-NEW), VAL-TOOL-005 table gaps closed in `scripts/usage-report.py`: Feature size gains `Skill` (from the
+- Row (F-NEW): VAL-TOOL-005 table gaps closed in `scripts/usage-report.py`: Feature size gains `Skill` (from the
   mission's `features.json`, listed in the Sources table), `First ts`, `Last ts` and `Source`; Subagents, Self-check
   missions and Mission to date gain a per-row `Source` column naming the log files; `--cap milestone=<USD>` and
   `--cap total=<USD>` compare against two new rows of the Mission to date table (`milestone window total`, the total

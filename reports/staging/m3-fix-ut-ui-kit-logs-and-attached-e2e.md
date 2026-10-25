@@ -5,13 +5,13 @@ Feature `m3-fix-ut-ui-kit-logs-and-attached-e2e` (fix 2 of 3 after M3 user-testi
 
 ## SPEC §9
 
-- Row (F-NEW), proposed, owner approval at the M3 boundary: ui-kit-v2 rule 3 (one scale, page max width 1180 px).
+- Row (F-NEW): proposed, owner approval at the M3 boundary: ui-kit-v2 rule 3 (one scale, page max width 1180 px).
   Departure: the app page (`.observatory` in `ui/style.css`) keeps `max-width: 1480px` so the board's seven lanes get
   room (at 1180 px each lane would be about 150 px wide). The Library box is 960 px and Details is a fixed overlay
   inset 3 vw, both narrower than 1180 px. Every font size in `style.css` is on the kit scale (11, 12, 14, 15, 22):
   `.lane-name` went from 13 px to 12 px in this feature. Alternative: 1180 px with horizontal lane scroll (rejected:
   the board is read across all lanes at once). Cost: none. Screen: the board.
-- Row (F-NEW), proposed, owner approval at the M3 boundary: ui-kit-v2 rule 4 (every page starts with `.eyebrow`,
+- Row (F-NEW): proposed, owner approval at the M3 boundary: ui-kit-v2 rule 4 (every page starts with `.eyebrow`,
   an `h2` and the facts). Departure: M3 adds no page head or eyebrow; the screens keep their existing headings.
   Deferred to `m4-gate-ui-and-merge`, which adds the Gate screens and is the first feature that may add navigation
   (the kit's "No new navigation" applies until then). Alternative: add the head to every M3 screen now (rejected:
