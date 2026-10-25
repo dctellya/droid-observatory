@@ -236,6 +236,43 @@ touch -t 202602010000 "$tmp/sessions/proj/new-id.settings.json"
 (unset DROID_SESSION_ID; GATE_SESSIONS_DIR="$tmp/none" sh "$gate" nosession -- sh "$tmp/ok.sh" > /dev/null 2>&1)
 [ "$(json nosession .session)" = "unknown" ] || fail "no-session value: $(json nosession .session)"
 
+# An interrupted run is not a verdict: HUP and TERM kill the command, exit 129/143 and leave no record, so a later run
+# is a miss and not a replayed failure. The handler must also fire while the command runs, not after it ends.
+cat > "$tmp/slow.sh" <<EOS
+echo "\$\$" > "$tmp/slow.pid"
+echo "slow started"
+sleep 20
+echo "slow finished"
+EOS
+for sig in TERM HUP; do
+  case "$sig" in TERM) want=143 ;; HUP) want=129 ;; esac
+  rm -f "$tmp/slow.pid" "$tmp/slow.out"
+  sig_tree=$(gate_key)
+  mkdir -p "$tmp/gt"
+  TMPDIR="$tmp/gt" sh "$gate" "slow-$sig" -- sh "$tmp/slow.sh" > "$tmp/slow.out" 2>&1 &
+  gpid=$!
+  n=0
+  while [ ! -s "$tmp/slow.pid" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -s "$tmp/slow.pid" ] || fail "$sig: the slow command never started"
+  kill "-$sig" "$gpid" 2> /dev/null
+  n=0
+  while kill -0 "$gpid" 2> /dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  if kill -0 "$gpid" 2> /dev/null; then
+    fail "$sig: gate.sh still running 5 s after the signal"
+    pkill -P "$gpid" 2> /dev/null
+    kill -9 "$gpid" 2> /dev/null
+  fi
+  wait "$gpid" 2> /dev/null
+  rc=$?
+  [ "$rc" -eq "$want" ] || fail "$sig: interrupted run exit $rc, expected $want"
+  [ ! -e "reports/gate/$sig_tree/slow-$sig.json" ] || fail "$sig: interrupted run left a record"
+  if [ -s "$tmp/slow.pid" ] && kill -0 "$(cat "$tmp/slow.pid")" 2> /dev/null; then
+    fail "$sig: the command outlived the interrupted gate"
+    kill "$(cat "$tmp/slow.pid")" 2> /dev/null
+  fi
+  [ -z "$(ls -A "$tmp/gt")" ] || fail "$sig: temp files left behind: $(ls "$tmp/gt")"
+done
+
 # Argument errors.
 sh "$gate" > /dev/null 2>&1 && fail "no arguments accepted"
 sh "$gate" unit > /dev/null 2>&1 && fail "missing command accepted"
