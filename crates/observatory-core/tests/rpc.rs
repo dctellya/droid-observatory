@@ -170,13 +170,17 @@ fn host_reading(dir: &Path, stream: &[u8], sessions: &IngestConfig) -> Hosted {
 }
 
 fn host_with(dir: &Path, stream: &[u8], sessions: Option<&IngestConfig>) -> Hosted {
+    host_as(LAUNCH, dir, stream, sessions)
+}
+
+fn host_as(launch: &str, dir: &Path, stream: &[u8], sessions: Option<&IngestConfig>) -> Hosted {
     let source_file = dir.join("recorded.jsonl");
     std::fs::write(&source_file, stream).unwrap();
-    let spool = observatory_core::ingest::rpc::spool_path(dir, LAUNCH);
+    let spool = observatory_core::ingest::rpc::spool_path(dir, launch);
     spool_through_fake_process(&source_file, &spool);
 
     let mut source = RpcSource::open(&spool, &IngestConfig::default()).expect("the spool opens");
-    let mut mapper = RpcMapper::new(LAUNCH, MappingVersion::LATEST);
+    let mut mapper = RpcMapper::new(launch, MappingVersion::LATEST);
     if let Some(sessions) = sessions {
         mapper = mapper.with_session_files(sessions);
     }
@@ -524,6 +528,23 @@ fn the_store_holds_each_hosted_plan_revised_once_however_often_it_is_read() {
         )
         .unwrap();
     assert_eq!(usize::try_from(plans).unwrap(), attached_plan.len());
+}
+
+#[test]
+fn a_launch_named_after_its_session_still_finds_the_session_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (stream, _) = droid_stream_of(&common::m0_root());
+    let (sessions, file) = sessions_holding(dir.path(), &common::m0_root());
+    let session = file.file_stem().unwrap().to_string_lossy().into_owned();
+
+    let hosted = host_as(&session, dir.path(), &stream, Some(&sessions));
+
+    let attached = attach(&common::m0_root());
+    assert_eq!(
+        hosted.events.len(),
+        without_usage_reported(&attached).len(),
+        "the host names the launch after the session, as the spool of round 2 was"
+    );
 }
 
 #[test]
