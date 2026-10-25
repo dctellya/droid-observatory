@@ -35,9 +35,9 @@ input[type=text] { min-width: 180px; }
 .panel th, .panel td, .agents th, .agents td, .details th, .details td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--border); }
 .panel th, .agents th, .details th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
-.lanes { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.lanes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
 .lane { display: flex; flex-direction: column; min-width: 0; max-height: 62vh; padding: 0; margin: 0; }
-.lane-name { margin: 0; padding: 6px 8px; font-size: 13px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); border-radius: 10px 10px 0 0; }
+.lane-name { margin: 0; padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); border-radius: 10px 10px 0 0; }
 .lane .count { background: var(--ring-bg); border-radius: 8px; padding: 0 6px; font-weight: 500; }
 .toggle { margin: 4px 8px; font-size: 11px; }
 .cards { padding: 4px 8px; display: flex; flex-direction: column; gap: 6px; }

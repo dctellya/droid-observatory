@@ -39,7 +39,7 @@ pub fn AgentPanel(
                 "Agents "
                 <span class="count" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
             </h2>
-            <div class="agent-table">
+            <div class="agent-table"><div class="lib"><div class="scroll">
                 <table aria-label="agent-table">
                     <thead>
                         <tr>
@@ -70,7 +70,7 @@ pub fn AgentPanel(
                         }}
                     </tbody>
                 </table>
-            </div>
+            </div></div></div>
             {move || {
                 selected
                     .get()
@@ -118,11 +118,11 @@ fn agent_row(entry: &AgentEntry, selected: RwSignal<Option<SessionId>>) -> AnyVi
                 {entry.drifted.then_some(" (drift)")}
             </td>
             <td>{entry.effort.clone()}</td>
-            <td>{entry.tokens.map(|t| t.input)}</td>
-            <td>{entry.tokens.map(|t| t.output)}</td>
-            <td>{entry.tokens.map(|t| t.cache_read)}</td>
-            <td>{entry.tokens.map(|t| t.cache_write)}</td>
-            <td>{entry.markers}</td>
+            <td class="n">{entry.tokens.map(|t| t.input)}</td>
+            <td class="n">{entry.tokens.map(|t| t.output)}</td>
+            <td class="n">{entry.tokens.map(|t| t.cache_read)}</td>
+            <td class="n">{entry.tokens.map(|t| t.cache_write)}</td>
+            <td class="n">{entry.markers}</td>
         </tr>
     }
     .into_any()

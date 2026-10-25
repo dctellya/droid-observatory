@@ -43,6 +43,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
                         <span aria-label="details-row-count">{model.timeline.len()}</span>
                     </p>
                     <RawLine capture=capture.clone() selected=selected />
+                    <div class="lib"><div class="scroll">
                     <table aria-label="details-timeline">
                         <thead>
                             <tr>
@@ -59,6 +60,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
                         </thead>
                         <tbody>{rows}</tbody>
                     </table>
+                    </div></div>
                 </section>
             }
         })
@@ -78,7 +80,7 @@ fn timeline_row(row: &TimelineRow, selected: RwSignal<Option<EventId>>) -> AnyVi
             <td>{row.kind.clone()}</td>
             <td>{row.role.as_str()}</td>
             <td>{row.model.as_ref().map(|model| model.0.clone())}</td>
-            <td>{row.duration_ms.map(|ms| format!("{ms} ms"))}</td>
+            <td class="n">{row.duration_ms.map(|ms| format!("{ms} ms"))}</td>
             <td>
                 <button
                     type="button"

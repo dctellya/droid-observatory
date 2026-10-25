@@ -25,6 +25,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                         .map_or_else(|| "n/a".to_owned(), |ms| format!("{} s", ms / 1000))
                 }}
             </p>
+            <div class="lib"><div class="scroll">
             <table aria-label="panel-roles" data-testid="panel-roles">
                 <thead>
                     <tr>
@@ -60,15 +61,15 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                                         view! {
                                             <tr aria-label=format!("panel-role-{}", row.role.as_str())>
                                                 <td>{row.role.as_str()}</td>
-                                                <td>{row.sessions}</td>
-                                                <td>{row.tokens.input}</td>
-                                                <td>{row.tokens.output}</td>
-                                                <td>{row.tokens.cache_read}</td>
-                                                <td>{row.tokens.cache_write}</td>
-                                                <td aria-label=format!("panel-turns-{}", row.role.as_str())>{row.turns}</td>
-                                                <td>{row.turn_input}</td>
-                                                <td>{row.turn_output}</td>
-                                                <td>{row.turn_cache_read}</td>
+                                                <td class="n">{row.sessions}</td>
+                                                <td class="n">{row.tokens.input}</td>
+                                                <td class="n">{row.tokens.output}</td>
+                                                <td class="n">{row.tokens.cache_read}</td>
+                                                <td class="n">{row.tokens.cache_write}</td>
+                                                <td class="n" aria-label=format!("panel-turns-{}", row.role.as_str())>{row.turns}</td>
+                                                <td class="n">{row.turn_input}</td>
+                                                <td class="n">{row.turn_output}</td>
+                                                <td class="n">{row.turn_cache_read}</td>
                                                 <td aria-label="declared-model">{row.declared.0.clone()}</td>
                                                 <td aria-label="observed-models">{observed}</td>
                                                 <td aria-label="model-drift">
@@ -82,6 +83,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                     }}
                 </tbody>
             </table>
+            </div></div>
         </section>
     }
 }

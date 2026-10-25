@@ -42,6 +42,7 @@ pub fn Library(
                     }
                 }
             >
+                <div class="lib"><div class="scroll">
                 <table aria-label="library-table">
                     <thead>
                         <tr>
@@ -64,7 +65,7 @@ pub fn Library(
                                     <tr aria-label="library-row" data-testid="library-row">
                                         <td aria-label="library-name" data-testid="library-name">{entry.name.clone()}</td>
                                         <td aria-label="library-date">{entry.date.clone()}</td>
-                                        <td aria-label="library-events">{entry.event_count}</td>
+                                        <td class="n" aria-label="library-events">{entry.event_count}</td>
                                         <td>
                                             <Show
                                                 when=move || reopenable.get().contains(&id)
@@ -89,6 +90,7 @@ pub fn Library(
                         </For>
                     </tbody>
                 </table>
+                </div></div>
             </Show>
 
             <button type="button" aria-label="open-launch" data-testid="open-launch" on:click=move |_| on_launch.run(())>
