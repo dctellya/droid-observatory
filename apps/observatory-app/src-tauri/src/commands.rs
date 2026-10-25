@@ -14,6 +14,7 @@ use tauri::{AppHandle, State};
 
 use crate::Shell;
 use crate::host::{self, Hosts};
+use crate::logging;
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -151,9 +152,17 @@ pub async fn host_status(
 
 /// The panel has drawn these events: the render half of the 1 s latency measurement (the
 /// emit half is the `events_appended` line of the host). `open` says whether the board of
-/// their mission was on screen.
+/// their mission was on screen; `ms` is the window's own `event:first_on_board` measure.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn panel_rendered(mission_id: String, event_ids: Vec<String>, open: bool) {
+pub async fn panel_rendered(
+    mission_id: String,
+    event_ids: Vec<String>,
+    open: bool,
+    ms: Option<f64>,
+) {
+    if let Some(ms) = ms {
+        logging::interval("panel_rendered", ms, event_ids.len());
+    }
     tracing::info!(
         mission_id,
         count = event_ids.len(),

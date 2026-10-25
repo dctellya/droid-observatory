@@ -49,6 +49,8 @@ describe('a hosted mission driven through the window', () => {
   let startedAt = 0;
 
   before(async () => {
+    // The app outlives a spec file: start from the library with a clean page.
+    await browser.refresh();
     await byId('open-launch').waitForDisplayed({ timeout: WAIT_MS });
     await byId('open-launch').click();
     await byId('launch-field-repo').setValue(HOSTED_REPO);
@@ -122,8 +124,10 @@ describe('a hosted mission driven through the window', () => {
     it('an intent.answered row follows the answer', async () => {
       await browser.waitUntil(
         async () => {
-          const kinds = await Promise.all((await allById('row-kind')).map((row) => row.getText()));
-          return kinds.includes('intent.answered');
+          for (const row of await allById('row-kind')) {
+            if ((await row.getText()) === 'intent.answered') return true;
+          }
+          return false;
         },
         { timeout: WAIT_MS, timeoutMsg: 'no intent.answered row on the board' },
       );
@@ -131,23 +135,26 @@ describe('a hosted mission driven through the window', () => {
 
     it('stamps each event with the time its line arrived, one poll apart', async () => {
       const finishedAt = Date.now();
-      const rows = await allById('timeline-row');
-      const stamped: { kind: string; at: number }[] = [];
-      for (const row of rows) {
+      const stamped = new Map<string, { kind: string; at: number }>();
+      for (const row of await allById('timeline-row')) {
+        const id = await row.getAttribute('data-event-id');
         const kind = await row.$('[data-testid="row-kind"]').getText();
         const time = await row.$('[data-testid="row-time"]').getText();
-        stamped.push({ kind, at: msOfDay(time) });
+        stamped.set(id ?? '', { kind, at: msOfDay(time) });
       }
-      const requested = stamped.filter((row) => row.kind === 'permission.requested');
-      expect(requested.length).toBeGreaterThanOrEqual(2);
       const lower = utcMsOfDay(startedAt);
       const upper = utcMsOfDay(finishedAt);
-      for (const row of stamped) {
+      for (const row of stamped.values()) {
         expect(row.at).toBeGreaterThanOrEqual(lower);
         expect(row.at).toBeLessThanOrEqual(upper);
       }
-      const gap = requested[1].at - requested[0].at;
-      expect(gap).toBeGreaterThan(0);
+      const failures = [...stamped.values()]
+        .filter((row) => row.kind === 'tool.error')
+        .map((row) => row.at)
+        .sort((a, b) => a - b);
+      expect(failures.length).toBeGreaterThanOrEqual(2);
+      const gap = failures[1] - failures[0];
+      console.log(`tool.error arrival stamps ${failures.join(', ')} ms of day, first gap ${gap} ms`);
       expect(gap).toBeGreaterThanOrEqual(FAKE_DROID_GAP_MS / 2);
     });
   });

@@ -28,6 +28,7 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc as async_mpsc, watch};
 
 use crate::Shell;
+use crate::logging;
 use crate::process::{ProcessGroup, spawn_group};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -253,6 +254,8 @@ pub async fn launch<R: Runtime>(
         output: Vec::new(),
         output_before: 0,
         flush_at: None,
+        line_at: Instant::now(),
+        oldest_at: None,
     };
     tokio::spawn(pump.run(received, spawned.exit));
 
@@ -312,6 +315,11 @@ struct Pump<R: Runtime> {
     output: Vec<Vec<u8>>,
     output_before: u64,
     flush_at: Option<Instant>,
+    /// When the line being read arrived.
+    line_at: Instant,
+    /// When the oldest event not yet emitted arrived: the start of the interval the timing log
+    /// records at the flush.
+    oldest_at: Option<Instant>,
 }
 
 type ExitCode = watch::Receiver<Option<Option<i32>>>;
@@ -342,6 +350,7 @@ impl<R: Runtime> Pump<R> {
             self.record(&record);
         }
         let finished = lock(&self.run.inner).mapper.finish();
+        self.line_at = Instant::now();
         self.store(finished);
         lock(&self.run.status).exited(code);
         tracing::info!(launch_id = %self.launch_id, code = ?code, "host_exit");
@@ -349,6 +358,7 @@ impl<R: Runtime> Pump<R> {
     }
 
     fn line(&mut self, mut line: Vec<u8>) {
+        self.line_at = Instant::now();
         while matches!(line.last(), Some(b'\n' | b'\r')) {
             line.pop();
         }
@@ -498,6 +508,7 @@ impl<R: Runtime> Pump<R> {
         self.unknown_total = store.unknown_count(&mission).unwrap_or(0);
         drop(store);
         self.pending.extend(events);
+        self.oldest_at.get_or_insert(self.line_at);
         self.schedule_flush();
     }
 
@@ -518,6 +529,13 @@ impl<R: Runtime> Pump<R> {
                 "events_appended"
             );
             let _ = self.app.emit("events_appended", &batch);
+            if let Some(arrived) = self.oldest_at.take() {
+                logging::interval(
+                    "spool_to_appended",
+                    arrived.elapsed().as_secs_f64() * 1000.0,
+                    batch.events.len(),
+                );
+            }
         }
         if !self.output.is_empty() {
             let lines = OutputLines::of(&self.launch_id, self.output_before, &self.output);

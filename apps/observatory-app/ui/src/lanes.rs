@@ -100,7 +100,11 @@ fn lane_column(
         <section class="lane" aria-label=lane.aria_label.clone()>
             <h2 class="lane-name">
                 {lane.name.clone()} " "
-                <span class="count" aria-label=format!("lane-{number}-count")>{lane.event_count}</span>
+                <span
+                    class="count"
+                    aria-label=format!("lane-{number}-count")
+                    data-testid=format!("lane-count-{number}")
+                >{lane.event_count}</span>
             </h2>
             {toggle}
             <div class="cards">{cards}</div>
@@ -147,6 +151,7 @@ fn row_view(row: &TimelineRow) -> AnyView {
             <button
                 type="button"
                 class="kind row-open"
+                data-testid="row-kind"
                 aria-label=format!("open-details-{}", row.event_id.0)
                 on:click=move |_| ctx.open_details.run(milestone.clone())
             >
@@ -154,18 +159,21 @@ fn row_view(row: &TimelineRow) -> AnyView {
             </button>
         }
         .into_any(),
-        None => view! { <span class="kind">{row.kind.clone()}</span> }.into_any(),
+        None => {
+            view! { <span class="kind" data-testid="row-kind">{row.kind.clone()}</span> }.into_any()
+        }
     };
     view! {
         <li
             class="row"
+            data-testid="timeline-row"
             class:unmapped=row.unmapped
             data-event-id=row.event_id.0.clone()
             data-role=row.role.as_str()
             data-model=row.model.as_ref().map(|m| m.0.clone())
             data-feature=row.feature.as_ref().map(|f| f.0.clone())
         >
-            <time>{time[11..23].to_owned()}</time>
+            <time data-testid="row-time">{time[11..23].to_owned()}</time>
             <span class=format!("role role-{}", row.role.as_str())>{row.role.as_str()}</span>
             {kind}
             {row.model.as_ref().map(|model| view! { <span class="model">{model.0.clone()}</span> })}

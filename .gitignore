@@ -38,4 +38,4 @@ Thumbs.db
 /coverage/
 lcov.info
 *.profraw
-reports/e2e/*/*.png
+reports/e2e/*/

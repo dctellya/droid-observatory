@@ -13,6 +13,7 @@ use crate::board::Board;
 use crate::capture::Capture;
 use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
+use crate::perf;
 use crate::shell;
 
 /// Refresh state of the library rows: nothing running, a read running, a read running that a
@@ -32,7 +33,13 @@ fn report_rendered(batch: &EventBatch, board_open: bool) {
         .collect();
     spawn_local(async move {
         leptos::task::tick().await;
-        let args = json!({ "mission_id": mission_id, "event_ids": event_ids, "open": board_open });
+        let ms = perf::batch_drawn();
+        let args = json!({
+            "mission_id": mission_id,
+            "event_ids": event_ids,
+            "open": board_open,
+            "ms": ms,
+        });
         let _ = shell::invoke::<_, ()>("panel_rendered", &args).await;
     });
 }
@@ -85,6 +92,7 @@ pub fn App() -> impl IntoView {
     let launching = RwSignal::new(false);
 
     let open_shell = Callback::new(move |(command, args): (&'static str, Value)| {
+        perf::panel_render_started();
         failure.set(None);
         status.set(Some("Opening…".to_owned()));
         pending.set(Some(Vec::new()));
@@ -155,6 +163,7 @@ pub fn App() -> impl IntoView {
             refresh_rows(rows, rows_state);
         });
         shell::listen::<EventBatch>("events_appended", move |batch| {
+            perf::batch_received();
             if pending.with_untracked(Option::is_some) {
                 pending.update(|held| held.get_or_insert_with(Vec::new).push(batch));
                 return;
@@ -181,6 +190,7 @@ pub fn App() -> impl IntoView {
     }
 
     let pick = Callback::new(move |files: Vec<web_sys::File>| {
+        perf::panel_render_started();
         failure.set(None);
         status.set(Some(format!("Loading {} files…", files.len())));
         spawn_local(async move {

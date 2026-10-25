@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // A stand-in for `droid exec --input-format stream-jsonrpc --output-format stream-jsonrpc`: it
-// answers the host's requests, then asks one question and two permissions, spaced by
+// answers the host's requests, then asks one question, fails two tools and asks two permissions, spaced by
 // FAKE_DROID_GAP_MS. Every line the host writes is appended to FAKE_DROID_LOG, so a spec can
 // read what the host answered. The envelopes are the ones core/tests/rpc.rs records from a real
 // droid 0.247.0.
@@ -9,8 +9,6 @@ import { createInterface } from 'node:readline';
 
 const GAP_MS = Number(process.env.FAKE_DROID_GAP_MS ?? '400');
 const LOG = process.env.FAKE_DROID_LOG;
-// A creation time long before the run: the board must stamp arrival, not this.
-const OLD_CREATED_AT = Date.UTC(2026, 0, 1);
 const ENVELOPE = { jsonrpc: '2.0', factoryApiVersion: '1.0.0', factoryProtocolVersion: '1.274.0' };
 
 let session = '';
@@ -30,6 +28,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function assistantToolUse(toolId, name, input) {
   seq += 1;
+  // Droid stamps a message with its creation time; notifications like tool_result carry none, so
+  // the host stamps those with the arrival of their line.
+  const now = Date.now();
   notify({
     type: 'create_message',
     message: {
@@ -38,8 +39,8 @@ function assistantToolUse(toolId, name, input) {
       seq,
       role: 'assistant',
       content: [{ type: 'tool_use', id: toolId, name, input }],
-      createdAt: OLD_CREATED_AT,
-      updatedAt: OLD_CREATED_AT,
+      createdAt: now,
+      updatedAt: now,
     },
   });
 }
@@ -50,6 +51,12 @@ async function script() {
     toolCallId: 'toolu_ASK',
     questions: [{ index: 1, topic: 'e2e', question: 'Which one?', options: [] }],
   });
+  // Two failed tools one gap apart: events whose arrival stamps the suite compares.
+  for (const n of [1, 2]) {
+    await sleep(GAP_MS);
+    assistantToolUse(`toolu_s${n}`, 'Execute', { command: `false ${n}` });
+    notify({ type: 'tool_result', toolUseId: `toolu_s${n}`, isError: true, content: `failed ${n}` });
+  }
   for (const id of ['perm-1', 'perm-2']) {
     await sleep(GAP_MS);
     const tool = `toolu_${id}`;
@@ -80,6 +87,15 @@ createInterface({ input: process.stdin }).on('line', (text) => {
       scripted = true;
       void script();
     }
+  } else if (typeof line.id === 'string' && line.id.startsWith('perm-') && line.result) {
+    // Droid goes on with the tool once it is allowed or refused, and that output is what makes the
+    // host report the request closed.
+    notify({
+      type: 'tool_result',
+      toolUseId: `toolu_${line.id}`,
+      isError: line.result.selectedOption !== 'proceed_once',
+      content: line.result.selectedOption === 'proceed_once' ? 'done' : 'refused',
+    });
   } else if (line.id === 'req-ask' && line.result) {
     const answer = line.result.answers?.[0]?.answer ?? '';
     notify({

@@ -10,6 +10,7 @@ mod lanes;
 mod launch;
 mod library;
 mod panel;
+mod perf;
 mod raw;
 mod shell;
 mod tray;

@@ -92,7 +92,7 @@ pub fn LaunchScreen(on_close: Callback<()>) -> impl IntoView {
     view! {
         <section class="launch" aria-label="launch-screen">
             <h1>"Launch a mission"</h1>
-            <button type="button" aria-label="launch-back" on:click=move |_| on_close.run(())>
+            <button type="button" aria-label="launch-back" data-testid="launch-back" on:click=move |_| on_close.run(())>
                 "Back to the library"
             </button>
             {(!tauri).then(unavailable)}
@@ -107,7 +107,7 @@ pub fn LaunchScreen(on_close: Callback<()>) -> impl IntoView {
                     .into_iter()
                     .map(|field| field_view(field, form, errors))
                     .collect_view()}
-                <button type="submit" aria-label="launch" disabled=move || starting.get()>
+                <button type="submit" aria-label="launch" data-testid="launch" disabled=move || starting.get()>
                     "Launch"
                 </button>
             </form>
@@ -119,6 +119,18 @@ pub fn LaunchScreen(on_close: Callback<()>) -> impl IntoView {
             {move || hosted.launched.get().map(|launched| hosted_view(hosted, launched))}
         </section>
     }
+}
+
+/// `launch-field-mission-branch-name`: the test id of a field, from its label.
+fn field_testid(field: LaunchField) -> String {
+    let slug: String = field
+        .label()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let words: Vec<&str> = slug.split('-').filter(|word| !word.is_empty()).collect();
+    format!("launch-field-{}", words.join("-"))
 }
 
 fn field_view(
@@ -139,6 +151,7 @@ fn field_view(
         view! {
             <select
                 aria-label=label
+                data-testid=field_testid(field)
                 prop:value=move || form.with(|form| form.value(field).to_owned())
                 on:change=move |ev| form.update(|form| form.set(field, event_target_value(&ev)))
             >
@@ -154,6 +167,7 @@ fn field_view(
             <input
                 type="text"
                 aria-label=label
+                data-testid=field_testid(field)
                 prop:value=move || form.with(|form| form.value(field).to_owned())
                 on:input=move |ev| form.update(|form| form.set(field, event_target_value(&ev)))
             />
@@ -215,11 +229,11 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
     let (pause, resume) = (control.clone(), control.clone());
     let say = control.clone();
     view! {
-        <section class="hosted" aria-label="hosted-run">
+        <section class="hosted" aria-label="hosted-run" data-testid="hosted-run">
             <h2>"Hosted mission"</h2>
             <p>
                 "State: "
-                <strong aria-label="hosted-state">
+                <strong aria-label="hosted-state" data-testid="hosted-state">
                     {move || status().map(|s| state_text(&s.state))}
                 </strong>
                 ", pid " <span aria-label="hosted-pid">{launched.pid}</span> ", session "
@@ -267,7 +281,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                 </button>
             </div>
             <h3>"Questions"</h3>
-            <ul aria-label="host-questions">
+            <ul aria-label="host-questions" data-testid="host-questions">
                 {
                     let launch_id = launch_id.clone();
                     move || {
@@ -281,7 +295,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                 }
             </ul>
             <h3>"Permission requests"</h3>
-            <ul aria-label="host-permissions">
+            <ul aria-label="host-permissions" data-testid="host-permissions">
                 {
                     let launch_id = launch_id.clone();
                     move || {
@@ -303,7 +317,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                         .into_iter()
                         .map(|sent| {
                             view! {
-                                <li aria-label="host-sent-row">
+                                <li aria-label="host-sent-row" data-testid="host-sent-row">
                                     <code>{sent.request_id}</code>
                                     " "
                                     {sent.method}
@@ -314,7 +328,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                 }}
             </ul>
             <h3>"Acknowledged by Droid"</h3>
-            <ul aria-label="host-acks">
+            <ul aria-label="host-acks" data-testid="host-acks">
                 {move || {
                     status()
                         .map(|s| s.acks)
@@ -349,20 +363,20 @@ fn question_view(
     let answer = RwSignal::new(String::new());
     let event_id = question.event_id.clone();
     view! {
-        <li aria-label="host-question">
+        <li aria-label="host-question" data-testid="ask-user-sheet">
             <code>{question.event_id.clone()}</code>
             " "
             {question.prompts.join(" / ")}
             " "
             <input
                 type="text"
-                aria-label="host-answer-text"
+                aria-label="host-answer-text" data-testid="host-answer-text"
                 prop:value=move || answer.get()
                 on:input=move |ev| answer.set(event_target_value(&ev))
             />
             <button
                 type="button"
-                aria-label="host-answer"
+                aria-label="host-answer" data-testid="host-answer"
                 on:click=move |_| {
                     let text = answer.get_untracked();
                     if !text.trim().is_empty() {
@@ -386,6 +400,7 @@ fn permission_view(
     launch_id: String,
     permission: observatory_core::view::PermissionRow,
 ) -> impl IntoView {
+    let request_id = permission.request_id.clone();
     let (approve_id, deny_id) = (permission.request_id.clone(), permission.request_id.clone());
     let (approve_launch, deny_launch) = (launch_id.clone(), launch_id);
     let tools = if permission.tools.is_empty() {
@@ -394,14 +409,18 @@ fn permission_view(
         permission.tools.join(", ")
     };
     view! {
-        <li aria-label="host-permission">
+        <li
+            aria-label="host-permission"
+            data-testid="host-permission"
+            data-request-id=request_id
+        >
             <code>{permission.request_id}</code>
             " "
             {tools}
             " "
             <button
                 type="button"
-                aria-label="host-approve"
+                aria-label="host-approve" data-testid="host-approve"
                 disabled=!permission.can_approve
                 on:click=move |_| {
                     send(
@@ -415,7 +434,7 @@ fn permission_view(
             </button>
             <button
                 type="button"
-                aria-label="host-deny"
+                aria-label="host-deny" data-testid="host-deny"
                 disabled=!permission.can_deny
                 on:click=move |_| {
                     send(

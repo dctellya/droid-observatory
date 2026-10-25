@@ -12,7 +12,7 @@ globs:
   - "**/*.md"
 ignores:
   - "ai/session/**"     # verbatim records of human and agent text, not edited for lint
-  - "node_modules/**"
+  - "**/node_modules/**"
   - "target/**"
   - "build-log/**"
   - "LICENSE"

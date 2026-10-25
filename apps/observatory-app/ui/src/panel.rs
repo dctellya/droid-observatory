@@ -2,14 +2,22 @@ use leptos::prelude::*;
 use observatory_core::model::CycleTemplate;
 use observatory_core::view::BoardView;
 
+use crate::perf;
+
 /// Time, tokens per role and model drift against the declared models. Cost and waste arrive
 /// with M5.
 #[component]
 pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
+    // Runs once the Panel's rows are in the DOM; the measure it closes was opened by the request
+    // that produced this board, so live batches add none.
+    Effect::new(move |_| {
+        board.track();
+        perf::panel_rendered();
+    });
     view! {
-        <section class="panel" aria-label=move || board.with(|b| b.panel.aria_label.clone())>
+        <section class="panel" data-testid="panel" aria-label=move || board.with(|b| b.panel.aria_label.clone())>
             <h2>"Panel"</h2>
-            <p aria-label="panel-elapsed">
+            <p aria-label="panel-elapsed" data-testid="panel-elapsed">
                 "Elapsed: "
                 {move || {
                     board
@@ -17,7 +25,7 @@ pub fn Panel(board: Memo<BoardView>) -> impl IntoView {
                         .map_or_else(|| "n/a".to_owned(), |ms| format!("{} s", ms / 1000))
                 }}
             </p>
-            <table aria-label="panel-roles">
+            <table aria-label="panel-roles" data-testid="panel-roles">
                 <thead>
                     <tr>
                         <th>"Role"</th>

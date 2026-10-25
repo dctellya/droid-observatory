@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { APP_BINARY, DATE, REPORT_DIR, appEnv, prepareRunDir } from './lib/env.js';
 
@@ -35,7 +35,9 @@ export const config: WebdriverIO.Config = {
       'junit',
       {
         outputDir: REPORT_DIR,
-        outputFileFormat: () => 'junit.xml',
+        outputFileFormat: ({ cid }: { cid: string }) => `junit-${cid}.xml`,
+        // The p50/p95/max lines the specs print land in each case's system-out.
+        addWorkerLogs: true,
       },
     ],
   ],
@@ -44,6 +46,20 @@ export const config: WebdriverIO.Config = {
   onPrepare: () => {
     mkdirSync(REPORT_DIR, { recursive: true });
     console.log(`e2e ${DATE}: app ${APP_BINARY}, reports ${REPORT_DIR}`);
+  },
+  onComplete: () => {
+    // One file per spec file is written by the reporter; the report is their <testsuite> elements together.
+    const parts = readdirSync(REPORT_DIR).filter((f) => /^junit-.+\.xml$/.test(f)).sort();
+    const suites = parts.flatMap((f) => [readFileSync(join(REPORT_DIR, f), 'utf8').match(/<testsuites[^>]*>([\s\S]*)<\/testsuites>/)?.[1]?.trim() ?? '']);
+    writeFileSync(join(REPORT_DIR, 'junit.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<testsuites>\n${suites.join('\n')}\n</testsuites>\n`);
+    for (const f of parts) rmSync(join(REPORT_DIR, f));
+  },
+  before: async () => {
+    // The tauri service checks the window state before every find and click through
+    // `browser.tauri.execute`, which needs tauri-plugin-wdio and costs 5 s per command without it.
+    // An explicit switchToWindow turns that recovery off for the session.
+    await browser.switchToWindow(await browser.getWindowHandle());
+    console.log(`document.visibilityState = ${await browser.execute(() => document.visibilityState)}`);
   },
   afterTest: async (test, _context, { passed }) => {
     // A covered or locked window may return a blank image or refuse; the DOM asserts stand alone.

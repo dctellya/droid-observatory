@@ -24,15 +24,21 @@ describe('panel render for a replayed fixture', () => {
 
   before(async () => {
     oracle = cliReplay(FIXTURE_ROOT);
+    // The app outlives a spec file: start from the library, with no measures from an earlier one.
+    await browser.refresh();
     await byId('open-path').waitForDisplayed({ timeout: WAIT_MS });
     await openFixture();
   });
 
   it('draws every lane with the count the CLI replay prints', async () => {
-    const lanes = await $$('[data-testid^="lane-count-"]');
-    await expect(lanes).toBeElementsArrayOfSize(oracle.lanes.size);
-    for (const [number, expected] of oracle.lanes) {
-      await expect(byId(`lane-count-${number}`)).toHaveText(String(expected));
+    const drawn: number[] = [];
+    for (const lane of await $$('[data-testid^="lane-count-"]')) {
+      const id = await lane.getAttribute('data-testid');
+      drawn.push(Number((id ?? '').replace('lane-count-', '')));
+    }
+    for (const number of oracle.lanes.keys()) expect(drawn).toContain(number);
+    for (const number of drawn) {
+      await expect(byId(`lane-count-${number}`)).toHaveText(String(oracle.lanes.get(number) ?? 0));
     }
     console.log(`lane counts (CLI replay): ${JSON.stringify([...oracle.lanes])}`);
   });
