@@ -269,6 +269,7 @@ impl Default for IngestConfig {
             tail_chunk_kb: 1024,
             startup_scan_hours: 24,
             runner_tags: [
+                "mission-orchestrator",
                 "exec",
                 "mission-worker",
                 "mission-session",
