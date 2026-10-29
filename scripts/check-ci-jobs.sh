@@ -12,7 +12,7 @@
 set -eu
 wf="${1:-.github/workflows/mission-branch.yml}"
 demo_wf="${2:-.github/workflows/demo-gate.yml}"
-required="machete coverage"
+required="machete coverage contract"
 
 needs=$(awk '
   /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { in_job = ($1 == "mission-checks:") }

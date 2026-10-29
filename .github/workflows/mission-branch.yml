@@ -184,9 +184,24 @@ jobs:
       - name: line coverage of observatory-core
         run: cargo llvm-cov -p observatory-core --all-features --fail-under-lines ${{ env.COVERAGE_MIN }} --summary-only
 
+  # The mechanical clauses of the validation contract (scripts/contract-checks). No test log and no GitHub token here:
+  # the test-name checks read presence only and the gh checks skip (no network); a tool the runner lacks skips the check.
+  contract:
+    name: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: contract checks
+        env:
+          CONTRACT_TESTLOG: none
+        run: make check-contract
+
   mission-checks:
     name: mission-checks
-    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage]
+    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

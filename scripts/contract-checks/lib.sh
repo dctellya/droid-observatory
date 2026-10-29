@@ -29,12 +29,12 @@ skip() { # skip <why> <assertion ids>
   printf '%s skip (%s) %s\n' "$CHECK" "$1" "$2"
   exit 0
 }
-need_tool() { # need_tool <tool>...: a missing tool is a FAIL, never a silent pass
+need_tool() { # need_tool <tool>...: a missing tool is a FAIL locally; a CI runner without it skips (its own job covers it)
   for t in "$@"; do
-    command -v "$t" > /dev/null 2>&1 || {
-      fail "tool $t is not installed"
-      finish "${IDS:--}"
-    }
+    command -v "$t" > /dev/null 2>&1 && continue
+    [ -z "${CI:-}" ] || skip "$t is not installed on this CI runner" "${ids:--}"
+    fail "tool $t is not installed"
+    finish "${ids:--}"
   done
 }
 mission_ref() {
