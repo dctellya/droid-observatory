@@ -5,7 +5,8 @@
 use std::cell::Cell;
 
 use observatory_core::secrets::{
-    Secret, SecretError, SecretName, TokenSource, lookup_service, resolve_github_token,
+    OFF_REASON, Secret, SecretError, SecretName, TokenSource, forge_source_enabled, lookup_service,
+    resolve_forge_token, resolve_github_token,
 };
 
 /// A PAT-shaped value built at run time: a literal would trip secret scanners on push.
@@ -76,6 +77,44 @@ fn the_environment_wins_and_the_keychain_is_not_consulted() {
     let (_, source) = resolve_github_token(None, fake_keychain).unwrap();
     assert_eq!(source, TokenSource::Keychain);
     assert_eq!(calls.get(), 2, "an empty or unset value reads it once each");
+}
+
+#[test]
+fn the_forge_source_is_off_without_a_token_or_the_owner_flag() {
+    let calls = Cell::new(0);
+    let fake_keychain = || {
+        calls.set(calls.get() + 1);
+        Ok(Some(Secret::new("from-keychain".into())))
+    };
+    for env in [None, Some(String::new())] {
+        let (token, source) = resolve_forge_token(env, false, fake_keychain).unwrap();
+        assert!(token.is_none());
+        assert_eq!(source, TokenSource::Off);
+    }
+    assert_eq!(calls.get(), 0, "no variable and no flag: no keychain call");
+    assert!(!forge_source_enabled(None, false));
+    assert!(!forge_source_enabled(Some(""), false));
+
+    let (token, source) = resolve_forge_token(None, true, fake_keychain).unwrap();
+    assert_eq!(token.unwrap().expose(), "from-keychain");
+    assert_eq!(source, TokenSource::Keychain);
+    assert_eq!(calls.get(), 1, "FORGE_LIVE=1 reads the keychain once");
+    assert!(forge_source_enabled(None, true));
+
+    let (token, source) = resolve_forge_token(Some(fake_token()), false, fake_keychain).unwrap();
+    assert_eq!(token.unwrap().expose(), fake_token());
+    assert_eq!(source, TokenSource::Env);
+    assert!(forge_source_enabled(Some(&fake_token()), false));
+    let (_, source) = resolve_forge_token(Some(fake_token()), true, fake_keychain).unwrap();
+    assert_eq!(source, TokenSource::Env);
+    assert_eq!(
+        calls.get(),
+        1,
+        "a set GITHUB_TOKEN leaves the keychain alone"
+    );
+
+    assert_eq!(TokenSource::Off.as_str(), "off");
+    assert_eq!(OFF_REASON, "no GITHUB_TOKEN and FORGE_LIVE unset");
 }
 
 #[test]
