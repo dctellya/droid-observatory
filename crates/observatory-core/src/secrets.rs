@@ -84,35 +84,58 @@ pub fn lookup_service(service: &str) -> Result<Option<Secret>, SecretError> {
     }
 }
 
-/// The GitHub token: the keychain, then `GITHUB_TOKEN` (the only environment fallback). A
-/// keychain that refuses (locked, access denied) gives way to the environment value; with none
-/// the refusal is returned.
-pub fn github_token() -> Result<Option<Secret>, SecretError> {
-    resolve_github_token_or_fallback(
-        lookup(SecretName::GithubToken),
-        std::env::var("GITHUB_TOKEN").ok(),
-    )
+/// Where the GitHub token came from; logged by the shell as `github.token source=...`, never the value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenSource {
+    Env,
+    Keychain,
+    None,
 }
 
-pub fn resolve_github_token_or_fallback(
-    keychain: Result<Option<Secret>, SecretError>,
+impl TokenSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Env => "env",
+            Self::Keychain => "keychain",
+            Self::None => "none",
+        }
+    }
+}
+
+/// The GitHub token: the keychain, then `GITHUB_TOKEN` (the only environment fallback).
+pub fn github_token() -> Result<Option<Secret>, SecretError> {
+    github_token_with_source().map(|(token, _)| token)
+}
+
+/// `github_token` with the source it resolved from.
+pub fn github_token_with_source() -> Result<(Option<Secret>, TokenSource), SecretError> {
+    resolve_github_token(std::env::var("GITHUB_TOKEN").ok(), || {
+        lookup(SecretName::GithubToken)
+    })
+}
+
+/// Resolves the token from the environment value and a keychain read. A keychain that refuses
+/// (locked, access denied) gives way to the environment value; with none the refusal is
+/// returned.
+pub fn resolve_github_token(
     env: Option<String>,
-) -> Result<Option<Secret>, SecretError> {
-    match keychain {
-        Ok(found) => Ok(resolve_github_token(found, env)),
-        Err(refusal) => match resolve_github_token(None, env) {
-            Some(token) => {
+    keychain: impl FnOnce() -> Result<Option<Secret>, SecretError>,
+) -> Result<(Option<Secret>, TokenSource), SecretError> {
+    let env = env.filter(|value| !value.is_empty());
+    match keychain() {
+        Ok(Some(found)) => Ok((Some(found), TokenSource::Keychain)),
+        Ok(None) => Ok(match env {
+            Some(value) => (Some(Secret(value)), TokenSource::Env),
+            None => (None, TokenSource::None),
+        }),
+        Err(refusal) => match env {
+            Some(value) => {
                 tracing::warn!(%refusal, "keychain refused, using GITHUB_TOKEN");
-                Ok(Some(token))
+                Ok((Some(Secret(value)), TokenSource::Env))
             }
             None => Err(refusal),
         },
     }
-}
-
-/// The keychain value when there is one, else a non-empty environment value.
-pub fn resolve_github_token(keychain: Option<Secret>, env: Option<String>) -> Option<Secret> {
-    keychain.or_else(|| env.filter(|value| !value.is_empty()).map(Secret))
 }
 
 /// The OTLP headers: the keychain only (D-010).
