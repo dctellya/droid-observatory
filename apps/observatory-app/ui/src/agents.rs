@@ -37,7 +37,7 @@ pub fn AgentPanel(
         <section class="agents" aria-label="agents">
             <h2>
                 "Agents "
-                <span class="count" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
+                <span class="count mono" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
             </h2>
             <div class="agent-table"><div class="lib"><div class="scroll">
                 <table aria-label="agent-table">
@@ -153,8 +153,8 @@ fn stream_view(
         <section class="agent-stream" aria-label="agent-stream">
             <h3>
                 "Output stream of " <span aria-label="agent-stream-name">{name}</span>
-                " " <span class="count" aria-label="agent-stream-rows">{stream.rows.len()}</span>
-                " rows, " <span aria-label="agent-stream-markers">{stream.markers.len()}</span>
+                " " <span class="count mono" aria-label="agent-stream-rows">{stream.rows.len()}</span>
+                " rows, " <span class="mono" aria-label="agent-stream-markers">{stream.markers.len()}</span>
                 " markers"
             </h3>
             <button type="button" aria-label="agent-stream-close" on:click=move |_| selected.set(None)>

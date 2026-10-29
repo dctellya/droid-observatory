@@ -3,6 +3,10 @@
 # aggregate job `mission-checks` is the single name other tooling depends on.
 #
 # Rust jobs activate automatically once Cargo.toml exists (walking skeleton).
+#
+# A push that changes only reports, the tool-call log, docs or Markdown outside the code roots (crates, apps, scripts,
+# config, .github) runs nothing: the same set scripts/gate.sh leaves out of its key. A push that also touches one code
+# path runs everything. `paths-ignore` cannot negate, so the Markdown outside the code roots is listed by directory.
 
 name: mission-branch
 
@@ -11,6 +15,13 @@ on:
     branches:
       - "mission/**"
       - "wt/**"
+    paths-ignore:
+      - "reports/**"
+      - "build-log/**"
+      - "docs/**"
+      - "*.md"
+      - "ai/**/*.md"
+      - ".factory/**/*.md"
   pull_request:
     branches:
       - "mission/**"
@@ -114,8 +125,9 @@ jobs:
         run: |
           cargo clippy --workspace --exclude observatory-app --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
           cargo clippy -p observatory-ui --target wasm32-unknown-unknown --all-targets --all-features -- -D warnings
+      # The core tests run once, in the `coverage` job (llvm-cov runs them all); this step runs the CLI's.
       - name: test
-        run: cargo test -p observatory-core -p observatory-cli --all-features
+        run: cargo test -p observatory-cli --all-features
       - name: replay fixtures
         if: needs.detect.outputs.has_fixtures == 'true'
         run: make replay-fixtures
@@ -172,9 +184,34 @@ jobs:
       - name: line coverage of observatory-core
         run: cargo llvm-cov -p observatory-core --all-features --fail-under-lines ${{ env.COVERAGE_MIN }} --summary-only
 
+  # The mechanical clauses of the validation contract (scripts/contract-checks). No test log and no GitHub token here:
+  # the test-name checks read presence only and the gh checks skip (no network); a tool the runner lacks skips the check.
+  contract:
+    name: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: contract checks
+        env:
+          CONTRACT_TESTLOG: none
+        run: make check-contract
+
+  # The UI kit v2 lint (scripts/check-kit.py): mono and tabular figures, spacing overrides, recorded departures.
+  kit:
+    name: kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: UI kit lint
+        run: make check-kit
+
   mission-checks:
     name: mission-checks
-    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage]
+    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract, kit]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

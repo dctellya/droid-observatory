@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use super::{SessionInfo, order_key};
-use crate::model::{Event, MissionId, SessionId, SourcePtr};
+use crate::model::{Event, EventId, MissionId, SessionId, SourcePtr};
 use crate::view::MissionSummary;
 
 /// The `events_appended` payload.
@@ -24,6 +24,10 @@ pub struct EventBatch {
     /// adding `events`.
     #[serde(default)]
     pub retracted: Vec<Retraction>,
+    /// Events the store deleted after the UI may have received them (the ack-derived
+    /// `mission.paused` that the stream's own line replaced); drop them before adding `events`.
+    #[serde(default)]
+    pub retracted_events: Vec<EventId>,
 }
 
 /// The lines of a session file that Droid rewrote in place moved, so the events read from them
@@ -53,6 +57,13 @@ impl Retraction {
 pub fn retract_stale(held: &mut Vec<Event>, retracted: &[Retraction]) -> usize {
     let before = held.len();
     held.retain(|event| !retracted.iter().any(|r| r.covers(event)));
+    before - held.len()
+}
+
+/// Drops from `held` the events named in `ids`. Returns how many were dropped.
+pub fn drop_events(held: &mut Vec<Event>, ids: &[EventId]) -> usize {
+    let before = held.len();
+    held.retain(|event| !ids.contains(&event.id));
     before - held.len()
 }
 
@@ -226,6 +237,7 @@ impl Pending {
             events: self.events,
             unknown_total: self.unknown_total,
             retracted: self.retracted,
+            retracted_events: Vec::new(),
         }
     }
 }

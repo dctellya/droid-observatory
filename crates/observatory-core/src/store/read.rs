@@ -1,6 +1,6 @@
 //! The read path of the store: events and missions, rebuilt from the flat columns. A row holds
-//! a pointer, never text, so what comes back is what `insert_events` was given, except the
-//! payload of `handed_to_cd` (M4 keeps it in `prs` and `attestations`).
+//! a pointer, never text, so what comes back is what `insert_events` was given. The attestation
+//! ids of a `handed_to_cd` are read from the `attestations` rows of its PR.
 
 use rusqlite::types::ValueRef;
 use rusqlite::{Row, params};
@@ -88,7 +88,33 @@ impl Store {
         for row in rows {
             events.push(row??);
         }
+        for event in &mut events {
+            self.fill_attestations(event)?;
+        }
         Ok(events)
+    }
+
+    /// A `handed_to_cd` row keeps the PR number and the merge sha; its attestation ids are the
+    /// `attestations` rows of that PR.
+    fn fill_attestations(&self, event: &mut Event) -> Result<(), StoreError> {
+        let EventKind::HandedToCd {
+            pr_number,
+            attestation_ids,
+            ..
+        } = &mut event.kind
+        else {
+            return Ok(());
+        };
+        let mut statement = self.conn.prepare_cached(
+            "SELECT attestation_id FROM attestations \
+             WHERE pr_number = ?1 AND attestation_id IS NOT NULL ORDER BY id",
+        )?;
+        let ids = statement.query_map(
+            params![i64::try_from(*pr_number).unwrap_or(i64::MAX)],
+            |row| row.get::<_, String>(0),
+        )?;
+        *attestation_ids = ids.collect::<Result<Vec<_>, _>>()?;
+        Ok(())
     }
 
     /// The event with `id`.
@@ -106,10 +132,12 @@ impl Store {
             ],
             |row| Ok(event_of(row)),
         )?;
-        match rows.next() {
-            Some(row) => row?,
-            None => Err(StoreError::UnknownEvent { id: id.to_string() }),
-        }
+        let mut event = match rows.next() {
+            Some(row) => row??,
+            None => return Err(StoreError::UnknownEvent { id: id.to_string() }),
+        };
+        self.fill_attestations(&mut event)?;
+        Ok(event)
     }
 
     /// Every mission with the number of events indexed for it, newest first.

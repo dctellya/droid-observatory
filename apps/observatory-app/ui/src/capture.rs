@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::ingest::{
-    EventBatch, MemoryReplay, OpenedMission, SessionInfo, merge_ordered, retract_stale,
+    EventBatch, MemoryReplay, OpenedMission, SessionInfo, drop_events, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
-use observatory_core::view::{MissionSummary, RawLineView, raw_line_view};
+use observatory_core::view::{GateGroup, MissionSummary, RawLineView, raw_line_view};
 use serde_json::json;
 
 use crate::shell;
@@ -28,6 +28,8 @@ pub struct Capture {
     pub sessions: ArcRwSignal<Vec<SessionInfo>>,
     /// True while a session of the mission is being tailed.
     pub live: ArcRwSignal<bool>,
+    /// The Gate header as the last poll read it; none before the first poll or in the browser host.
+    pub gate: ArcRwSignal<Option<GateGroup>>,
     raw: RawSource,
 }
 
@@ -38,6 +40,7 @@ impl Capture {
             events: ArcRwSignal::new(replay.events.clone()),
             sessions: ArcRwSignal::new(replay.sessions.clone()),
             live: ArcRwSignal::new(false),
+            gate: ArcRwSignal::new(None),
             raw: RawSource::Memory(replay),
         }
     }
@@ -48,6 +51,7 @@ impl Capture {
             events: ArcRwSignal::new(opened.events),
             sessions: ArcRwSignal::new(opened.sessions),
             live: ArcRwSignal::new(opened.live),
+            gate: ArcRwSignal::new(None),
             raw: RawSource::Shell,
         }
     }
@@ -70,6 +74,7 @@ impl Capture {
         let mut changed = 0;
         self.events.update(|held| {
             changed = retract_stale(held, &batch.retracted);
+            changed += drop_events(held, &batch.retracted_events);
             changed += merge_ordered(held, batch.events);
         });
         if changed > 0 {
@@ -84,6 +89,14 @@ impl Capture {
         if let Ok(sessions) = shell::invoke::<_, Vec<SessionInfo>>("mission_sessions", &args).await
         {
             self.sessions.set(sessions);
+        }
+    }
+
+    /// Asks the shell for the Gate header the last poll read.
+    pub async fn refresh_gate(&self) {
+        let args = json!({ "mission_id": self.mission_id() });
+        if let Ok(Some(gate)) = shell::invoke::<_, Option<GateGroup>>("gate_group", &args).await {
+            self.gate.set(Some(gate));
         }
     }
 

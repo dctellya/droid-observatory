@@ -17,7 +17,7 @@ pub fn Tray(
         <section class="tray" aria-label="tray">
             <h2>
                 "Unmapped tray "
-                <span class="count" aria-label="tray-count">
+                <span class="count mono" aria-label="tray-count">
                     {move || board.with(|b| b.tray_unknown)}
                 </span>
             </h2>

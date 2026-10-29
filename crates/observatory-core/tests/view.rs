@@ -1604,3 +1604,70 @@ fn a_per_worker_sub_lane_is_headed_by_the_session_name() {
         "a feature or milestone group keeps its own label"
     );
 }
+
+#[test]
+fn a_red_check_returns_the_card_to_the_build_lane_and_counts_one_cycle() {
+    let template = engineering();
+    let gh = |kind, second| {
+        Build::new(kind, Role::External, "gh", second)
+            .milestone("m1")
+            .done()
+    };
+    let mut events = vec![
+        worker(EventKind::TaskStarted, "w1", 1, "m1"),
+        Build::new(EventKind::IntegrationMerged, Role::Orchestrator, "o1", 2)
+            .milestone("m1")
+            .done(),
+        gh(EventKind::PrOpened, 3),
+    ];
+    let board = all(&events);
+    assert_eq!(board.cards[0].cycle, 0, "no red check, no fix cycle");
+
+    events.push(gh(EventKind::CheckFailed, 4));
+    let board = all(&events);
+    assert_eq!(board.gate.badge, GateBadge::CiRed);
+    assert_eq!(board.cards[0].lane, *template.home(Role::Worker));
+    assert_eq!(board.cards[0].cycle, 1);
+
+    // a second red while the first is still being fixed is the same cycle
+    events.push(worker(EventKind::TaskStarted, "w2", 5, "m1"));
+    events.push(gh(EventKind::CheckFailed, 6));
+    let board = all(&events);
+    assert_eq!(board.cards[0].lane, *template.home(Role::Worker));
+    assert_eq!(board.cards[0].cycle, 1);
+
+    events.push(gh(EventKind::CheckPassed, 7));
+    let board = all(&events);
+    assert_eq!(board.gate.badge, GateBadge::CiGreen);
+    assert_eq!(board.cards[0].lane, *template.final_lane());
+    assert_eq!(board.cards[0].cycle, 1);
+
+    events.push(gh(EventKind::CheckFailed, 8));
+    let board = all(&events);
+    assert_eq!(board.gate.badge, GateBadge::CiRed);
+    assert_eq!(board.cards[0].lane, *template.home(Role::Worker));
+    assert_eq!(board.cards[0].cycle, 2);
+}
+
+#[test]
+fn the_gate_header_of_a_list_of_events_is_the_one_the_board_shows() {
+    let gh = |kind, second| Build::new(kind, Role::External, "gh", second).done();
+    let events = vec![
+        gh(EventKind::PrOpened, 1),
+        gh(EventKind::CheckFailed, 2),
+        gh(EventKind::CheckPassed, 3),
+        gh(EventKind::CheckFailed, 4),
+    ];
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&events),
+        all(&events).gate
+    );
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&events).badge,
+        GateBadge::CiRed
+    );
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&[]).badge,
+        GateBadge::Pending
+    );
+}

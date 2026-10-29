@@ -4,6 +4,7 @@ use observatory_core::view::{MissionRow, library};
 
 use crate::attach::AttachPanel;
 use crate::backend::files_of;
+use crate::pagehead::PageHead;
 
 /// FR-L4: the captures known to this host (the store's in the Tauri window, those opened in this
 /// browser otherwise) with name, date and event count, and the controls that open a capture. One selection holds the root `.jsonl`, `<slug>.children/*.jsonl`, the
@@ -31,7 +32,12 @@ pub fn Library(
 
     view! {
         <section class="library" aria-label="library">
-            <h1>"Mission library"</h1>
+            <PageHead
+                eyebrow="Observatory › Library"
+                subtitle=Signal::derive(move || format!("{} missions", entries().len()))
+            >
+                <h1>"Mission library"</h1>
+            </PageHead>
             <Show
                 when=move || !entries().is_empty()
                 fallback=|| {

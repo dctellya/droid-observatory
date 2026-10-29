@@ -25,7 +25,7 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
     });
 }
 
-fn live_missions<R: Runtime>(app: &AppHandle<R>) -> Vec<MissionId> {
+pub(crate) fn live_missions<R: Runtime>(app: &AppHandle<R>) -> Vec<MissionId> {
     let shell = app.state::<Shell>();
     let mut missions: Vec<MissionId> = app
         .state::<Hosts>()

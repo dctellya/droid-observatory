@@ -209,6 +209,16 @@ pub async fn cycle_template(shell: State<'_, Shell>) -> Result<CycleTemplate, St
     Ok(shell.template.as_ref().clone())
 }
 
+/// The Gate header of a mission as the last poll read it, for a board opened after the
+/// `gate_changed` that announced it.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gate_group(
+    cache: State<'_, crate::github::GateCache>,
+    mission_id: MissionId,
+) -> Result<Option<observatory_core::view::GateGroup>, String> {
+    Ok(cache.get(&mission_id))
+}
+
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {
     let watched = lock(&shell.status).watched.clone();
     let store = lock(&shell.store);

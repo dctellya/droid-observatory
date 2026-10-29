@@ -19,12 +19,12 @@ MAX_FILE_KB ?= 200
 # M0 onward enforces 80; CI passes its own value through the same name.
 COVERAGE_MIN ?= 80
 
-# Gate cache (rule 27): check, test, lint and coverage run once per (tree, toolchain, command) and replay
+# Gate cache (rule 27): check, test, lint and coverage run once per (code paths, toolchain, command) and replay
 # the stored verdict after; FORCE=1 reruns. CI calls cargo directly and does not use the cache.
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-scripts check-gate-cache check-integrate integrate usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-kit check-kit-lint check-contract check-contract-checks check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
@@ -38,17 +38,21 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: ## All light checks (= mission-branch CI), cached by tree through scripts/gate.sh
+check: ## All light checks (= mission-branch CI), cached by the code paths through scripts/gate.sh, then the contract checks (never cached: they read git history and GitHub)
 	@$(GATE) check -- $(MAKE) --no-print-directory check-all
+	@CONTRACT_REQUIRE_TESTLOG=1 $(MAKE) --no-print-directory check-contract
 
-check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
+check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-kit check-scripts fmt-check lint test deny machete replay-fixtures
 
-check-scripts: check-gate-cache check-integrate ## Shell tests of the repository scripts
+check-scripts: check-gate-cache check-integrate check-integrate-long check-contract-checks check-kit-lint ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
 	@sh scripts/tests/agents_md_test.sh
 	@python3 scripts/tests/usage_test.py
+	@python3 scripts/tests/usage_idle_test.py
+	@python3 scripts/tests/usage_testing_test.py
+	@python3 scripts/tests/usage_rewrites_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
@@ -58,10 +62,29 @@ integrate: ## Land a milestone: no-ff merge, final gate, usage, staging files (M
 	@test -n "$(M)" -a -n "$(FROM)" || { echo "usage: make integrate M=<milestone> FROM='<worktree-branch>...'" >&2; exit 2; }
 	@sh scripts/integrate.sh "$(M)" $(FROM)
 
+integrate-long: ## The integration's long work in parallel lanes: coverage, test timings, CI on the pushed head (M=<milestone>); one result file reports/integrate-long/<code tree>.json; start it as a background job
+	@test -n "$(M)" || { echo "usage: make integrate-long M=<milestone> [FORCE=1]" >&2; exit 2; }
+	@sh scripts/integrate-long.sh $(if $(FORCE),--force) "$(M)"
+
+check-contract: ## The mechanical clauses of the validation contract: one line per check (scripts/contract-checks/README.md); GH_TOKEN enables the gh checks
+	@sh scripts/contract-checks/run-all.sh
+
+check-kit: ## UI-kit lint: mono and tabular figures, spacing overrides, recorded departures (scripts/check-kit.py, apps/observatory-app/kit-departures.md)
+	@python3 scripts/check-kit.py
+
+check-kit-lint: ## Self-test of the UI-kit lint: green on the tree, red on a planted override or sans cell, wiring
+	@sh scripts/tests/kit_lint_test.sh
+
+check-contract-checks: ## Self-test of the contract checks: green on the tree, red on a planted violation
+	@sh scripts/tests/contract_checks_test.sh
+
+check-integrate-long: ## Self-test of scripts/integrate-long.sh with a fake job set and a stub gh
+	@sh scripts/tests/integrate_long_test.sh
+
 check-integrate: ## Self-test of scripts/integrate.sh on throwaway repositories
 	@sh scripts/tests/integrate_test.sh
 
-check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
+check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, code-path key
 	@sh scripts/tests/gate_test.sh
 
 check-docs: ## Lint markdown

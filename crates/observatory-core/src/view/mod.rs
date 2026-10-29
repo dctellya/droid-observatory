@@ -25,14 +25,17 @@ pub use board::{
     OverlayView, PanelRole, PanelView, RoleTokens, RowGroup, branch_of, integrate_timeline,
     pointer_text,
 };
-pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
+pub use card::{Card, CardNow, IdleReason, ReturnArc, ValidationBadge, card_lane};
 pub use controls::{
     ActionRecorded, ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch,
     StallFlagView, StallRow, TERMINAL_INSTRUCTION, terminal_text,
 };
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
-pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
+pub use gate::{
+    ClockLabel, GateBadge, GateChanged, GateCheckRow, GateClockLine, GateGroup, GateGroupView,
+    GatePlaceholder, GateVerdict, MergeOffer, mission_branch,
+};
 pub use hosted::{
     AckRow, ControlSent, HostedState, HostedStatus, Launched, PermissionRow, QuestionRow,
 };

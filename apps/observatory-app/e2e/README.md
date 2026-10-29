@@ -25,6 +25,10 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 - `specs/controls.e2e.ts` and `specs/stall.e2e.ts`: the control bar, the AskUser sheet and the stall banner,
   each also in the kit's dark and light themes (cases that press `theme-dark` / `theme-light` and check
   `data-theme`, so the case PNGs show both).
+- `specs/gate.e2e.ts`: the Gate lane of a hosted mission. The `e2e` feature adds the command `e2e_gate_poll`, which
+  feeds one pull request's scenario (`red`, `green`, `merged`) through the same record and emit path as a GitHub
+  poll. The cases read the card's lane and `cycle 1`, the return arc, the gate group and the Merge button from the DOM
+  and save `card-lane3-cycle-1.png`, `return-arc-cycle-1.png` and `merge-button.png` next to the per-case PNGs.
 - `specs/attached.e2e.ts`: an attached mission. `lib/attach.ts` copies the S session under the run's
   `[ingest].factory_sessions_dir`; the spec sends a message and reads the `human_actions` row with `sqlite3`
   and the app log from the newest `wdio-*.log` (no `host_control` line, a `text_len` line).

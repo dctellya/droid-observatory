@@ -93,6 +93,10 @@ pub struct Card {
     /// In order of first appearance.
     pub features: Vec<FeatureId>,
     pub validation: ValidationBadge,
+    /// Fix cycles the card has been through: each red check that found it done sends it back to
+    /// the lane its workers belong to (FR-B4, FR-G7).
+    #[serde(default)]
+    pub cycle: u32,
     pub now: Option<CardNow>,
     /// Set while `now` is empty and the milestone is not finished.
     pub idle: Option<IdleReason>,
@@ -109,6 +113,8 @@ struct Track {
     scenario_passed: bool,
     human_open: bool,
     task_done: bool,
+    /// A red check sent the card back and no green one has come since.
+    fixing: bool,
     /// Least recent first.
     holders: Vec<CardNow>,
 }
@@ -126,6 +132,11 @@ impl LaneTracker {
             self.open = Some(event.lane.clone());
         }
         self.last = Some(event.lane.clone());
+    }
+
+    fn move_to(&mut self, lane: &LaneId) {
+        self.open = Some(lane.clone());
+        self.last = Some(lane.clone());
     }
 
     fn lane(&self, template: &CycleTemplate) -> LaneId {
@@ -168,7 +179,42 @@ pub fn card_lane(events_of_milestone: &[Event], template: &CycleTemplate) -> Lan
     tracker.lane(template)
 }
 
+/// The loop a fix cycle draws on a card: out of the final lane, back into the lane the workers
+/// belong to (FR-B4).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReturnArc {
+    pub from: LaneId,
+    pub to: LaneId,
+    pub from_name: String,
+    pub to_name: String,
+    /// Fix cycles the card has been through.
+    pub cycle: u32,
+    /// `cycle 1`.
+    pub label: String,
+    /// The card is still being fixed: no green check has come since the red one.
+    pub active: bool,
+}
+
 impl Card {
+    /// The arc of the card's fix cycles, from the template's final lane to the lane its workers
+    /// belong to; none before the first red check.
+    pub fn return_arc(&self, template: &CycleTemplate) -> Option<ReturnArc> {
+        if self.cycle == 0 {
+            return None;
+        }
+        let from = template.final_lane().clone();
+        let to = template.home(Role::Worker).clone();
+        Some(ReturnArc {
+            from_name: template.name_of(&from),
+            to_name: template.name_of(&to),
+            from,
+            to,
+            cycle: self.cycle,
+            label: format!("cycle {}", self.cycle),
+            active: self.track.fixing,
+        })
+    }
+
     pub(super) fn start(milestone: MilestoneId, first: &Event, template: &CycleTemplate) -> Self {
         let mut card = Self {
             milestone,
@@ -177,6 +223,7 @@ impl Card {
             last_at: first.at,
             features: Vec::new(),
             validation: ValidationBadge::Grey,
+            cycle: 0,
             now: None,
             idle: None,
             track: Track::default(),
@@ -193,13 +240,37 @@ impl Card {
         {
             self.features.push(feature.clone());
         }
-        self.track.lanes.apply(event, template);
+        if !self.track_fix_cycle(&event.kind, template) {
+            self.track.lanes.apply(event, template);
+        }
         self.lane = self.track.lanes.lane(template);
         self.track_validation(&event.kind);
         self.validation = self.track.badge();
         self.track_holder(event);
         self.now = self.track.holders.last().cloned();
         self.idle = self.now.is_none().then(|| self.track.idle()).flatten();
+    }
+
+    /// A red check returns the card to the build lane, once per cycle, and the green one that
+    /// follows puts it back at the gate. True when the event placed the card itself.
+    fn track_fix_cycle(&mut self, kind: &EventKind, template: &CycleTemplate) -> bool {
+        let track = &mut self.track;
+        match kind {
+            EventKind::CheckFailed => {
+                if !track.fixing {
+                    track.fixing = true;
+                    self.cycle += 1;
+                    track.lanes.move_to(template.home(Role::Worker));
+                }
+                true
+            }
+            EventKind::CheckPassed if track.fixing => {
+                track.fixing = false;
+                track.lanes.move_to(template.final_lane());
+                true
+            }
+            _ => false,
+        }
     }
 
     fn track_validation(&mut self, kind: &EventKind) {

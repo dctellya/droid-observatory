@@ -1,0 +1,70 @@
+# Price table of 2026-10-29: every row of config/prices/2026-10-22.toml unchanged, plus the plan prices of the models that ran before
+# the usage report priced them (kimi-k3, gpt-6.1-sol, gpt-6-sol, claude-opus-5-5-fast).
+#
+# Prices are per million tokens, USD-eq, as input / output / cache read / cache write. The four rows of 22-oct are the standard API
+# rates read from https://platform.claude.com/docs/en/about-claude/pricing on 2026-10-22 (ai/RULES.md rule 3: verified, dated).
+# The four plan rows carry `plan_*_per_m` keys (a plan price wins over a list price, scripts/usage-report.py) and come from the owner's
+# answer docs/owner-feedback/inbox/2026-10-29-1127-plan-prices.md (pre-roci, under the owner's delegation of 2026-10-29).
+# Provenance: the observer's price table of 25-oct-2026 (resume/roci/tools/milestones.py), secondary public sources, used for every
+# milestone reading S to M3; the owner has seen those readings. Not estimates: list prices at the date named.
+# If a figure of a plan row contradicts a price already in the 22-oct rows, the 22-oct row wins and this file is the one to correct.
+effective = "2026-10-29"
+currency = "USD"
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+verified = true
+provenance = "the observer's price table of 25-oct-2026 (resume/roci/tools/milestones.py), secondary public sources, used for every milestone reading S to M3; the owner has seen those readings. Not estimates: list prices at the date named."
+inbox = "docs/owner-feedback/inbox/2026-10-29-1127-plan-prices.md"
+
+[models."claude-fable-5.1"]
+role_default = "orchestrator"
+input_per_m = 10.0
+output_per_m = 50.0
+cache_read_per_m = 0.25
+cache_write_per_m = 12.5
+
+[models."claude-opus-5-5"]
+role_default = "validator"
+input_per_m = 4.0
+output_per_m = 20.0
+cache_read_per_m = 0.20
+cache_write_per_m = 5.0
+
+[models."claude-sonnet-5-5"]
+role_default = "worker"
+input_per_m = 2.0
+output_per_m = 10.0
+cache_read_per_m = 0.10
+cache_write_per_m = 2.5
+
+[models."claude-haiku-4-5-20251001"]
+input_per_m = 1.0
+output_per_m = 5.0
+cache_read_per_m = 0.10
+cache_write_per_m = 1.25
+
+# Plan prices. kimi-k3 and gpt-6.1-sol have no cache-write premium at the provider: cache write is priced as input.
+[models."kimi-k3"]
+plan_input_per_m = 3.0
+plan_output_per_m = 15.0
+plan_cache_read_per_m = 0.30
+plan_cache_write_per_m = 3.0
+
+[models."gpt-6.1-sol"]
+plan_input_per_m = 2.0
+plan_output_per_m = 10.0
+plan_cache_read_per_m = 0.10
+plan_cache_write_per_m = 2.0
+
+[models."gpt-6-sol"]
+plan_input_per_m = 2.0
+plan_output_per_m = 10.0
+plan_cache_read_per_m = 0.20
+plan_cache_write_per_m = 2.5
+
+# No public list price in the observer's table: priced as claude-opus-5-5 until the owner confirms.
+[models."claude-opus-5-5-fast"]
+plan_input_per_m = 4.0
+plan_output_per_m = 20.0
+plan_cache_read_per_m = 0.20
+plan_cache_write_per_m = 5.0
+note = "assumed = opus-5-5 until the owner confirms"

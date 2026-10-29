@@ -28,3 +28,13 @@ input_per_m = 1.0
 output_per_m = 5.0
 cache_read_per_m = 0.10
 cache_write_per_m = 1.25
+
+[models."kimi-k3"]
+input_per_m = 1.0
+output_per_m = 4.0
+cache_read_per_m = 0.10
+cache_write_per_m = 1.0
+plan_input_per_m = 0.5
+plan_output_per_m = 2.0
+plan_cache_read_per_m = 0.05
+plan_cache_write_per_m = 0.5

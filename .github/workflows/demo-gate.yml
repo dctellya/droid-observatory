@@ -1,0 +1,41 @@
+# Test target for the gate lane (SPEC section 3 M4, D-040): a pull request into demo/base fails the required check
+# `demo-gate` while it carries the label `demo:red` and passes once the label is removed. Labeling and unlabeling are
+# triggers, so the check follows the label without a new commit. Never required on main; the ruleset `demo-gate` binds
+# it to demo/base only.
+
+name: demo-gate
+
+on:
+  pull_request:
+    branches:
+      - demo/base
+    types:
+      - opened
+      - synchronize
+      - labeled
+      - unlabeled
+
+permissions:
+  contents: read
+
+# A label change while a run is in flight leaves only the newest run; an older one could finish last and keep a stale result.
+concurrency:
+  group: demo-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  demo-gate:
+    name: demo-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: fail while the pull request carries demo:red
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          echo "labels: $LABELS"
+          if printf '%s' "$LABELS" | jq -e 'index("demo:red")' > /dev/null; then
+            echo "demo:red is present: demo-gate is red"
+            exit 1
+          fi
+          echo "no demo:red label: demo-gate is green"

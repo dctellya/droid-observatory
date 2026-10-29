@@ -1,0 +1,10 @@
+{
+ "featureId": "m9-alpha",
+ "milestone": "m9",
+ "workerSessionId": "33333333-3333-4333-8333-333333333333",
+ "successState": "partial",
+ "handoff": {
+  "salientSummary": "Landed the first half; the rest is split.",
+  "whatWasImplemented": "fixture handoff with no subagent line"
+ }
+}

@@ -4,7 +4,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
 use observatory_core::model::{CycleTemplate, SessionId};
-use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch};
+use observatory_core::view::{
+    GateChanged, HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch,
+};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
@@ -114,7 +116,10 @@ pub fn App() -> impl IntoView {
                         }
                     }
                     let held = capture.clone();
-                    spawn_local(async move { held.refresh_sessions().await });
+                    spawn_local(async move {
+                        held.refresh_sessions().await;
+                        held.refresh_gate().await;
+                    });
                     current.set(Some(capture));
                     refresh_rows(rows, rows_state);
                 }
@@ -169,6 +174,14 @@ pub fn App() -> impl IntoView {
             stalls.0.update(|all| {
                 all.insert(batch.mission_id, batch.flags);
             });
+        });
+        shell::listen::<GateChanged>("gate_changed", move |changed| {
+            if let Some(capture) = current
+                .get_untracked()
+                .filter(|capture| *capture.mission_id() == changed.mission_id)
+            {
+                capture.gate.set(Some(changed.gate));
+            }
         });
         shell::listen::<OutputLines>("live_output", move |lines| {
             hosted.output.update(|output| output.push(lines));

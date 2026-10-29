@@ -20,6 +20,11 @@ use crate::model::{
 /// spool; a `sub` no mapped line yields keeps the ids apart from the stream's own events.
 const ACK_SUB: u32 = 1 << 30;
 
+/// Whether `id` names an event [`ack_event`] made.
+pub fn is_ack(id: &EventId) -> bool {
+    id.0.rsplit(':').next() == Some(ACK_SUB.to_string().as_str())
+}
+
 /// The `sub` of the `permission.requested` event the host makes from Droid's
 /// `droid.request_permission` request: the stream maps no event for it.
 const PERMISSION_SUB: u32 = ACK_SUB + 1;

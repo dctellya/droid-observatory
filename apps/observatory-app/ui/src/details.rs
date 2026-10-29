@@ -3,6 +3,8 @@ use observatory_core::model::{CycleTemplate, EventId, MilestoneId};
 use observatory_core::view::{TimelineRow, details};
 
 use crate::capture::Capture;
+use crate::ctx::BoardCtx;
+use crate::gate::GateGroupBox;
 use crate::raw::RawLine;
 
 /// FR-D1: the Details of one milestone, opened from its card or from any event row. M1 has the
@@ -14,6 +16,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
         milestone.track();
         selected.set(None);
     });
+    let gate = expect_context::<BoardCtx>().gate;
     let events = capture.events.clone();
     let model = Memo::new(move |_| {
         milestone
@@ -30,7 +33,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
             view! {
                 <section class="details" role="dialog" aria-label="details">
                     <header>
-                        <h2>"Details: " <span aria-label="details-milestone">{model.milestone.0.clone()}</span></h2>
+                        <h2>"Details: " <span class="mono" aria-label="details-milestone">{model.milestone.0.clone()}</span></h2>
                         <div role="tablist" aria-label="details-tabs">
                             <button type="button" role="tab" aria-selected="true">"Timeline"</button>
                         </div>
@@ -38,9 +41,10 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
                             "Close details"
                         </button>
                     </header>
+                    <GateGroupBox view=gate />
                     <p>
                         "Timeline rows: "
-                        <span aria-label="details-row-count">{model.timeline.len()}</span>
+                        <span class="mono" aria-label="details-row-count">{model.timeline.len()}</span>
                     </p>
                     <RawLine capture=capture.clone() selected=selected />
                     <div class="lib"><div class="scroll">

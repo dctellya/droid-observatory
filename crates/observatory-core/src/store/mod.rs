@@ -3,6 +3,7 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod forge;
 mod hosted;
 mod human;
 mod read;
@@ -177,6 +178,11 @@ fn insert_events_in(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<
         for event in events {
             let id = event.id.to_string();
             let ptr = PointerColumns::of(&event.source, &id)?;
+            // The merge commit is the one fact of a hand-over the pointer (the PR URL) cannot hold.
+            let sha = match &event.kind {
+                EventKind::HandedToCd { merge_sha, .. } => Some(merge_sha.clone()),
+                _ => ptr.sha,
+            };
             let duration_ms = event
                 .duration
                 .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX));
@@ -201,7 +207,7 @@ fn insert_events_in(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<
                 ptr.byte_len,
                 sub_of(event),
                 ptr.repo,
-                ptr.sha,
+                sha,
                 ptr.url,
                 ptr.action_id,
             ])?;
