@@ -2,6 +2,8 @@
 //! No test here reads the real keychain: resolution takes the keychain as a closure and the
 //! service lookup runs against keyring's mock store.
 
+use std::cell::Cell;
+
 use observatory_core::secrets::{
     Secret, SecretError, SecretName, TokenSource, lookup_service, resolve_github_token,
 };
@@ -50,13 +52,27 @@ fn a_service_without_an_item_is_none_not_an_error() {
 }
 
 #[test]
-fn the_keychain_wins_over_the_environment() {
-    let (token, source) = resolve_github_token(Some("from-env".into()), || {
+fn the_environment_wins_and_the_keychain_is_not_consulted() {
+    let calls = Cell::new(0);
+    let fake_keychain = || {
+        calls.set(calls.get() + 1);
         Ok(Some(Secret::new("from-keychain".into())))
-    })
-    .unwrap();
+    };
+    let (token, source) = resolve_github_token(Some("from-env".into()), fake_keychain).unwrap();
+    assert_eq!(token.unwrap().expose(), "from-env");
+    assert_eq!(source, TokenSource::Env);
+    assert_eq!(
+        calls.get(),
+        0,
+        "a set GITHUB_TOKEN leaves the keychain alone"
+    );
+
+    let (token, source) = resolve_github_token(Some(String::new()), fake_keychain).unwrap();
     assert_eq!(token.unwrap().expose(), "from-keychain");
     assert_eq!(source, TokenSource::Keychain);
+    let (_, source) = resolve_github_token(None, fake_keychain).unwrap();
+    assert_eq!(source, TokenSource::Keychain);
+    assert_eq!(calls.get(), 2, "an empty or unset value reads it once each");
 }
 
 #[test]
