@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Event, Timestamp};
+use crate::model::{Event, EventId, MilestoneId, Timestamp};
 
 /// The pull request of a mission branch.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +47,8 @@ pub struct Check {
     pub source: CheckSource,
     pub conclusion: CheckConclusion,
     pub url: String,
+    /// When the forge last updated the run or status; `None` when it did not say.
+    pub at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,4 +130,25 @@ pub struct Poll {
     pub checks: Vec<Check>,
     /// New events only: a PR already announced yields none.
     pub events: Vec<Event>,
+    /// The fix-cycle windows those events open and close.
+    pub windows: Vec<WindowChange>,
+}
+
+/// A `gate` rework window (FR-G7): the red check opens it on the affected card, the green run of
+/// the same check closes it. The store applies it after the events it names are recorded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WindowChange {
+    Open {
+        /// The `check.failed` event that opens the window.
+        event: EventId,
+        pr_number: u64,
+        check: String,
+        card: MilestoneId,
+    },
+    Close {
+        /// The `check.passed` event that closes the window.
+        event: EventId,
+        pr_number: u64,
+        check: String,
+    },
 }

@@ -214,9 +214,13 @@ fn pr_for_mission_branch_is_detected_within_poll_interval() {
     );
 
     let template = CycleTemplate::engineering();
-    let [opened] = poll.events.as_slice() else {
-        panic!("one pr.opened: {:?}", poll.events);
-    };
+    let kinds: Vec<&EventKind> = poll.events.iter().map(|event| &event.kind).collect();
+    assert_eq!(
+        kinds,
+        [&EventKind::PrOpened, &EventKind::CheckPassed],
+        "the recorded PR opened, and its last run had passed"
+    );
+    let opened = &poll.events[0];
     assert_eq!(opened.kind, EventKind::PrOpened);
     assert_eq!(
         opened.lane,

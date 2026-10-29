@@ -13,11 +13,13 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use super::forge::{Check, CheckConclusion, CheckSource, Forge, ForgeError, Poll, Pr, PrState};
+use super::forge::{
+    Check, CheckConclusion, CheckSource, Forge, ForgeError, Poll, Pr, PrState, WindowChange,
+};
 use crate::config::GithubConfig;
 use crate::mapping::MappingVersion;
 use crate::model::{
-    CycleTemplate, Event, EventId, EventKind, MissionId, Role, SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, MilestoneId, MissionId, Role, SourcePtr, Timestamp,
 };
 use crate::secrets::Secret;
 
@@ -202,6 +204,7 @@ struct RawRun {
     status: String,
     conclusion: Option<String>,
     html_url: String,
+    updated_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -214,10 +217,15 @@ struct RawStatus {
     context: String,
     state: String,
     target_url: Option<String>,
+    updated_at: Option<String>,
 }
 
 fn parse_time(text: &str, what: &str) -> Result<Timestamp, ForgeError> {
     Timestamp::parse(text).map_err(|error| ForgeError::Other(format!("{what} {text:?}: {error}")))
+}
+
+fn parse_optional_time(text: Option<&str>, what: &str) -> Result<Option<Timestamp>, ForgeError> {
+    text.map(|text| parse_time(text, what)).transpose()
 }
 
 impl RawPull {
@@ -297,31 +305,43 @@ impl<T: HttpTransport> Forge for GitHubClient<T> {
                 latest.insert(name, run);
             }
         }
-        let mut checks: Vec<Check> = latest
-            .into_iter()
-            .filter_map(|(name, run)| {
-                Some(Check {
-                    name,
-                    source: CheckSource::ActionsRun { run_id: run.id },
-                    conclusion: run_conclusion(run)?,
-                    url: run.html_url.clone(),
-                })
-            })
-            .collect();
+        let mut checks = Vec::new();
+        for (name, run) in latest {
+            let Some(conclusion) = run_conclusion(run) else {
+                continue;
+            };
+            checks.push(Check {
+                name,
+                source: CheckSource::ActionsRun { run_id: run.id },
+                conclusion,
+                url: run.html_url.clone(),
+                at: parse_optional_time(run.updated_at.as_deref(), "run updated_at")?,
+            });
+        }
 
         let statuses: RawStatuses = self.get_json(&format!("/commits/{}/status", pr.head_sha))?;
-        checks.extend(statuses.statuses.into_iter().map(|status| Check {
-            name: status.context.clone(),
-            source: CheckSource::CommitStatus {
-                context: status.context,
-            },
-            conclusion: match status.state.as_str() {
-                "success" => CheckConclusion::Passed,
-                "failure" | "error" => CheckConclusion::Failed,
-                _ => CheckConclusion::Running,
-            },
-            url: status.target_url.unwrap_or_default(),
-        }));
+        let status_url = format!(
+            "{}/repos/{}/commits/{}/status",
+            self.base, self.repo, pr.head_sha
+        );
+        for status in statuses.statuses {
+            checks.push(Check {
+                name: status.context.clone(),
+                source: CheckSource::CommitStatus {
+                    context: status.context,
+                },
+                conclusion: match status.state.as_str() {
+                    "success" => CheckConclusion::Passed,
+                    "failure" | "error" => CheckConclusion::Failed,
+                    _ => CheckConclusion::Running,
+                },
+                url: status
+                    .target_url
+                    .filter(|url| !url.is_empty())
+                    .unwrap_or_else(|| status_url.clone()),
+                at: parse_optional_time(status.updated_at.as_deref(), "status updated_at")?,
+            });
+        }
         Ok(checks)
     }
 }
@@ -337,6 +357,10 @@ pub struct GitHubSource<F> {
     template: CycleTemplate,
     last_poll: Option<Timestamp>,
     announced: HashSet<u64>,
+    /// Event ids of the check results already turned into events; a run is one event.
+    announced_checks: HashSet<EventId>,
+    /// The card a red check sends back to the build lane.
+    affected: Option<MilestoneId>,
 }
 
 impl<F: Forge> GitHubSource<F> {
@@ -357,7 +381,16 @@ impl<F: Forge> GitHubSource<F> {
             template,
             last_poll: None,
             announced: HashSet::new(),
+            announced_checks: HashSet::new(),
+            affected: None,
         }
+    }
+
+    /// The card (milestone) the fix cycle of a red check belongs to: the caller knows which
+    /// milestone was integrated last, the forge does not. Without one the check events still
+    /// land in the Gate lane but open no window.
+    pub fn set_affected_milestone(&mut self, milestone: Option<MilestoneId>) {
+        self.affected = milestone;
     }
 
     pub fn forge(&self) -> &F {
@@ -388,32 +421,93 @@ impl<F: Forge> GitHubSource<F> {
                 pr: None,
                 checks: Vec::new(),
                 events: Vec::new(),
+                windows: Vec::new(),
             });
         };
         let checks = self.forge.checks(&pr)?;
         let mut events = Vec::new();
         if self.announced.insert(pr.number) {
             events.push(self.event(
-                format!("github:pr:{}:opened", pr.number),
+                EventId(format!("github:pr:{}:opened", pr.number)),
                 EventKind::PrOpened,
                 pr.created_at,
-                &pr,
+                &pr.url,
+                None,
             ));
+        }
+        let mut windows = Vec::new();
+        for check in &checks {
+            self.check_result(&pr, check, now, &mut events, &mut windows);
         }
         Ok(Poll {
             observed_at: now,
             pr: Some(pr),
             checks,
             events,
+            windows,
         })
     }
 
-    fn event(&self, id: String, kind: EventKind, at: Timestamp, pr: &Pr) -> Event {
+    /// A finished run or status is one event, `check.failed` or `check.passed`, announced once;
+    /// a result that is still running says nothing yet. The id names the run (or the status
+    /// context on that commit), so a restarted source records the same event again, not a new one.
+    fn check_result(
+        &mut self,
+        pr: &Pr,
+        check: &Check,
+        now: Timestamp,
+        events: &mut Vec<Event>,
+        windows: &mut Vec<WindowChange>,
+    ) {
+        let (kind, verb) = match check.conclusion {
+            CheckConclusion::Failed => (EventKind::CheckFailed, "failed"),
+            CheckConclusion::Passed => (EventKind::CheckPassed, "passed"),
+            _ => return,
+        };
+        let subject = match &check.source {
+            CheckSource::ActionsRun { run_id } => run_id.to_string(),
+            CheckSource::CommitStatus { context } => format!("{}:{context}", pr.head_sha),
+        };
+        let id = EventId(format!("github:check:{}:{subject}:{verb}", pr.number));
+        if !self.announced_checks.insert(id.clone()) {
+            return;
+        }
+        events.push(self.event(
+            id.clone(),
+            kind,
+            check.at.unwrap_or(now),
+            &check.url,
+            self.affected.clone(),
+        ));
+        if check.conclusion == CheckConclusion::Passed {
+            windows.push(WindowChange::Close {
+                event: id,
+                pr_number: pr.number,
+                check: check.name.clone(),
+            });
+        } else if let Some(card) = &self.affected {
+            windows.push(WindowChange::Open {
+                event: id,
+                pr_number: pr.number,
+                check: check.name.clone(),
+                card: card.clone(),
+            });
+        }
+    }
+
+    fn event(
+        &self,
+        id: EventId,
+        kind: EventKind,
+        at: Timestamp,
+        url: &str,
+        milestone: Option<MilestoneId>,
+    ) -> Event {
         let role = Role::External;
         Event {
-            id: EventId(id),
+            id,
             mission_id: self.mission.clone(),
-            milestone_id: None,
+            milestone_id: milestone,
             feature_id: None,
             lane: self.template.lane_of(&kind, role),
             overlay: None,
@@ -425,7 +519,7 @@ impl<F: Forge> GitHubSource<F> {
             duration: None,
             usage: None,
             source: SourcePtr::GitHub {
-                url: pr.url.clone(),
+                url: url.to_owned(),
             },
             mapping_version: MappingVersion::LATEST,
         }
