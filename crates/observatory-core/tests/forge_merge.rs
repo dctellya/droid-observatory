@@ -472,7 +472,8 @@ fn policy_merged_detected_without_human_action() {
     let mut source = source(&replay, ConfigPolicy::Auto);
     let poll = source.poll(now()).unwrap();
 
-    let [done] = handed(&poll).as_slice() else {
+    let handed_events = handed(&poll);
+    let [done] = handed_events.as_slice() else {
         panic!("one hand-over: {:?}", poll.events);
     };
     assert_eq!(
@@ -526,7 +527,8 @@ fn handed_to_cd_is_emitted_once_with_merge_sha_pr_and_attestations() {
     let mut source = source(&replay, ConfigPolicy::Auto);
     let first = source.poll(now()).unwrap();
 
-    let [done] = handed(&first).as_slice() else {
+    let handed_events = handed(&first);
+    let [done] = handed_events.as_slice() else {
         panic!("one hand-over: {:?}", first.events);
     };
     assert_eq!(

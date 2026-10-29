@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ingest::forge::{CheckConclusion, GateFacts, RequiredCheck, RuleAttribution};
 use crate::model::{CycleTemplate, Event, EventKind, Role, SourcePtr};
 
 /// State of the PR's checks, the header of the Gate lane.
@@ -67,6 +68,21 @@ pub struct GateGroup {
     /// `gate_command.run` events seen, shown before a PR exists.
     pub gate_runs: u64,
     pub last_gate_command: Option<GateVerdict>,
+    /// The rule that decides whether a person merges, as the last poll read it.
+    #[serde(default)]
+    pub decided_by: Option<RuleAttribution>,
+    #[serde(default)]
+    pub requires_human: bool,
+    /// Whether the Merge button is offered: a person decides, the PR is open and every
+    /// required check is green.
+    #[serde(default)]
+    pub merge_offered: bool,
+    #[serde(default)]
+    pub required_checks: Vec<RequiredCheck>,
+    #[serde(default)]
+    pub reviews: u64,
+    #[serde(default)]
+    pub attestation_ids: Vec<String>,
 }
 
 /// Text of the Gate lane before a PR exists (PRD §8).
@@ -106,6 +122,24 @@ impl GateGroup {
             group.apply(event);
         }
         group
+    }
+
+    /// The header with what the last poll read around the merge.
+    #[must_use]
+    pub fn with_facts(mut self, facts: &GateFacts) -> Self {
+        self.decided_by = Some(facts.policy.decided_by.clone());
+        self.requires_human = facts.policy.requires_human;
+        self.required_checks.clone_from(&facts.required_checks);
+        self.reviews = facts.reviews;
+        self.attestation_ids.clone_from(&facts.attestation_ids);
+        self.merge_offered = facts.pr_open
+            && facts.policy.requires_human
+            && self.badge == GateBadge::CiGreen
+            && facts
+                .required_checks
+                .iter()
+                .all(|check| check.conclusion == CheckConclusion::Passed);
+        self
     }
 
     /// The placeholder, while the gate is pending and no PR number is known.

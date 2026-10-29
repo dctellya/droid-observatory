@@ -3,26 +3,28 @@
 use rusqlite::{OptionalExtension, params};
 
 use super::{Store, StoreError, insert_events_in};
-use crate::ingest::forge::{Poll, WindowChange};
-use crate::model::{MilestoneId, MissionId};
+use crate::ingest::forge::{Poll, PrState, WindowChange};
+use crate::model::{EventKind, MilestoneId, MissionId};
 
 /// The cause text of a window the forge opens (`rework_windows.cause`).
 const GATE: &str = "gate";
 
 impl Store {
     /// Records one poll: the pull request row (its `observed_at` stays the first observation,
-    /// the poll that detected it), one row per check, the poll's new events and the fix-cycle
-    /// windows they open and close. Safe to repeat.
+    /// the poll that detected it), one row per check, review and attestation, the poll's new
+    /// events, the fix-cycle windows they open and close, and the completion of the mission when
+    /// one of them hands the cycle to CD. Safe to repeat.
     pub fn record_poll(&mut self, mission: &MissionId, poll: &Poll) -> Result<(), StoreError> {
         let observed_at = poll.observed_at.to_rfc3339_millis();
         let tx = self.conn.transaction()?;
         if let Some(pr) = &poll.pr {
             let number = i64::try_from(pr.number).unwrap_or(i64::MAX);
             tx.execute(
-                "INSERT INTO prs (number, mission_id, head, base, head_sha, state, url, observed_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                "INSERT INTO prs (number, mission_id, head, base, head_sha, state, merged_by, url, observed_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
                  ON CONFLICT (number) DO UPDATE SET head_sha = excluded.head_sha, \
-                 state = excluded.state, url = excluded.url",
+                 state = excluded.state, url = excluded.url, \
+                 merged_by = COALESCE(excluded.merged_by, prs.merged_by)",
                 params![
                     number,
                     mission.to_string(),
@@ -30,10 +32,15 @@ impl Store {
                     pr.base,
                     pr.head_sha,
                     pr.state.wire(),
+                    match &pr.state {
+                        PrState::Merged { merged_by, .. } => merged_by.clone(),
+                        _ => None,
+                    },
                     pr.url,
                     observed_at
                 ],
             )?;
+            record_reviews_and_attestations(&tx, number, poll, &observed_at)?;
             for check in &poll.checks {
                 let changed = tx.execute(
                     "UPDATE checks SET conclusion = ?4, url = ?5, observed_at = ?6 \
@@ -67,6 +74,15 @@ impl Store {
         for change in &poll.windows {
             apply_window(&tx, mission, change)?;
         }
+        for event in &poll.events {
+            if matches!(event.kind, EventKind::HandedToCd { .. }) {
+                tx.execute(
+                    "UPDATE missions SET state = 'complete', completed_at = ?2 \
+                     WHERE id = ?1 AND completed_at IS NULL",
+                    params![mission.to_string(), event.at.to_rfc3339_millis()],
+                )?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
@@ -96,6 +112,55 @@ impl Store {
         };
         Ok(found.map(MilestoneId))
     }
+}
+
+fn record_reviews_and_attestations(
+    tx: &rusqlite::Transaction<'_>,
+    number: i64,
+    poll: &Poll,
+    observed_at: &str,
+) -> Result<(), StoreError> {
+    for review in &poll.reviews {
+        tx.execute(
+            "INSERT INTO reviews (id, pr_number, state, url, observed_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT (id) DO UPDATE SET state = excluded.state, url = excluded.url",
+            params![
+                i64::try_from(review.id).unwrap_or(i64::MAX),
+                number,
+                review.state,
+                review.url,
+                observed_at
+            ],
+        )?;
+    }
+    for attestation in &poll.attestations {
+        let changed = tx.execute(
+            "UPDATE attestations SET verified = ?3, subject = ?4, url = ?5 \
+             WHERE pr_number = ?1 AND attestation_id = ?2",
+            params![
+                number,
+                attestation.id,
+                attestation.verified,
+                attestation.subject,
+                attestation.url
+            ],
+        )?;
+        if changed == 0 {
+            tx.execute(
+                "INSERT INTO attestations (pr_number, attestation_id, subject, verified, url, observed_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    number,
+                    attestation.id,
+                    attestation.subject,
+                    attestation.verified,
+                    attestation.url,
+                    observed_at
+                ],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn apply_window(

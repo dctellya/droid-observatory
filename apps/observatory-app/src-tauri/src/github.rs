@@ -13,19 +13,20 @@ use std::time::Duration;
 
 use observatory_core::config::Config;
 use observatory_core::ingest::EventBatch;
+use observatory_core::ingest::forge::GateFacts;
 use observatory_core::ingest::github::{GitHubClient, GitHubSource, UreqTransport};
 use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
 use observatory_core::secrets::{self, Secret, TokenSource};
 use observatory_core::store::Store;
 use observatory_core::store::{EventScope, TimeRange};
+use observatory_core::view::GateGroup;
 use observatory_core::view::mission_branch;
-use observatory_core::view::{GateBadge, GateGroup};
 use tauri::{AppHandle, Emitter, Runtime};
 
-/// One mission's source and the badge and PR the window was last told about.
+/// One mission's source and the header the window was last told about.
 struct Tracked {
     source: GitHubSource<GitHubClient<UreqTransport>>,
-    shown: Option<(GateBadge, Option<u64>)>,
+    shown: Option<GateGroup>,
 }
 
 /// The running poll thread.
@@ -196,33 +197,40 @@ fn poll_mission<R: Runtime>(
                 crate::ingest::log_batch(&batch);
                 let _ = app.emit("events_appended", &batch);
             }
-            announce_gate(app, store, &mission, &mut tracked.shown);
+            announce_gate(app, store, &mission, poll.gate.as_ref(), &mut tracked.shown);
         }
         Err(error) => tracing::warn!(mission_id = %mission, %error, "github_poll_failed"),
     }
 }
 
-/// Tells the window and the log when the Gate header's badge or PR changed since the last poll.
+/// Tells the window and the log when the Gate header (badge, PR, who decides the merge, whether
+/// Merge is offered) changed since the last poll.
 fn announce_gate<R: Runtime>(
     app: &AppHandle<R>,
     store: &Store,
     mission: &MissionId,
-    shown: &mut Option<(GateBadge, Option<u64>)>,
+    facts: Option<&GateFacts>,
+    shown: &mut Option<GateGroup>,
 ) {
     let Ok(events) = store.events(&EventScope::Mission(mission.clone()), TimeRange::ALL) else {
         return;
     };
-    let gate = GateGroup::of(&events);
-    let now = (gate.badge, gate.pr_number);
-    if *shown == Some(now) {
+    let mut gate = GateGroup::of(&events);
+    if let Some(facts) = facts {
+        gate = gate.with_facts(facts);
+    }
+    if shown.as_ref() == Some(&gate) {
         return;
     }
-    *shown = Some(now);
     tracing::info!(
         mission_id = %mission,
         badge = gate.badge.as_str(),
         pr = gate.pr_number,
+        decided_by = ?gate.decided_by,
+        requires_human = gate.requires_human,
+        merge_offered = gate.merge_offered,
         "gate_changed"
     );
     let _ = app.emit("gate_changed", &gate);
+    *shown = Some(gate);
 }
