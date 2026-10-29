@@ -133,7 +133,7 @@ impl GitSource {
         options: GitOptions,
     ) -> Result<Self, IngestError> {
         let source = Self {
-            repo: repo.to_owned(),
+            repo: repo.canonicalize().unwrap_or_else(|_| repo.to_owned()),
             mission,
             branch: branch.to_owned(),
             template,
