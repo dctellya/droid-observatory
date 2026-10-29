@@ -8,6 +8,7 @@ expected number below is the arithmetic of the fixture lines and of fixtures/usa
 haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write).
 """
 
+import json
 import os
 import re
 import shutil
@@ -220,11 +221,46 @@ class UsageReport(unittest.TestCase):
         u = got[("unmatched", "claude-fable-5.1")]
         self.assertEqual(u["Turns"], "1")
 
-    def test_the_count_of_re_issued_waits_is_a_stated_number(self):
-        self.assertIn("re-issued waits: 2", self.text)
+    def bullet(self, text, label):
+        return next(l for l in text.splitlines() if l.startswith("- " + label + ":"))
+
+    def test_re_issued_waits_count_repeats_on_one_tool_call_id_and_name_their_definition(self):
+        line = self.bullet(self.text, "re-issued waits")
+        self.assertTrue(line.startswith("- re-issued waits: 1 ("), line)
+        self.assertIn("same `toolCallId`", line)
+        self.assertIn("not counted", line)
+
+    def test_worker_pauses_are_the_kills_and_have_their_own_row_with_a_definition(self):
+        line = self.bullet(self.text, "worker pauses (kills)")
+        self.assertTrue(line.startswith("- worker pauses (kills): 1 ("), line)
+        self.assertIn("`action` is `kill`", line)
+        self.assertLess(self.text.index("- re-issued waits:"), self.text.index("- worker pauses (kills):"))
+
+    def test_the_other_wait_counts_keep_their_numbers(self):
         self.assertIn("waits returning in under 60 s: 1", self.text)
-        self.assertIn("WaitForScript calls in the window: 2", self.text)
+        self.assertIn("WaitForScript calls in the window: 3", self.text)
         self.assertIn("orchestrator turns matched to the transcript: 5 of 6", self.text)
+
+    def test_waits_on_different_ids_and_a_third_wait_on_one_id_are_counted_apart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = os.path.join(tmp, "sessions")
+            shutil.copytree(os.path.join(FIX, "sessions"), sessions)
+            path = os.path.join(sessions, "-home-user-proj", MISSION + ".jsonl")
+            extra = (
+                '{"type":"message","id":"a7","timestamp":"2026-10-25T10:08:40.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_w3","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"wait"}}]}}\n'
+                '{"type":"message","id":"a8","timestamp":"2026-10-25T10:08:50.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_w4","name":"WaitForScript","input":{"toolCallId":"toolu_bg3"}}]}}\n'
+                '{"type":"message","id":"a9","timestamp":"2026-10-25T10:08:55.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_k2","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"kill"}}]}}\n')
+            with open(path, "a") as f:
+                f.write(extra)
+            out = os.path.join(tmp, "m9.md")
+            run(["--sessions-dir", sessions], out=out)
+            text = read(out)
+            self.assertTrue(self.bullet(text, "re-issued waits").startswith("- re-issued waits: 2 ("))
+            self.assertTrue(self.bullet(text, "worker pauses (kills)").startswith("- worker pauses (kills): 2 ("))
+            self.assertIn("WaitForScript calls in the window: 6", text)
 
     def test_subagents_and_self_check_missions_have_their_own_lines(self):
         _, rows = table(self.text, "Subagents")
@@ -289,6 +325,43 @@ class UsageReport(unittest.TestCase):
         self.assertEqual(cells("gates served from cache", "all")[1:4], ("3", "160.000", "2.67"))
         self.assertIn("gates served from cache: 3, minutes saved: 2.67", self.text)
         self.assertNotIn("not recorded", self.text)
+
+    def gate_report(self, records):
+        """Report text over a copy of the gate fixtures plus `records` ({name: json fields} under tree `tx`)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = os.path.join(tmp, "gate")
+            shutil.copytree(os.path.join(FIX, "gate"), gate)
+            os.makedirs(os.path.join(gate, "tx"))
+            for name, fields in records.items():
+                base = {"name": name, "tree": "tx", "tool": "fixture", "command": "make " + name, "exit_code": 0,
+                        "summary": "ok", "seconds": 1.0, "session": WORKER}
+                base.update(fields)
+                with open(os.path.join(gate, "tx", name + ".json"), "w") as f:
+                    json.dump({k: v for k, v in base.items() if v is not None}, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--gate-dir", gate, "--to", TO], out=out)
+            return read(out)
+
+    def test_a_gate_run_that_straddles_either_edge_of_the_window_is_in_the_table(self):
+        text = self.gate_report({
+            "ends-after": {"started_at": "2026-10-25T10:59:30Z", "finished_at": "2026-10-25T11:00:30Z"},
+            "starts-before": {"started_at": "2026-10-25T09:59:30Z", "finished_at": "2026-10-25T10:00:30Z"},
+            "no-start": {"started_at": None, "finished_at": "2026-10-25T10:30:00Z"},
+            "after": {"started_at": "2026-10-25T11:00:10Z", "finished_at": "2026-10-25T11:00:40Z"},
+            "before": {"started_at": "2026-10-25T09:58:00Z", "finished_at": "2026-10-25T09:59:50Z"},
+        })
+        _, rows = table(text, "Gate runs")
+        names = {r["Gate"] for r in rows}
+        self.assertEqual(names, {"check", "test", "ends-after", "starts-before", "no-start"})
+        _, rows = table(text, "Gates")
+        self.assertEqual({r["Gate"] for r in rows if r["Kind"] == "gates run"}, names | {"all"})
+        self.assertIn("gate runs in the window: 5", text)
+
+    def test_the_gates_caption_states_the_window_rule(self):
+        caption = next(l for l in self.text.splitlines() if l.startswith("Gate window rule:"))
+        self.assertIn("`started_at` < `--to` or `finished_at` <= `--to`", caption)
+        self.assertIn("did not finish before the window start", caption)
+        self.assertIn("started at or after `--to` is not", caption)
 
     def test_a_report_without_a_hit_log_states_zero_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
