@@ -38,7 +38,7 @@ class Scratch:
 
     def log_line(self, ts, text, ctx):
         with open(self.log, "a") as f:
-            f.write("[%s] %s: %s | Context: %s\n" % (ts, "INFO", text, json.dumps(ctx)))
+            f.write("[%s] %s: %s | Context: %s\n" % (ts, "INFO", text, json.dumps(ctx, separators=(",", ":"))))
 
     def turn(self, ts, sid, model, i=0, o=0, cr=0, cw=0):
         self.log_line(ts, "[Agent] Streaming result", {
@@ -48,7 +48,7 @@ class Scratch:
 
     def raw_log(self, ts, level, text, ctx):
         with open(self.log, "a") as f:
-            f.write("[%s] %s: %s | Context: %s\n" % (ts, level, text, json.dumps(ctx)))
+            f.write("[%s] %s: %s | Context: %s\n" % (ts, level, text, json.dumps(ctx, separators=(",", ":"))))
 
     def progress(self, ts, kind, **fields):
         with open(os.path.join(self.mission, "progress_log.jsonl"), "a") as f:

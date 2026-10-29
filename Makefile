@@ -49,6 +49,7 @@ check-scripts: check-gate-cache check-integrate ## Shell tests of the repository
 	@sh scripts/tests/log-tool-call-duration.sh
 	@sh scripts/tests/agents_md_test.sh
 	@python3 scripts/tests/usage_test.py
+	@python3 scripts/tests/usage_idle_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }

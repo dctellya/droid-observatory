@@ -20,6 +20,7 @@ import tomllib
 from datetime import datetime, timedelta, timezone
 
 import usage_classes
+import usage_idle
 
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
@@ -222,6 +223,7 @@ def scan_logs(files, start, end):
     router = []
     info = []
     orch_turns = []
+    facts = usage_idle.LogFacts()
     unparsed = unjoined = 0
     stop = (parse_ts(sec(end) + "+00:00") + timedelta(seconds=LOG_REORDER_MARGIN_S)).strftime("%Y-%m-%dT%H:%M:%S")
     for path in files:
@@ -248,6 +250,11 @@ def scan_logs(files, start, end):
                     first = ts
                 last = ts
                 is_turn = "[Agent] Streaming result" in line
+                if start is None or sec(ts) >= sec(start):
+                    if is_turn:
+                        facts.turns.append(ts)
+                    else:
+                        facts.note(ts, line)
                 if not is_turn and "[Model-Router] Model transition" not in line:
                     continue
                 s = sec(ts)
@@ -275,7 +282,7 @@ def scan_logs(files, start, end):
                         orch_turns.append((ts, model, d))
         unparsed += n_unparsed
         info.append({"path": path, "lines": lines, "first": first, "last": last, "unparsed": n_unparsed})
-    return win, upto, router, info, orch_turns, unparsed, unjoined
+    return win, upto, router, info, orch_turns, unparsed, unjoined, facts
 
 
 scan_logs.orch_id = None
@@ -386,8 +393,16 @@ def tool_names(content):
     return names, "\n".join(text), bg
 
 
+def text_of_result(content):
+    if isinstance(content, str):
+        return content
+    return " ".join(b.get("text", "") for b in content or () if isinstance(b, dict) and b.get("type") == "text")
+
+
 def load_transcript(path):
+    """(assistant records, tool_result times, WaitForScript calls, owner-facing calls: asks, answers, messages)."""
     recs, results, waits = [], {}, []
+    owner = {"asks": {}, "answers": {}, "messages": {}}
     with open(path, errors="replace") as f:
         for line in f:
             if '"message"' not in line:
@@ -407,7 +422,15 @@ def load_transcript(path):
                 for b in content:
                     if b.get("type") == "tool_result":
                         results[b.get("tool_use_id")] = ts
+                        owner["answers"][b.get("tool_use_id")] = (ts, text_of_result(b.get("content")))
                 continue
+            if m.get("role") == "assistant":
+                for b in content:
+                    inp = b.get("input") or {}
+                    if b.get("type") == "tool_use" and b.get("name") == "AskUser":
+                        owner["asks"][b.get("id")] = (ts, json.dumps(inp))
+                    elif b.get("type") == "tool_use" and b.get("name") == "StartMissionRun" and inp.get("messageToWorker"):
+                        owner["messages"][b.get("id")] = (ts, inp.get("resumeWorkerSessionId"), str(inp["messageToWorker"]))
             if m.get("role") != "assistant" or str(r.get("id", "")).startswith("repl-tool-call"):
                 continue
             kinds = {b.get("type") for b in content}
@@ -420,7 +443,7 @@ def load_transcript(path):
                     inp = b.get("input") or {}
                     waits.append((ts, b.get("id"), inp.get("toolCallId"), inp.get("action")))
     recs.sort(key=lambda r: r["t"])
-    return recs, results, waits
+    return recs, results, waits, owner
 
 
 def classify_turn(rec, prev):
@@ -464,7 +487,8 @@ def orchestrator_split(orch_turns, recs, prices):
     return result, matched
 
 
-def throttled_rows(progress, label, start, end):
+def pause_rows(progress, label):
+    """Every pause of progress_log.jsonl paired with the entry that ended it; `until` is that entry's time (None while open)."""
     rows, open_ = [], None
 
     def close(next_entry, resumed):
@@ -474,7 +498,8 @@ def throttled_rows(progress, label, start, end):
         reason = r.get("pauseReason") or "-"
         resume = next_entry[1]["timestamp"] if resumed else "none (next: %s %s)" % (next_entry[1]["type"], next_entry[1]["timestamp"])
         rows.append({"pause": r["timestamp"], "resume": resume, "seconds": (t1 - t0).total_seconds(), "reason": reason,
-                     "throttled": reason in THROTTLE_REASONS, "source": "%s:%d, :%d" % (label, ln, next_entry[0])})
+                     "throttled": reason in THROTTLE_REASONS, "source": "%s:%d, :%d" % (label, ln, next_entry[0]),
+                     "until": next_entry[1]["timestamp"]})
 
     for ln, r in progress:
         t = r.get("type")
@@ -490,8 +515,13 @@ def throttled_rows(progress, label, start, end):
             open_ = None
     if open_:
         rows.append({"pause": open_[1]["timestamp"], "resume": "open (no later entry)", "seconds": None,
-                     "reason": open_[1].get("pauseReason") or "-", "throttled": False, "source": "%s:%d" % (label, open_[0])})
-    return [r for r in rows if sec(start) <= sec(r["pause"]) <= sec(end)]
+                     "reason": open_[1].get("pauseReason") or "-", "throttled": False, "source": "%s:%d" % (label, open_[0]),
+                     "until": None})
+    return rows
+
+
+def throttled_rows(progress, label, start, end):
+    return [r for r in pause_rows(progress, label) if sec(start) <= sec(r["pause"]) <= sec(end)]
 
 
 def gate_rows(gate_dir, repo_root, start, end):
@@ -641,7 +671,7 @@ def build(args):
     sidecars = load_sidecars(args.sessions_dir)
     clf = Classifier(sidecars, progress, mission_id)
     scan_logs.orch_id = mission_id
-    win, upto, router, loginfo, orch_turns, unparsed, unjoined = scan_logs(files, start, end)
+    win, upto, router, loginfo, orch_turns, unparsed, unjoined, facts = scan_logs(files, start, end)
     ran = collections.Counter()
     for (_, model), a in win.items():
         ran[model] += a.turns
@@ -692,8 +722,9 @@ def build(args):
         src_rows.append(["`%s`" % pl_label, len(tss), min(tss) if tss else "-", max(tss) if tss else "-", "records up to the window end"])
     tpath = next(iter(glob.glob(os.path.join(args.sessions_dir, "*", mission_id + ".jsonl"))), None)
     recs = results = waits = None
+    owner_calls = {}
     if tpath:
-        recs, results, waits = load_transcript(tpath)
+        recs, results, waits, owner_calls = load_transcript(tpath)
         bounded = [r["ts"] for r in recs if sec(r["ts"]) <= sec(end)]
         src_rows.append(["`sessions/%s/%s.jsonl`" % (os.path.basename(os.path.dirname(tpath)), mission_id), len(bounded),
                          ts_or_dash(bounded[0] if bounded else None), ts_or_dash(bounded[-1] if bounded else None),
@@ -975,6 +1006,16 @@ def build(args):
     emit("throttled: %.3f s = %.2f min" % (secs, secs / 60))
     emit("")
 
+    # Owner interventions, idle time and host health
+    feature_of = {sid: f for sid, f in clf.feature.items()}
+    interventions = usage_idle.intervention_rows(
+        progress, pl_label, owner_calls, "sessions/%s/%s.jsonl" % (os.path.basename(os.path.dirname(tpath)), mission_id) if tpath else "transcript not found",
+        feature_of, start, end)
+    usage_idle.intervention_lines(emit, md_table, interventions)
+    events = list(facts.turns) + [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
+    idle_min = usage_idle.idle_lines(emit, md_table, events, facts, pause_rows(progress, pl_label), interventions)
+    usage_idle.host_lines(emit, md_table, facts, usage_idle.parse_boottime(args.boottime), now, end if "T" in end else end, idle_min["host"])
+
     # Gates
     emit("### Gates")
     emit("")
@@ -1221,6 +1262,7 @@ def main(argv=None):
     ap.add_argument("--from", dest="start", help="window start (RFC 3339); default the milestone's first worker_started")
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")
     ap.add_argument("--now", help="generation time (tests)")
+    ap.add_argument("--boottime", help="the output of `sysctl kern.boottime`, or `unavailable`; default runs the command")
     ap.add_argument("--out", help="default reports/usage/<milestone>.md")
     ap.add_argument("--cap", action="append", default=[], metavar="ROLE=USD", help="cap to compare mission-to-date with")
     ap.add_argument("--cross-check", action="store_true", help="compare the session rows with scripts/usage-from-log.sh")

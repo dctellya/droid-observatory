@@ -80,7 +80,7 @@ class IdleTime(unittest.TestCase):
         self.assertIn("unexplained gap: %s to %s (30.00 min)" % (at("01:20:00"), at("01:50:00")), self.text)
 
     def test_the_gap_rule_and_the_events_it_reads_are_stated(self):
-        self.assertIn("a gap is the time between two consecutive events", self.text)
+        self.assertIn("A gap is the time between two consecutive events", self.text)
         self.assertIn("more than 15 minutes", self.text)
 
     def test_a_window_without_a_gap_says_so_and_lists_no_unexplained_gap(self):
