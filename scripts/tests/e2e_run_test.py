@@ -246,9 +246,11 @@ class RerunPolicy(unittest.TestCase):
         self.assertIn('failures="0"', gate)
         self.assertIn('<property name="outcome" value="flaked"/>', gate)
         self.assertNotIn("<failure", read(junit))
-        for name in ("junit-attempt-1.xml", "junit-attempt-2.xml"):
+        for name in ("attempt-1-junit.xml", "attempt-2-junit.xml"):
             self.assertTrue(os.path.isfile(os.path.join(h.report, name)), name)
-        self.assertEqual(read(os.path.join(h.report, "junit-attempt-1.xml")).count("<failure"), 1)
+            # wdio.conf.ts onComplete merges and deletes every junit-<cid>.xml of the report directory.
+            self.assertIsNone(re.match(r"^junit-.+\.xml$", name), name)
+        self.assertEqual(read(os.path.join(h.report, "attempt-1-junit.xml")).count("<failure"), 1)
 
     def test_a_plain_red_junit_names_failed(self):
         h, _ = self.outcome("1,2")
