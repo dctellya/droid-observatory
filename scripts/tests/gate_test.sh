@@ -340,6 +340,37 @@ LC_ALL=C awk -v s="$timing_seconds" 'BEGIN { exit !(s >= 1.9) }' \
   || fail "seconds $timing_seconds omits the tree computation (expected >= 1.9 with a 1 s write-tree and a 1 s command)"
 [ "$(jq -r .exit_code "reports/gate/$timing_tree/timing.json")" = "0" ] || fail "timing record exit_code"
 
+# `--diff <rev>` where an excluded file differs between <rev> and HEAD: `git rm --cached` refuses a path whose index
+# copy differs from both the file and HEAD unless forced, which made the diff fail and print nothing (an empty diff reads
+# as "same code tree"). The docs-only change must give an empty diff with exit 0, the code change must be listed.
+cd "$tmp" || exit 1
+rm -rf diffrepo
+mkdir -p diffrepo/src diffrepo/docs
+cd diffrepo || exit 1
+git init -q .
+echo "fn main() {}" > src/main.rs
+echo "# decision" > docs/D-001.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m base
+base_rev=$(git rev-parse HEAD)
+echo "# decision, edited" >> docs/D-001.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "docs only"
+out=$(sh "$gate" --diff "$base_rev" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] || fail "--diff over a docs-only change exited $rc: $out"
+[ -z "$out" ] || fail "--diff over a docs-only change printed: $out"
+echo "fn later() {}" >> src/main.rs
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "code"
+echo "# decision, edited again" >> docs/D-001.md
+out=$(sh "$gate" --diff "$base_rev" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] || fail "--diff with a docs file differing exited $rc: $out"
+case "$out" in *"src/main.rs"*) ;; *) fail "--diff does not list the changed code file: $out" ;; esac
+case "$out" in *"D-001.md"*) fail "--diff lists a docs file: $out" ;; esac
+cd "$repo" || exit 1
+
 # Argument errors.
 sh "$gate" > /dev/null 2>&1 && fail "no arguments accepted"
 sh "$gate" unit > /dev/null 2>&1 && fail "missing command accepted"
