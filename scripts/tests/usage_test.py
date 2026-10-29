@@ -5,7 +5,8 @@ The fixture is a hand-written excerpt shaped like the real Droid log, sidecars, 
 progress log and gate records; ids are made up (11111111-... is the mission and its orchestrator). Every
 expected number below is the arithmetic of the fixture lines and of fixtures/usage/prices.toml
 (USD per million tokens: fable 10 / 50 / 0.25 / 12.5, opus 4 / 20 / 0.2 / 5, sonnet 2 / 10 / 0.1 / 2.5,
-haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write).
+haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write; kimi-k3 list 1 / 4 / 0.1 / 1 with a plan price
+0.5 / 2 / 0.05 / 0.5).
 """
 
 import json
@@ -136,7 +137,7 @@ class UsageReport(unittest.TestCase):
         self.assertEqual(
             (o["Sessions"], o["Turns"], o["Input"], o["Output"], o["Cache read"], o["Cache write"], o["Reasoning"]),
             ("1", "6", "3600007", "360003", "14000005", "640000", "300"))
-        self.assertEqual((o["USD-eq"], o["Unpriced turns"]), ("65.50", "1"))
+        self.assertEqual((o["USD-eq"], o["Unpriced turns"]), ("65.50", "0"))
         self.assertEqual((o["First ts"], o["Last ts"]), ("2026-10-25T10:00:01.000Z", "2026-10-25T10:09:00.000Z"))
         self.assertEqual(o["Source"], "droid-log-single.log")
 
@@ -148,7 +149,7 @@ class UsageReport(unittest.TestCase):
         v = self.role("validator")
         self.assertEqual(
             (v["Sessions"], v["Turns"], v["Input"], v["Output"], v["Cache read"], v["Cache write"], v["USD-eq"], v["Unpriced turns"]),
-            ("2", "4", "100015", "80005", "6500005", "1100000", "8.80", "1"))
+            ("2", "4", "100015", "80005", "6500005", "1100000", "8.80", "0"))
 
         sub = self.role("orchestrator subagent")
         self.assertEqual((sub["Sessions"], sub["Turns"], sub["USD-eq"]), ("1", "1", "2.01"))
@@ -215,7 +216,7 @@ class UsageReport(unittest.TestCase):
         d = got[("decisions and boundary reports", "claude-fable-5.1")]
         self.assertEqual((d["Turns"], d["USD-eq"]), ("1", "12.00"))
         k = got[("decisions and boundary reports", "kimi-k3")]
-        self.assertEqual((k["Turns"], k["Unpriced turns"]), ("1", "1"))
+        self.assertEqual((k["Turns"], k["Unpriced turns"]), ("1", "0"))
         n = got[("narration", "claude-fable-5.1")]
         self.assertEqual((n["Turns"], n["USD-eq"]), ("1", "2.50"))
         u = got[("unmatched", "claude-fable-5.1")]
@@ -549,6 +550,97 @@ class UsageReportFile(unittest.TestCase):
         mods = set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", src, re.M))
         allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect"}
         self.assertLessEqual(mods, allowed, mods - allowed)
+
+
+def prices_without(model, tmp):
+    """Copy of the fixture price table without the [models."<model>"] block."""
+    text = read(os.path.join(FIX, "prices.toml"))
+    kept, skip = [], False
+    for line in text.splitlines():
+        if line.startswith("[models."):
+            skip = line == '[models."%s"]' % model
+        if not skip:
+            kept.append(line)
+    path = os.path.join(tmp, "prices.toml")
+    with open(path, "w") as f:
+        f.write("\n".join(kept) + "\n")
+    return path
+
+
+class UsageReportPricing(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_a_model_that_ran_in_the_window_without_a_price_fails_the_run_naming_the_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            proc = run(["--prices", prices_without("kimi-k3", tmp)], out=out, check=False)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("kimi-k3", proc.stderr)
+            self.assertIn("no price", proc.stderr)
+            self.assertFalse(os.path.exists(out), "a failed run writes no report")
+
+    def test_a_price_row_that_would_show_a_model_at_zero_cost_fails_the_run_naming_the_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = read(os.path.join(FIX, "prices.toml"))
+            prices = os.path.join(tmp, "prices.toml")
+            with open(prices, "w") as f:
+                f.write(text.replace("plan_input_per_m = 0.5", "plan_input_per_m = 0.0").replace("plan_output_per_m = 2.0", "plan_output_per_m = 0"))
+            proc = run(["--prices", prices], out=os.path.join(tmp, "m9.md"), check=False)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("kimi-k3", proc.stderr)
+            self.assertIn("zero", proc.stderr)
+
+    def test_every_model_that_ran_is_listed_with_its_price_basis_and_cost(self):
+        header, rows = table(self.text, "Models that ran")
+        self.assertEqual(header, ["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output",
+                                  "Input per M", "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles"])
+        got = {r["Model"]: r for r in rows}
+        self.assertEqual(set(got), {"claude-fable-5.1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "kimi-k3"})
+        s = got["claude-sonnet-5-5"]
+        self.assertEqual((s["Price basis"], s["Input per M"], s["Cache write per M"], s["Cache read per M"], s["Output per M"]),
+                         ("list", "2.0", "2.5", "0.1", "10.0"))
+        k = got["kimi-k3"]
+        self.assertEqual((k["Price basis"], k["Turns"], k["Input"], k["Cache write"], k["Cache read"], k["Output"]),
+                         ("plan", "2", "12", "0", "10", "8"))
+        self.assertEqual((k["Input per M"], k["Cache write per M"], k["Cache read per M"], k["Output per M"]),
+                         ("0.5", "0.5", "0.05", "2.0"))
+        self.assertEqual(k["Roles"], "orchestrator, validator")
+        self.assertEqual(got["claude-fable-5.1"]["USD-eq"], "65.50")
+
+    def test_a_models_turns_never_show_at_zero_cost(self):
+        _, rows = table(self.text, "Models that ran")
+        for r in rows:
+            self.assertNotIn(r["USD-eq"], ("0.00", "0", "-"), r["Model"])
+        self.assertEqual({r["Model"]: r["USD-eq"] for r in rows}["kimi-k3"], "<0.01")
+        _, roles = table(self.text, "Tokens per role")
+        self.assertEqual({r["Unpriced turns"] for r in roles}, {"0"})
+
+    def test_a_model_without_a_price_before_the_window_is_named_not_priced_at_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = os.path.join(tmp, "logs")
+            shutil.copytree(os.path.join(FIX, "logs"), logs)
+            with open(os.path.join(logs, "droid-log-single.log.2026-10-24"), "a") as f:
+                f.write('[2026-10-24T23:45:00.000Z] INFO: [Agent] Streaming result | Context: {"inputTokens":5,"outputTokens":5,'
+                        '"cacheReadInputTokens":5,"cachedTokensWritten":0,"tags":{"sessionId":"%s","modelId":"gpt-6-sol"}}\n' % MISSION)
+            out = os.path.join(tmp, "m9.md")
+            run(["--logs-dir", logs], out=out)
+            text = read(out)
+            _, rows = table(text, "Mission to date by role")
+            self.assertEqual({r["Role"]: r["Unpriced turns"] for r in rows}["orchestrator"], "1")
+            line = next(l for l in text.splitlines() if l.startswith("Models with no price before the window:"))
+            self.assertIn("gpt-6-sol (1 turns)", line)
+            self.assertIn("not in the window", line)
+            _, models = table(text, "Models that ran")
+            self.assertNotIn("gpt-6-sol", {r["Model"] for r in models})
 
 
 if __name__ == "__main__":

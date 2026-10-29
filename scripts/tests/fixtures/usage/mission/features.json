@@ -1,6 +1,7 @@
 {
   "features": [
-    {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed"},
-    {"id": "m9-beta", "milestone": "m9", "skillName": "core-worker", "status": "pending"}
+    {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed", "turnBudget": 1},
+    {"id": "m9-beta", "milestone": "m9", "skillName": "core-worker", "status": "pending", "turnBudget": 40},
+    {"id": "m8-old", "milestone": "m8", "skillName": "core-worker", "status": "completed", "turnBudget": 10}
   ]
 }
