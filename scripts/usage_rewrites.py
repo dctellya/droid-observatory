@@ -23,7 +23,49 @@ def rewrites(turns, context):
     return [t for t in turns if context and t["cw"] - t["cr"] >= context]
 
 
-def rewrite_lines(emit, md_table, milestone, turns, usd):
+BOUNDARY_TARGET = 3
+
+
+def ratio(turns, boundaries):
+    return "%.1f" % (turns / boundaries) if boundaries else "n/a"
+
+
+def compaction_marker(hits, resumes):
+    """The earliest compaction marker as (ts, kind): a progress_log `mission_resumed` line or a lead context rewrite turn.
+
+    A `mission_resumed` line wins a tie with a rewrite at the same time; the orchestrator records its own compaction as a
+    `mission_resumed`-style line, and the resumed lead's first turn is then the rewrite.
+    """
+    found = [(ts, 0, "mission_resumed") for ts in resumes] + [(t["ts"], 1, "lead context rewrite") for t in hits]
+    if not found:
+        return None
+    ts, _, kind = min(found)
+    return ts, kind
+
+
+def boundary_lines(emit, turns, hits, boundaries, resumes, usd):
+    """The `orchestrator turns per feature boundary` line, and the before/after split when a compaction marker is in the window.
+
+    `turns` are the lead turns of the rewrite table; `boundaries` are the progress_log times of the `worker_completed` entries
+    of the window (the runner's feature returns); `resumes` are the window's `mission_resumed` times.
+    """
+    emit("orchestrator turns per feature boundary: %d / %d = %s (target %d)"
+         % (len(turns), len(boundaries), ratio(len(turns), len(boundaries)), BOUNDARY_TARGET))
+    marker = compaction_marker(hits, resumes)
+    if marker:
+        at, kind = marker
+        sides = []
+        for pick in (lambda ts: ts < at, lambda ts: ts >= at):
+            side = [t for t in turns if pick(t["ts"])]
+            n = sum(1 for ts in boundaries if pick(ts))
+            per_turn = usd(sum(t["usd"] for t in side) / len(side)) if side else "-"
+            sides.append("%d turns / %d boundaries = %s, %s USD-eq per turn" % (len(side), n, ratio(len(side), n), per_turn))
+        emit("")
+        emit("before compaction: %s; after: %s (marker: %s %s)" % (sides[0], sides[1], kind, at))
+    emit("")
+
+
+def rewrite_lines(emit, md_table, milestone, turns, usd, boundaries=(), resumes=()):
     """Writes Lead context rewrites, Lead context rewrites per milestone and the summary line.
 
     `turns` are dicts {ts, cr, cw, usd} of the orchestrator's log turns in the window.
@@ -56,11 +98,17 @@ def rewrite_lines(emit, md_table, milestone, turns, usd):
         emit("context rewrites: none (no lead turn with a cache read in the window)" if not context
              else "context rewrites: none in %d lead turns" % len(turns))
     emit("")
+    boundary_lines(emit, turns, hits, boundaries, resumes, usd)
     emit("A rewrite is a lead turn whose cache-write tokens exceed its cache-read tokens by at least the context size: the turn "
          "wrote a new cache of roughly the whole conversation instead of extending the old one (a compaction, a cache expiry "
          "after a long wait, or a resume). The context size is measured per window from the lead's own turns, not fixed; the "
          "USD-eq of a rewrite turn is the whole turn (its input, output, cache read and cache write), and the lead is the "
          "orchestrator role. The tokens are the log's `cachedTokensWritten` and `cacheReadInputTokens`.")
+    emit("")
+    emit("The turns per feature boundary are the lead turns of the window divided by the `worker_completed` entries of the "
+         "mission's progress_log.jsonl in the window (one per worker hand-off returned to the orchestrator; `worker_failed` is "
+         "not one). The before/after line appears only when the window holds a compaction marker, a `mission_resumed` entry of "
+         "the progress_log or a lead context rewrite above, and splits at the earliest one.")
     emit("")
 
 

@@ -1023,7 +1023,11 @@ def build(args):
         a = Acc()
         a.add(ts, d, "")
         lead_turns.append({"ts": ts, "cr": a.cr, "cw": a.cw, "usd": price(prices, model, a) or 0.0})
-    usage_rewrites.rewrite_lines(emit, md_table, args.milestone, lead_turns, usd)
+    in_window = [(r.get("type"), r["timestamp"]) for _, r in progress
+                 if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
+    usage_rewrites.rewrite_lines(emit, md_table, args.milestone, lead_turns, usd,
+                                 boundaries=[ts for t, ts in in_window if t == "worker_completed"],
+                                 resumes=[ts for t, ts in in_window if t == "mission_resumed"])
 
     # User testing
     usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
