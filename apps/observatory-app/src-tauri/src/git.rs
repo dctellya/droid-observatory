@@ -159,40 +159,50 @@ impl Poller<'_> {
             .or_else(|| self.fallback.clone())
     }
 
+    /// The source of the mission's branch in its repository; none, with the reason logged, when
+    /// the mission has no row yet, no repository or no such branch.
+    fn open_source<R: Runtime>(
+        &mut self,
+        app: &AppHandle<R>,
+        store: &Store,
+        mission: &MissionId,
+    ) -> Option<GitSource> {
+        let name = store
+            .missions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.id == *mission)?
+            .name;
+        let Some(repo) = self.repository(app, mission) else {
+            if self.skipped.insert(mission.clone()) {
+                tracing::info!(mission_id = %mission, reason = "no repository", "git_skipped");
+            }
+            return None;
+        };
+        let branch = mission_branch(&self.cfg.mission.branch_pattern, &name);
+        GitSource::open(
+            &repo,
+            mission.clone(),
+            &branch,
+            self.template.clone(),
+            self.options.clone(),
+        )
+        .inspect_err(|error| {
+            tracing::warn!(mission_id = %mission, %branch, %error, "git_poll_failed");
+        })
+        .ok()
+    }
+
     fn poll_mission<R: Runtime>(
         &mut self,
         app: &AppHandle<R>,
         store: &mut Store,
         mission: MissionId,
     ) {
-        let Some(name) = store
-            .missions()
-            .ok()
-            .and_then(|rows| rows.into_iter().find(|row| row.id == mission))
-            .map(|row| row.name)
-        else {
+        let Some(source) = self.open_source(app, store, &mission) else {
             return;
         };
-        let Some(repo) = self.repository(app, &mission) else {
-            if self.skipped.insert(mission.clone()) {
-                tracing::info!(mission_id = %mission, reason = "no repository", "git_skipped");
-            }
-            return;
-        };
-        let branch = mission_branch(&self.cfg.mission.branch_pattern, &name);
-        let source = match GitSource::open(
-            &repo,
-            mission.clone(),
-            &branch,
-            self.template.clone(),
-            self.options.clone(),
-        ) {
-            Ok(source) => source,
-            Err(error) => {
-                tracing::warn!(mission_id = %mission, %branch, %error, "git_poll_failed");
-                return;
-            }
-        };
+        let branch = source.branch().to_owned();
         let runs = self.runs(&mission, &branch);
         match git_sync(store, &source, &runs) {
             Ok(sync) => {
