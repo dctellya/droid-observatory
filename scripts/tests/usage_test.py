@@ -978,8 +978,9 @@ def plan_only_prices(tmp, name="2026-10-29.toml", note=True):
     """Fixture price table whose kimi-k3 row has only the four plan keys (and a note), under a dated name with a provenance line."""
     text = read(os.path.join(FIX, "prices.toml"))
     head, _ = text.split('[models."kimi-k3"]')
-    row = ('provenance = "%s"\n\n[models."kimi-k3"]\nplan_input_per_m = 3.0\nplan_output_per_m = 15.0\n'
-           'plan_cache_read_per_m = 0.30\nplan_cache_write_per_m = 3.0\n' % PROVENANCE)
+    head = 'provenance = "%s"\n' % PROVENANCE + head
+    row = ('[models."kimi-k3"]\nplan_input_per_m = 3.0\nplan_output_per_m = 15.0\n'
+           'plan_cache_read_per_m = 0.30\nplan_cache_write_per_m = 3.0\n')
     if note:
         row += 'note = "%s"\n' % NOTE
     path = os.path.join(tmp, name)
@@ -1022,6 +1023,8 @@ class UsageReportPriceFiles(unittest.TestCase):
             self.assertNotIn("2026-10-29", text)
             text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "config/prices/2026-10-22.toml"])
             self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+            text = self.run_in(tmp, ["--price-table", os.path.join(prices, "2026-10-22.toml")])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
 
     def test_a_row_with_only_plan_keys_is_priced_at_the_plan_price(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1061,7 +1064,7 @@ class UsageReportPriceFiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
             line = next(l for l in text.splitlines() if l.startswith("Price notes:"))
-            self.assertRegex(line, r"kimi-k3 \(\d+ turns to date\)")
+            self.assertRegex(line, r"kimi-k3 \(\d+ turns to date, ")
 
 
 class RepoPriceTables(unittest.TestCase):

@@ -161,9 +161,26 @@ def fail(message):
 
 
 def load_prices(path):
+    return load_price_table(path)[0]
+
+
+def load_price_table(path):
+    """(model rows, provenance line or None) of a dated price file."""
     with open(path, "rb") as f:
         data = tomllib.load(f)
-    return data.get("models", {})
+    return data.get("models", {}), data.get("provenance")
+
+
+def pick_price_table(prices_dir, named=None):
+    """The file `named` (a date, a file name or a path such as the `price_table` of the config), else the newest dated file of the directory."""
+    if named:
+        for cand in ([named] if os.path.isabs(named) else []) + [os.path.join(prices_dir, named), os.path.join(prices_dir, named + ".toml"),
+                                                                  os.path.join(prices_dir, os.path.basename(named))]:
+            if os.path.isfile(cand):
+                return cand
+        sys.exit("usage-report.py: no price table %s in %s" % (named, prices_dir))
+    dated = sorted(glob.glob(os.path.join(prices_dir, "*.toml")))
+    return dated[-1] if dated else None
 
 
 def rates(model, p):
@@ -607,7 +624,7 @@ def build(args):
         with open(ft_path) as f:
             features = [x for x in json.load(f).get("features", []) if "id" in x]
         skills = {x["id"]: x.get("skillName") or "-" for x in features}
-        budgets = {x["id"]: x.get("turnBudget") for x in features}
+        budgets = {x["id"]: usage_classes.turn_budget(x) for x in features}
     start = args.start
     if not start:
         firsts = [r["timestamp"] for _, r in progress
@@ -620,7 +637,7 @@ def build(args):
     if not files:
         sys.exit("usage-report.py: no droid-log-single.log* in %s" % args.logs_dir)
 
-    prices = load_prices(args.prices)
+    prices, provenance = load_price_table(args.prices)
     sidecars = load_sidecars(args.sessions_dir)
     clf = Classifier(sidecars, progress, mission_id)
     scan_logs.orch_id = mission_id
@@ -774,11 +791,14 @@ def build(args):
     for model, (a, cost, roles) in per_model.items():
         basis, r = rates(model, prices[model])
         mrows.append([model, basis, a.turns, a.i, a.cw, a.cr, a.o, r["input"], r["cache_write"], r["cache_read"], r["output"],
-                      usd_nonzero(cost), ", ".join(sorted(roles, key=ROLES.index))])
+                      usd_nonzero(cost), ", ".join(sorted(roles, key=ROLES.index)), prices[model].get("note") or "-"])
     for r in md_table(["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output", "Input per M",
-                       "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles"], mrows):
+                       "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles", "Note"], mrows):
         emit(r)
     emit("")
+    if provenance:
+        emit("Price provenance: %s" % provenance)
+        emit("")
     emit("Every model with a log turn in the window is listed, declared or routed. Price basis is `plan` when the model's row in `%s` "
          "carries the four `plan_*_per_m` keys (the plan's price) and `list` otherwise (the list price); per-million rates are USD."
          % os.path.basename(args.prices))
@@ -1112,6 +1132,19 @@ def build(args):
     for (_, model), a in upto.items():
         if model not in prices:
             history[model] += a.turns
+    if provenance:
+        emit("")
+        emit("Price provenance: %s" % provenance)
+    noted = {}
+    for (_, model), a in upto.items():
+        if prices.get(model, {}).get("note"):
+            n = noted.setdefault(model, [0, 0.0])
+            n[0] += a.turns
+            n[1] += price(prices, model, a)
+    if noted:
+        emit("")
+        emit("Price notes: %s." % "; ".join("%s (%d turns to date, %s USD-eq): %s" % (m, n[0], usd(n[1]), prices[m]["note"])
+                                            for m, n in sorted(noted.items())))
     emit("")
     emit("Models with no price before the window: %s." % (
         "none" if not history else "; ".join("%s (%d turns)" % kv for kv in sorted(history.items())) +
@@ -1179,8 +1212,10 @@ def main(argv=None):
     ap.add_argument("--mission-id", help="orchestrator session id; default the mission directory's name")
     ap.add_argument("--logs-dir", default=os.path.expanduser("~/.factory/logs"))
     ap.add_argument("--sessions-dir", default=os.path.expanduser("~/.factory/sessions"))
-    prices = sorted(glob.glob(os.path.join(repo_root, "config", "prices", "*.toml")))
-    ap.add_argument("--prices", default=prices[-1] if prices else None)
+    ap.add_argument("--prices", help="price table file; default the newest dated file of --prices-dir, or the one --price-table names")
+    ap.add_argument("--prices-dir", default=os.path.join(repo_root, "config", "prices"))
+    ap.add_argument("--price-table", help="a dated price file to read instead of the newest: a date (2026-10-22), a file name or a "
+                    "path such as the `price_table` of the config")
     ap.add_argument("--validation-state", help="validation-state.json for the cost per assertion; default <mission-dir>/validation-state.json")
     ap.add_argument("--gate-dir", default=os.path.join(repo_root, "reports", "gate"))
     ap.add_argument("--from", dest="start", help="window start (RFC 3339); default the milestone's first worker_started")
@@ -1190,6 +1225,8 @@ def main(argv=None):
     ap.add_argument("--cap", action="append", default=[], metavar="ROLE=USD", help="cap to compare mission-to-date with")
     ap.add_argument("--cross-check", action="store_true", help="compare the session rows with scripts/usage-from-log.sh")
     args = ap.parse_args(argv)
+    if not args.prices:
+        args.prices = pick_price_table(args.prices_dir, args.price_table)
     if not args.prices:
         sys.exit("usage-report.py: no price table found; pass --prices")
     out = args.out or os.path.join(repo_root, "reports", "usage", args.milestone + ".md")

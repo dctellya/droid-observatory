@@ -17,6 +17,18 @@ DECLARATION_LINE = re.compile(r"subagent\s+`?([0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f
 TOKEN_CLASSES = (("input", "i", "input"), ("cache write", "cw", "cache_write"), ("cache read", "cr", "cache_read"), ("output", "o", "output"))
 
 
+# The mission runner rewrites features.json with its own schema and drops `turnBudget`; the budget then stays in the description text.
+BUDGET_TEXT = re.compile(r"\bturnBudget\s+(\d+)\b")
+
+
+def turn_budget(feature):
+    """The feature's `turnBudget` key, else the N of `turnBudget <N>` in its description, else None."""
+    if feature.get("turnBudget") is not None:
+        return feature["turnBudget"]
+    m = BUDGET_TEXT.search(feature.get("description") or "")
+    return int(m.group(1)) if m else None
+
+
 def new_totals():
     return {name: [0, 0.0] for name, _, _ in TOKEN_CLASSES}
 
