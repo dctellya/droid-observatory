@@ -56,7 +56,9 @@ fn a_refusing_keychain_falls_back_to_the_environment() {
         service: "droid-observatory/github-token".into(),
         message: "User canceled the operation.".into(),
     });
-    let token = resolve_github_token_or_fallback(refused, Some("from-env".into())).unwrap();
+    let token = resolve_github_token_or_fallback(refused, Some("from-env".into()))
+        .unwrap()
+        .unwrap();
     assert_eq!(token.expose(), "from-env");
 
     let refused = Err(SecretError::Keychain {
@@ -68,6 +70,8 @@ fn a_refusing_keychain_falls_back_to_the_environment() {
         "no environment value: the refusal is the answer"
     );
     let found = Ok(Some(Secret::new("from-keychain".into())));
-    let token = resolve_github_token_or_fallback(found, Some("from-env".into())).unwrap();
+    let token = resolve_github_token_or_fallback(found, Some("from-env".into()))
+        .unwrap()
+        .unwrap();
     assert_eq!(token.expose(), "from-keychain");
 }

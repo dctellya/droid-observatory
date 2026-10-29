@@ -84,13 +84,30 @@ pub fn lookup_service(service: &str) -> Result<Option<Secret>, SecretError> {
     }
 }
 
-/// The GitHub token: the keychain, then `GITHUB_TOKEN` (the only environment fallback).
+/// The GitHub token: the keychain, then `GITHUB_TOKEN` (the only environment fallback). A
+/// keychain that refuses (locked, access denied) gives way to the environment value; with none
+/// the refusal is returned.
 pub fn github_token() -> Result<Option<Secret>, SecretError> {
-    let keychain = lookup(SecretName::GithubToken)?;
-    Ok(resolve_github_token(
-        keychain,
+    resolve_github_token_or_fallback(
+        lookup(SecretName::GithubToken),
         std::env::var("GITHUB_TOKEN").ok(),
-    ))
+    )
+}
+
+pub fn resolve_github_token_or_fallback(
+    keychain: Result<Option<Secret>, SecretError>,
+    env: Option<String>,
+) -> Result<Option<Secret>, SecretError> {
+    match keychain {
+        Ok(found) => Ok(resolve_github_token(found, env)),
+        Err(refusal) => match resolve_github_token(None, env) {
+            Some(token) => {
+                tracing::warn!(%refusal, "keychain refused, using GITHUB_TOKEN");
+                Ok(Some(token))
+            }
+            None => Err(refusal),
+        },
+    }
 }
 
 /// The keychain value when there is one, else a non-empty environment value.
