@@ -334,8 +334,10 @@ expect_skip g5-metrics-untouched "$r" "not on wt/m4"
 
 expect_ok g9-check-target-list '' "g9-check-target-list on the real tree"
 d=$(fresh tl1)
-put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures'
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-wasm fmt-check lint test deny machete replay-fixtures'
 expect_ok g9-check-target-list "$d" "all named targets listed"
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures'
+expect_red g9-check-target-list "$d" "check-wasm dropped from check-all (F-274)"
 put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index fmt-check lint test deny machete replay-fixtures'
 expect_red g9-check-target-list "$d" "check-secrets dropped from check-all"
 
