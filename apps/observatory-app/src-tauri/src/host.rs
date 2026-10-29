@@ -21,7 +21,7 @@ use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{
     CycleTemplate, Event, EventId, EventKind, LaneId, MissionId, SessionId, Timestamp,
 };
-use observatory_core::store::HostedRun;
+use observatory_core::store::{HostedRun, Store};
 use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
     QuestionRow, session_uuid,
@@ -637,23 +637,33 @@ impl<R: Runtime> Pump<R> {
         if let Err(err) = store.insert_events(&events) {
             tracing::error!(%err, launch_id = %self.launch_id, "store");
         }
-        let echoes_a_pause = events
-            .iter()
-            .any(|event| event.kind == EventKind::MissionPaused && !control::is_ack(&event.id));
-        if echoes_a_pause {
-            match store.retract_echoed_pauses(&mission) {
-                Ok(removed) => {
-                    self.pending.retain(|event| !removed.contains(&event.id));
-                    self.retracted_events.extend(removed);
-                }
-                Err(err) => tracing::error!(%err, launch_id = %self.launch_id, "store"),
-            }
-        }
+        let removed = Self::retract_echoed_pauses(&mut store, &mission, &events, &self.launch_id);
+        self.pending.retain(|event| !removed.contains(&event.id));
+        self.retracted_events.extend(removed);
         self.unknown_total = store.unknown_count(&mission).unwrap_or(0);
         drop(store);
         self.pending.extend(events);
         self.oldest_at.get_or_insert(self.line_at);
         self.schedule_flush();
+    }
+
+    /// The ids of the stored stream pauses that echo the host's own ack pause, retracted from the store so the UI can drop their rows.
+    fn retract_echoed_pauses(
+        store: &mut Store,
+        mission: &MissionId,
+        events: &[Event],
+        launch_id: &str,
+    ) -> Vec<EventId> {
+        let echoes_a_pause = events
+            .iter()
+            .any(|event| event.kind == EventKind::MissionPaused && !control::is_ack(&event.id));
+        if !echoes_a_pause {
+            return Vec::new();
+        }
+        store.retract_echoed_pauses(mission).unwrap_or_else(|err| {
+            tracing::error!(%err, launch_id, "store");
+            Vec::new()
+        })
     }
 
     fn flush(&mut self) {
