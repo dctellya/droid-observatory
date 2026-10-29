@@ -40,7 +40,8 @@ suites = []
 for s in specs:
     bad = fails and s == "specs/gate.e2e.ts"
     case = '<testcase classname="%%s" name="case" time="1.0">%%s</testcase>' %% (names[s], '<failure message="card never reached Build"/>' if bad else "")
-    suites.append('<testsuite name="%%s" tests="1" failures="%%d" time="2.0">%%s</testsuite>' %% (names[s], 1 if bad else 0, case))
+    props = '<properties>\n      <property name="specId" value="0"/>\n    </properties>'
+    suites.append('<testsuite name="%%s" tests="1" failures="%%d" time="2.0">\n    %%s\n%%s</testsuite>' %% (names[s], 1 if bad else 0, props, case))
 open(os.path.join(report, "junit.xml"), "w").write("<?xml version=\"1.0\"?>\n<testsuites>\n" + "\n".join(suites) + "\n</testsuites>\n")
 open(os.path.join(report, "wdio-0-0.log"), "w").write("backend log of attempt %%d\n" %% attempt)
 open(os.path.join(report, ("fail-" if fails else "pass-") + "case.png"), "w").write("png %%d" %% attempt)
@@ -245,6 +246,8 @@ class RerunPolicy(unittest.TestCase):
         gate = suites(junit)["gate lane"]
         self.assertIn('failures="0"', gate)
         self.assertIn('<property name="outcome" value="flaked"/>', gate)
+        self.assertEqual(gate.count("<properties>"), 1, "the reporter's own properties element takes the outcome property")
+        self.assertIn('<property name="specId" value="0"/>', gate)
         self.assertNotIn("<failure", read(junit))
         for name in ("attempt-1-junit.xml", "attempt-2-junit.xml"):
             self.assertTrue(os.path.isfile(os.path.join(h.report, name)), name)
