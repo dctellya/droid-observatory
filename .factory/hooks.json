@@ -8,6 +8,12 @@
       ]
     },
     {
+      "matcher": "Execute|Edit|Create|Grep|TodoWrite",
+      "hooks": [
+        { "type": "command", "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/officer-decides.sh", "timeout": 10 }
+      ]
+    },
+    {
       "matcher": "*",
       "hooks": [
         { "type": "command", "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/log-tool-call.sh", "timeout": 10 }
