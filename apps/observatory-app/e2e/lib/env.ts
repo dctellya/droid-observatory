@@ -45,6 +45,10 @@ export function prepareRunDir(): void {
     `factory_sessions_dir = "${join(RUN_DIR, 'sessions')}"`,
     `factory_logs_dir = "${join(RUN_DIR, 'logs')}"`,
     '',
+    '[github]',
+    // The gate spec feeds the window its own polls; a real poll of the repository would race them.
+    'poll_interval_s = 3600',
+    '',
     '[intervention]',
     'stall_threshold_min = 1',
     'stall_poll_s = 5',

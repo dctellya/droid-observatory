@@ -77,7 +77,7 @@ pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<Stri
         .into_iter()
         .enumerate()
         .map(|(index, (kind, role))| Event {
-            id: EventId(format!("e2e-gate-{scenario_name}-{index}")),
+            id: EventId(format!("e2e-gate-{mission}-{scenario_name}-{index}")),
             mission_id: mission.clone(),
             milestone_id: Some(MilestoneId(MILESTONE.to_owned())),
             feature_id: None,

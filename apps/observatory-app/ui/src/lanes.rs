@@ -108,7 +108,7 @@ fn lane_column(
         .map(|group| group_view(lane, group))
         .collect_view();
     view! {
-        <section class="lane" aria-label=lane.aria_label.clone()>
+        <section class="lane" aria-label=lane.aria_label.clone() data-lane=lane.lane.0.clone()>
             <h2 class="lane-name">
                 {lane.name.clone()} " "
                 <span
