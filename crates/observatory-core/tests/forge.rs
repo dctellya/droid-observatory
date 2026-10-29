@@ -380,7 +380,12 @@ fn check_runs_api_is_never_called() {
 
     let asked = replay.asked();
     let prefix = format!("/repos/{REPO}");
-    assert_eq!(asked.len(), 3, "pulls, runs, status: {asked:?}");
+    assert_eq!(
+        asked.len(),
+        8,
+        "pulls, runs, status, then the runs again for the attestations, their artifacts, the reviews, \
+         the rules and the ruleset names: {asked:?}"
+    );
     assert!(
         asked[0].starts_with(&format!("{prefix}/pulls?")),
         "{asked:?}"
@@ -390,6 +395,8 @@ fn check_runs_api_is_never_called() {
         format!("{prefix}/actions/runs?head_sha={HEAD_SHA}")
     );
     assert_eq!(asked[2], format!("{prefix}/commits/{HEAD_SHA}/status"));
+    assert_eq!(asked[5], format!("{prefix}/pulls/24/reviews"));
+    assert_eq!(asked[6], format!("{prefix}/rules/branches/demo/base"));
     assert!(
         asked
             .iter()
@@ -565,7 +572,7 @@ fn serve(connections: usize) -> (String, std::thread::JoinHandle<Vec<String>>) {
 
 #[test]
 fn token_is_redacted_from_logs() {
-    let (base, server) = serve(3);
+    let (base, server) = serve(8);
     let transport = UreqTransport::new(Some(Secret::new(fake_token())), Duration::from_secs(5));
     let client = GitHubClient::new(transport, REPO).with_base_url(&base);
     let mut source = GitHubSource::new(
@@ -593,7 +600,7 @@ fn token_is_redacted_from_logs() {
         Some(24),
         "the loopback server answered"
     );
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 8);
     for head in &requests {
         let lower = head.to_ascii_lowercase();
         assert!(
@@ -610,7 +617,7 @@ fn token_is_redacted_from_logs() {
         .lines()
         .filter(|line| line.contains("github.request") && line.contains(&base))
         .collect();
-    assert_eq!(lines.len(), 3, "one line per request: {log}");
+    assert_eq!(lines.len(), 8, "one line per request: {log}");
     assert!(
         lines[0].contains("GET") && lines[0].contains("status=200"),
         "{}",
