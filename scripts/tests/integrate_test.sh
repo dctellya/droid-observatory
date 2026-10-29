@@ -442,8 +442,8 @@ cat > reports/staging/shape-unknown.md <<'EOF'
 EOF
 python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --out "$tmp/unknown.md" > "$tmp/unknown.out" 2>&1
 code=$?
-check "unknown section: exit 1" [ "$code" -eq 1 ]
-check "unknown section: unfiled: 1 and the bullet listed" sh -c "grep -qx 'unfiled: 1' $tmp/unknown.out && grep -qF 'A bullet in no known section.' $tmp/unknown.out"
+check "unknown section: exit 2" [ "$code" -eq 2 ]
+check "unknown section: the heading is reported with file and line" grep -qF 'reports/staging/shape-unknown.md:3: ' "$tmp/unknown.out"
 check "unknown section: nothing was written" sh -c "! grep -q '^| F-003 |' SPEC.md && [ -f reports/staging/shape-plain.md ]"
 rm reports/staging/shape-unknown.md
 
@@ -453,6 +453,72 @@ check "shapes real run: exit 0 and unfiled: 0" sh -c "[ $code -eq 0 ] && grep -q
 check "shapes real run: five SPEC rows F-003 to F-007" sh -c "grep -q '^| F-007 |' SPEC.md && ! grep -q '^| F-008 |' SPEC.md"
 check "shapes real run: D-001 and D-002 have addenda" sh -c "grep -q '^## Addendum 2026-10-25 (m9 integration, shape-bullets)' docs/decisions/D-001-decision-1.md && grep -q '^## Addendum 2026-10-25 (m9 integration, shape-plain)' docs/decisions/D-002-decision-2.md"
 check "shapes real run: staging files deleted" [ -z "$(ls reports/staging)" ]
+
+echo "== comma markers: 'Row (F-NEW),' merges like the colon form =="
+mkrepo comma
+mkdir -p reports/staging
+cat > reports/staging/comma-rows.md <<'EOF'
+# Staging: comma-rows
+
+## SPEC §9
+
+- Row (F-NEW), comma row one.
+- Row (F-NEW): colon row two.
+- (F-NEW), parenthesis row three.
+- F-NEW, bare row four.
+
+## BACKLOG
+
+- B-NEW, comma backlog item; reason: comma reason.
+- B-NEW: colon backlog item; reason: colon reason.
+EOF
+git add -A
+git commit -q -m "chore: staging file with comma markers"
+python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --dry-run "$tmp/comma-dry" > "$tmp/comma.out" 2>&1
+code=$?
+check "comma: dry run exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/comma.out"
+check "comma: the marker is dropped from the first row" grep -qF '| F-003 | 2026-10-25 | comma row one. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the colon form still merges" grep -qF '| F-004 | 2026-10-25 | colon row two. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the parenthesis form merges" grep -qF '| F-005 | 2026-10-25 | parenthesis row three. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the bare form merges" grep -qF '| F-006 | 2026-10-25 | bare row four. |' "$tmp/comma-dry/SPEC.md"
+check "comma: no marker text is left in SPEC" sh -c "! grep -q 'F-NEW' $tmp/comma-dry/SPEC.md"
+check "comma: the B-NEW comma item is filed without the marker" grep -qF '| B-003 | comma backlog item | comma reason (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+check "comma: the B-NEW colon item is filed" grep -qF '| B-004 | colon backlog item | colon reason (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+
+echo "== stray headings: every staging file is validated before any merge step =="
+mkrepo stray
+mkbranch wt/m9 m9-feat
+printf '\n## Notes\n\n- A stray heading inside the feature file.\n' >> reports/staging/m9-feat.md
+printf '# Staging: m9-other\n\n## SPEC §9\n\nNone.\n\n## Extra findings\n\n- Another stray heading.\n\n## Misc\n\n- And a third.\n' > reports/staging/m9-other.md
+git add -A
+git commit -q -m "docs: staging files with stray headings"
+notes_line=$(grep -n '^## Notes$' reports/staging/m9-feat.md | cut -d: -f1)
+git checkout -q main
+before=$(git rev-parse HEAD)
+runs_before=$(runs)
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/stray.out" 2>&1
+code=$?
+check "stray: exit 2" [ "$code" -eq 2 ]
+check "stray: the first file is named with its line" grep -qF "wt/m9:reports/staging/m9-feat.md:$notes_line: " "$tmp/stray.out"
+check "stray: the second file's two headings are named in the same pass" sh -c "grep -qF 'wt/m9:reports/staging/m9-other.md:7: ' $tmp/stray.out && grep -qF 'wt/m9:reports/staging/m9-other.md:11: ' $tmp/stray.out"
+check "stray: three problems are counted" grep -q '3 problem' "$tmp/stray.out"
+check "stray: nothing merged" [ "$(git rev-parse HEAD)" = "$before" ]
+check "stray: the gate did not run" [ "$(runs)" = "$runs_before" ]
+check "stray: the tree is untouched" [ -z "$(git status --porcelain -- . ':(exclude)build-log')" ]
+
+git checkout -q wt/m9
+sed -i.bak '/^## Notes$/,$d' reports/staging/m9-feat.md
+rm -f reports/staging/m9-feat.md.bak reports/staging/m9-other.md
+git add -A
+git commit -q -m "docs: remove the stray headings"
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/stray2.out" 2>&1
+code=$?
+check "stray: the fixed branch integrates, exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/stray2.out"
+check "stray: the fixed branch is merged" [ "$(git log --merges --format=%h | wc -l | tr -d ' ')" = 1 ]
 
 echo
 if [ "$failures" -eq 0 ]; then
