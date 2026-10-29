@@ -3,6 +3,8 @@
 
 mod actions;
 mod commands;
+#[cfg(feature = "e2e")]
+mod e2e_gate;
 mod github;
 mod host;
 mod ingest;
@@ -83,6 +85,7 @@ pub fn run() {
     builder
         .manage(shell)
         .manage(host::Hosts::new(exclude))
+        .manage(github::GateCache::default())
         .setup(move |app| {
             app.manage(ingest::spawn(
                 app.handle().clone(),
@@ -115,6 +118,9 @@ pub fn run() {
             commands::human_action,
             commands::app_config,
             commands::cycle_template,
+            commands::gate_group,
+            #[cfg(feature = "e2e")]
+            e2e_gate::e2e_gate_poll,
             commands::panel_rendered,
         ])
         .build(tauri::generate_context!())

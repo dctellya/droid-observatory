@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ingest::forge::{CheckConclusion, GateFacts, RequiredCheck, RuleAttribution};
-use crate::model::{CycleTemplate, Event, EventKind, Role, SourcePtr};
+use crate::model::{CycleTemplate, Event, EventKind, MissionId, Role, SourcePtr};
 
 /// State of the PR's checks, the header of the Gate lane.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -122,6 +122,13 @@ pub struct GatePlaceholder {
     pub gate_runs: u64,
     pub last_gate_command: Option<GateVerdict>,
     pub clocks: Vec<ClockLabel>,
+}
+
+/// What `gate_changed` tells the window: the Gate header of one mission as the last poll read it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GateChanged {
+    pub mission_id: MissionId,
+    pub gate: GateGroup,
 }
 
 /// Length of the merge sha the badge shows.

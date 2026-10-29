@@ -33,8 +33,8 @@ pub use controls::{
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
 pub use gate::{
-    ClockLabel, GateBadge, GateCheckRow, GateClockLine, GateGroup, GateGroupView, GatePlaceholder,
-    GateVerdict, MergeOffer, mission_branch,
+    ClockLabel, GateBadge, GateChanged, GateCheckRow, GateClockLine, GateGroup, GateGroupView,
+    GatePlaceholder, GateVerdict, MergeOffer, mission_branch,
 };
 pub use hosted::{
     AckRow, ControlSent, HostedState, HostedStatus, Launched, PermissionRow, QuestionRow,
