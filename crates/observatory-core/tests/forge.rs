@@ -17,9 +17,12 @@ use observatory_core::ingest::forge::{CheckConclusion, CheckSource, Forge, Forge
 use observatory_core::ingest::github::{
     GitHubClient, GitHubSource, HttpResponse, HttpTransport, UreqTransport,
 };
-use observatory_core::model::{CycleTemplate, EventKind, MissionId, Role, SourcePtr, Timestamp};
+use observatory_core::model::{
+    CycleTemplate, EventKind, MilestoneId, MissionId, Role, SourcePtr, Timestamp,
+};
 use observatory_core::secrets::Secret;
-use observatory_core::store::Store;
+use observatory_core::store::{EventScope, Store, TimeRange};
+use observatory_core::view::{BoardState, Filter, GateBadge, ViewConfig, WorkerGrouping};
 use serde::Deserialize;
 
 const REPO: &str = "dctellya/droid-observatory";
@@ -664,4 +667,353 @@ fn an_https_request_builds_its_tls_connector_instead_of_panicking() {
         result.is_err(),
         "a peer that is not TLS is an error: {result:?}"
     );
+}
+
+// --- the fix cycle: a red required check and the green one that closes it ---------------------
+
+const RED_RUN: u64 = 40_853_828_900;
+const GREEN_RUN: u64 = 40_853_894_595;
+const CARD: &str = "m4";
+
+fn runs_path() -> String {
+    format!("/repos/{REPO}/actions/runs?head_sha={HEAD_SHA}")
+}
+
+/// The recorded runs of PR 24 as they stood while the label was on: the green run 3 had not
+/// happened yet, run 2 had failed and run 1 had been cancelled.
+fn runs_while_red() -> String {
+    let text = std::fs::read_to_string(fixture_dir().join("runs.json")).unwrap();
+    let mut runs: serde_json::Value = serde_json::from_str(&text).unwrap();
+    runs["workflow_runs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|run| run["id"].as_u64() != Some(GREEN_RUN));
+    runs.to_string()
+}
+
+fn gate_source(replay: &Replay) -> GitHubSource<GitHubClient<Replay>> {
+    let mut source = source(replay, "demo/base");
+    source.set_affected_milestone(Some(MilestoneId(CARD.into())));
+    source
+}
+
+fn all_events(store: &Store) -> Vec<observatory_core::model::Event> {
+    store
+        .events(&EventScope::Mission(mission()), TimeRange::ALL)
+        .unwrap()
+}
+
+fn board(store: &Store) -> BoardState {
+    BoardState::fold(
+        &all_events(store),
+        &ViewConfig {
+            filter: Filter::default(),
+            grouping: WorkerGrouping::PerWorker,
+            at: None,
+        },
+        &CycleTemplate::engineering(),
+    )
+}
+
+type Window = (String, String, String, Option<String>, String, i64);
+
+fn windows(conn: &rusqlite::Connection) -> Vec<Window> {
+    let mut statement = conn
+        .prepare(
+            "SELECT feature_id, cause, opened_by, closed_by, check_name, pr_number \
+             FROM rework_windows ORDER BY id",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+fn mission_state(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT state FROM missions WHERE id = 'mission-demo'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn red_required_check_opens_a_fix_cycle_on_the_affected_card() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let poll = source
+        .poll(Timestamp::parse("2026-10-29T09:59:00Z").unwrap())
+        .unwrap();
+
+    let template = CycleTemplate::engineering();
+    let failed: Vec<_> = poll
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::CheckFailed)
+        .collect();
+    let [failed] = failed.as_slice() else {
+        panic!("one check.failed: {:?}", poll.events);
+    };
+    assert_eq!(failed.lane, *template.final_lane());
+    assert_eq!(failed.role, Role::External);
+    assert_eq!(failed.milestone_id, Some(MilestoneId(CARD.into())));
+    assert_eq!(
+        failed.at,
+        Timestamp::parse("2026-10-29T09:58:41Z").unwrap(),
+        "stamped with the run's own time"
+    );
+    assert!(
+        matches!(&failed.source, SourcePtr::GitHub { url } if url.contains(&RED_RUN.to_string())),
+        "{:?}",
+        failed.source
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &poll).unwrap();
+
+    assert_eq!(
+        windows(&conn),
+        vec![(
+            CARD.to_owned(),
+            "gate".to_owned(),
+            failed.id.to_string(),
+            None,
+            "demo-gate".to_owned(),
+            24
+        )],
+        "one open gate window, opened by the check.failed event"
+    );
+    assert_eq!(mission_state(&conn), "fixing");
+    let check: (String, String, String) = conn
+        .query_row(
+            "SELECT name, source, conclusion FROM checks WHERE pr_number = 24",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        check,
+        ("demo-gate".into(), "actions_run".into(), "failed".into())
+    );
+
+    let stored: (String, String, String) = conn
+        .query_row(
+            "SELECT lane, source, url FROM events WHERE kind = 'check.failed'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(stored.0, template.final_lane().as_str());
+    assert_eq!(stored.1, "github");
+    assert!(stored.2.contains(&RED_RUN.to_string()), "{}", stored.2);
+
+    let board = board(&store);
+    assert_eq!(board.gate.badge, GateBadge::CiRed);
+    let card = board
+        .cards
+        .iter()
+        .find(|card| card.milestone.0 == CARD)
+        .expect("the affected card");
+    assert_eq!(
+        card.lane,
+        *template.home(Role::Worker),
+        "the card loops back to the build lane"
+    );
+    assert_eq!(card.cycle, 1);
+}
+
+#[test]
+fn green_check_closes_the_rework_window_and_the_badge_turns_green() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let red = source.poll(red_at).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &red).unwrap();
+
+    replay.overrides.borrow_mut().clear();
+    let green = source.poll(at(red_at, 30)).unwrap();
+    let passed: Vec<_> = green
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::CheckPassed)
+        .collect();
+    let [passed] = passed.as_slice() else {
+        panic!("one check.passed: {:?}", green.events);
+    };
+    assert!(
+        matches!(&passed.source, SourcePtr::GitHub { url } if url.contains(&GREEN_RUN.to_string())),
+        "{:?}",
+        passed.source
+    );
+    store.record_poll(&mission(), &green).unwrap();
+
+    let rows = windows(&conn);
+    let [(_, cause, opened_by, closed_by, ..)] = rows.as_slice() else {
+        panic!("still one window: {rows:?}");
+    };
+    assert_eq!(cause, "gate");
+    assert_eq!(closed_by.as_deref(), Some(passed.id.to_string().as_str()));
+    assert_ne!(opened_by, &passed.id.to_string());
+    assert_eq!(mission_state(&conn), "at_gate");
+
+    let template = CycleTemplate::engineering();
+    let board = board(&store);
+    assert_eq!(board.gate.badge, GateBadge::CiGreen);
+    let card = &board.cards[0];
+    assert_eq!(card.cycle, 1, "the closed window still counts as one cycle");
+    assert_eq!(
+        card.lane,
+        *template.final_lane(),
+        "the card is back at the gate"
+    );
+}
+
+#[test]
+fn fix_cycle_keeps_the_same_pr() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let red = source.poll(red_at).unwrap();
+    replay.overrides.borrow_mut().clear();
+    let green = source.poll(at(red_at, 30)).unwrap();
+
+    assert_eq!(red.pr.as_ref().map(|pr| pr.number), Some(24));
+    assert_eq!(green.pr.as_ref().map(|pr| pr.number), Some(24));
+    assert!(
+        green
+            .events
+            .iter()
+            .all(|event| event.kind != EventKind::PrOpened),
+        "no second pr.opened for the same PR: {:?}",
+        green.events
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &red).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+
+    let prs: Vec<(i64, String)> = {
+        let mut statement = conn
+            .prepare("SELECT number, head FROM prs WHERE head = ?1")
+            .unwrap();
+        statement
+            .query_map([BRANCH], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(
+        prs,
+        vec![(24, BRANCH.to_owned())],
+        "one PR row for the branch"
+    );
+    let opened: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'pr.opened'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(opened, 1);
+    let rows: Vec<i64> = windows(&conn).iter().map(|window| window.5).collect();
+    assert_eq!(rows, vec![24], "the window belongs to the same PR");
+    assert!(
+        replay
+            .asked()
+            .iter()
+            .filter(|path| path.contains("/pulls?"))
+            .all(|path| path.contains(&format!("head=dctellya:{BRANCH}"))),
+        "every lookup names the one mission branch"
+    );
+}
+
+#[test]
+fn a_restarted_source_opens_no_second_window_and_still_closes_the_first() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+
+    let first = gate_source(&replay).poll(red_at).unwrap();
+    store.record_poll(&mission(), &first).unwrap();
+    // The app restarted: a new source knows nothing of what the old one announced.
+    let again = gate_source(&replay).poll(at(red_at, 30)).unwrap();
+    store.record_poll(&mission(), &again).unwrap();
+    assert_eq!(windows(&conn).len(), 1);
+    let failed: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'check.failed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(failed, 1, "the same run is the same event");
+
+    replay.overrides.borrow_mut().clear();
+    let green = gate_source(&replay).poll(at(red_at, 60)).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+    let rows = windows(&conn);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].3.is_some(), "closed by the green run: {rows:?}");
+}
+
+#[test]
+fn a_second_red_after_green_opens_a_second_window_on_the_same_pr() {
+    let replay = Replay::new();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    let mut source = gate_source(&replay);
+    let start = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    store
+        .record_poll(&mission(), &source.poll(start).unwrap())
+        .unwrap();
+    replay.overrides.borrow_mut().clear();
+    store
+        .record_poll(&mission(), &source.poll(at(start, 30)).unwrap())
+        .unwrap();
+    let text = std::fs::read_to_string(fixture_dir().join("runs.json")).unwrap();
+    let mut runs: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let list = runs["workflow_runs"].as_array_mut().unwrap();
+    let mut again = list[1].clone();
+    again["id"] = 40_853_999_999_u64.into();
+    again["run_number"] = 4.into();
+    again["updated_at"] = "2026-10-29T10:05:00Z".into();
+    again["html_url"] =
+        "https://github.com/dctellya/droid-observatory/actions/runs/40853999999".into();
+    list.insert(0, again);
+    replay.answer(&runs_path(), 200, &runs.to_string());
+    store
+        .record_poll(&mission(), &source.poll(at(start, 60)).unwrap())
+        .unwrap();
+
+    let rows = windows(&conn);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows[0].3.is_some() && rows[1].3.is_none(), "{rows:?}");
+    assert_eq!((rows[0].5, rows[1].5), (24, 24));
+    assert_eq!(mission_state(&conn), "fixing");
+    assert_eq!(board(&store).cards[0].cycle, 2);
 }
