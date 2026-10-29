@@ -11,8 +11,10 @@ use std::time::{Duration, Instant};
 
 use observatory_core::config::GithubConfig;
 use observatory_core::ingest::github::{GitHubClient, GitHubSource};
-use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
+use observatory_core::model::{CycleTemplate, MilestoneId, MissionId, Timestamp};
 use observatory_core::secrets::Secret;
+use observatory_core::store::{EventScope, Store, TimeRange};
+use observatory_core::view::GateGroup;
 
 #[test]
 #[ignore = "calls the live GitHub API"]
@@ -85,4 +87,90 @@ fn the_live_demo_pair_is_polled_with_the_owner_run_token() {
         return;
     }
     panic!("no PR from {branch} into demo/base within {wait} s");
+}
+
+/// One poll of the live demo PR recorded into a store file, then what the store and the Gate header
+/// say: run it while the PR is red, then again after the label is removed, with the same
+/// `OBSERVATORY_LIVE_STORE`, and the second run closes the window the first one opened. Every run
+/// builds a new source, so it also shows that a restart opens no second window.
+/// `FORGE_LIVE=1 GITHUB_TOKEN="$(gh auth token)" OBSERVATORY_LIVE_BRANCH=demo/<name> OBSERVATORY_LIVE_STORE=/tmp/<file>.sqlite
+/// OBSERVATORY_LIVE_CARD=<milestone> cargo test -p observatory-core --test forge_live the_live_fix_cycle -- --ignored --nocapture`.
+#[test]
+#[ignore = "calls the live GitHub API"]
+fn the_live_fix_cycle_is_recorded_in_a_store_file() {
+    if std::env::var("FORGE_LIVE").as_deref() != Ok("1") {
+        println!("skipped: FORGE_LIVE unset (owner-run)");
+        return;
+    }
+    let var = |name: &str| std::env::var(name).expect(name);
+    let (branch, store_path, card) = (
+        var("OBSERVATORY_LIVE_BRANCH"),
+        var("OBSERVATORY_LIVE_STORE"),
+        var("OBSERVATORY_LIVE_CARD"),
+    );
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .with_writer(std::io::stdout)
+        .init();
+    let config = GithubConfig {
+        target_branch: "demo/base".into(),
+        ..GithubConfig::default()
+    };
+    let token = std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+        .expect("GITHUB_TOKEN is set (the keychain is never read here)");
+    let mission = MissionId("live".into());
+    let mut source = GitHubSource::new(
+        GitHubClient::with_token(&config, Some(Secret::new(token))),
+        mission.clone(),
+        &branch,
+        &config,
+        CycleTemplate::engineering(),
+    );
+    source.set_affected_milestone(Some(MilestoneId(card)));
+
+    let mut store = Store::open(std::path::Path::new(&store_path)).unwrap();
+    let conn = rusqlite::Connection::open(&store_path).unwrap();
+    conn.execute(
+        "INSERT OR IGNORE INTO missions (id, name, state, started_at) VALUES ('live', 'live', 'at_gate', '2026-10-29T00:00:00Z')",
+        [],
+    )
+    .unwrap();
+    let poll = source.poll(Timestamp::now()).expect("the poll succeeds");
+    store.record_poll(&mission, &poll).unwrap();
+
+    let events = store
+        .events(&EventScope::Mission(mission), TimeRange::ALL)
+        .unwrap();
+    println!("badge {}", GateGroup::of(&events).badge.as_str());
+    let rows = |sql: &str| {
+        let mut statement = conn.prepare(sql).unwrap();
+        let columns = statement.column_count();
+        statement
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|i| {
+                        row.get::<_, rusqlite::types::Value>(i)
+                            .map(|v| format!("{v:?}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap()
+            .map(|row| row.unwrap().join(" | "))
+            .collect::<Vec<_>>()
+    };
+    for sql in [
+        "SELECT number, head, base, state FROM prs",
+        "SELECT name, source, conclusion, url FROM checks",
+        "SELECT id, kind, lane, source, url FROM events WHERE kind LIKE 'check.%' ORDER BY at",
+        "SELECT id, feature_id, cause, opened_by, closed_by, check_name, pr_number FROM rework_windows",
+        "SELECT id, state FROM missions",
+    ] {
+        println!("{sql}");
+        for row in rows(sql) {
+            println!("  {row}");
+        }
+    }
 }
