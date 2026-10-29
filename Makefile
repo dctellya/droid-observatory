@@ -19,7 +19,7 @@ MAX_FILE_KB ?= 200
 # M0 onward enforces 80; CI passes its own value through the same name.
 COVERAGE_MIN ?= 80
 
-# Gate cache (rule 27): check, test, lint and coverage run once per (tree, toolchain, command) and replay
+# Gate cache (rule 27): check, test, lint and coverage run once per (code paths, toolchain, command) and replay
 # the stored verdict after; FORCE=1 reruns. CI calls cargo directly and does not use the cache.
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
@@ -38,7 +38,7 @@ hooks: ## Install git hooks (one-time after clone)
 
 # --- Light checks: run on every mission-branch push, must stay under 3 minutes warm ---
 
-check: ## All light checks (= mission-branch CI), cached by tree through scripts/gate.sh
+check: ## All light checks (= mission-branch CI), cached by the code paths through scripts/gate.sh
 	@$(GATE) check -- $(MAKE) --no-print-directory check-all
 
 check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
@@ -61,7 +61,7 @@ integrate: ## Land a milestone: no-ff merge, final gate, usage, staging files (M
 check-integrate: ## Self-test of scripts/integrate.sh on throwaway repositories
 	@sh scripts/tests/integrate_test.sh
 
-check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, key changes
+check-gate-cache: ## Self-test of scripts/gate.sh: miss, hit, force, code-path key
 	@sh scripts/tests/gate_test.sh
 
 check-docs: ## Lint markdown
