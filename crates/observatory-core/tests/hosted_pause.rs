@@ -38,7 +38,7 @@ fn cancelled_turn() -> Value {
     json!({
         "jsonrpc": "2.0", "type": "notification", "factoryApiVersion": "1.0.0",
         "factoryProtocolVersion": "1.274.0", "method": "droid.session_notification",
-        "params": { "sessionId": "s-1", "notification": {
+        "params": { "sessionId": LAUNCH, "notification": {
             "type": "agent_turn_completed", "reason": "cancelled", "turnId": "t-1",
         } },
     })
@@ -49,7 +49,7 @@ fn spooled_pause(dir: &Path) -> Vec<RawRecord> {
     let path = spool_path(dir, LAUNCH);
     let mut spool = Spool::create(&path).unwrap();
     for value in [
-        response("1", json!({ "sessionId": "s-1", "settings": {} })),
+        response("1", json!({ "sessionId": LAUNCH, "settings": {} })),
         response(PAUSE_REQUEST, json!({})),
         cancelled_turn(),
     ] {
