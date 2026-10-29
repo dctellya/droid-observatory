@@ -9,13 +9,3 @@ details.rs span[details-milestone]
 details.rs span[details-row-count]
 panel.rs span[overlay-human-count]
 tray.rs span[tray-count]
-agents.rs span[agent-stream-rows]
-agents.rs span[agent-stream-markers]
-attach.rs code `row.session_id.0.clone()`
-controls.rs span `feature.0.clone()`
-launch.rs code[hosted-session]
-launch.rs code `ack.request_id`
-launch.rs span[hosted-pid]
-launch.rs span[live-output-total]
-raw.rs p[raw-line-event]
-raw.rs p[raw-line-kind]
