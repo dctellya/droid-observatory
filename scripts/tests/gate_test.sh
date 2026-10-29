@@ -145,7 +145,8 @@ esac
 [ "$(hit_field 5)" = "sess-one" ] || fail "hits.log session: $(hit_field 5)"
 [ "$(hit_field 6)" = "DROID_SESSION_ID" ] || fail "hits.log session_source: $(hit_field 6)"
 
-# A failing command stores its non-zero code and the hit replays it.
+# A failing command stores its non-zero code, and a red record is never replayed (B-182): the next run is a miss that
+# runs the command again, exits with its code, writes no hits.log line and says why.
 sh "$gate" bad -- sh "$tmp/bad.sh" > "$tmp/bad.out" 2>&1
 rc=$?
 [ "$rc" -eq 3 ] || fail "failing miss exit $rc"
@@ -155,11 +156,29 @@ case "$(json bad .summary)" in *"test result: FAILED"*) ;; *) fail "failing summ
 before=$(runs)
 sh "$gate" bad -- sh "$tmp/bad.sh" > "$tmp/bad.hit" 2>&1
 rc=$?
-[ "$(hit_count)" -eq 2 ] || fail "a failing hit did not log: $(hit_count) lines"
-[ "$(hit_field 2)" = "bad" ] || fail "failing hit name in hits.log: $(hit_field 2)"
-[ "$rc" -eq 3 ] || fail "failing hit exit $rc"
-[ "$(runs)" -eq "$before" ] || fail "failing hit ran the command"
-grep -q "^cached, proven at " "$tmp/bad.hit" || fail "failing hit lacks the cached line"
+[ "$rc" -eq 3 ] || fail "red rerun exit $rc"
+[ "$(runs)" -eq $((before + 1)) ] || fail "a red record was replayed as a hit: the command did not run again"
+[ "$(hit_count)" -eq 1 ] || fail "a red rerun wrote to hits.log: $(hit_count) lines"
+grep -q "^cached, proven at " "$tmp/bad.hit" && fail "a red record printed the cached line"
+grep -q "gate bad: miss" "$tmp/bad.hit" || fail "the red rerun does not say miss: $(cat "$tmp/bad.hit")"
+grep -q "earlier record for this tree exited 3" "$tmp/bad.hit" || fail "the red rerun does not say why: $(cat "$tmp/bad.hit")"
+# The green run that follows replaces the red record and is then a hit.
+cat > "$tmp/flaky.sh" <<EOF
+echo run >> "$counter"
+if [ -f "$tmp/flaky.green" ]; then echo "test result: ok. 1 passed; 0 failed"; else echo "test result: FAILED. 0 passed; 1 failed"; exit 4; fi
+EOF
+sh "$gate" flaky -- sh "$tmp/flaky.sh" > /dev/null 2>&1
+[ "$(json flaky .exit_code)" = "4" ] || fail "flaky first record: $(json flaky .exit_code)"
+: > "$tmp/flaky.green"
+sh "$gate" flaky -- sh "$tmp/flaky.sh" > /dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || fail "flaky green rerun exit $rc"
+[ "$(json flaky .exit_code)" = "0" ] || fail "the green run did not replace the red record: $(json flaky .exit_code)"
+before=$(runs)
+hits_before=$(hit_count)
+sh "$gate" flaky -- sh "$tmp/flaky.sh" > /dev/null 2>&1
+[ "$(runs)" -eq "$before" ] || fail "the green record after a red one was not a hit"
+[ "$(hit_count)" -eq $((hits_before + 1)) ] || fail "the green hit did not log"
 
 # Second worktree at the same content: the committed record is a hit with the first session.
 git add -A
