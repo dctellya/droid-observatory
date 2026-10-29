@@ -3,6 +3,7 @@
 
 mod actions;
 mod commands;
+mod github;
 mod host;
 mod ingest;
 #[cfg(test)]
@@ -64,6 +65,8 @@ pub fn run() {
         tracing::warn!(%warning, "cycle template");
     }
     let status = Arc::new(Mutex::new(AttachStatus::default()));
+    let github_cfg = cfg.clone();
+    let github_store_path = store_path.clone();
     let shell = Shell {
         cfg: cfg.clone(),
         template: Arc::new(loaded.template),
@@ -71,6 +74,7 @@ pub fn run() {
         status: status.clone(),
     };
 
+    let template = shell.template.clone();
     let (exclude, excluded) = std::sync::mpsc::channel();
     let grace = std::time::Duration::from_millis(cfg.mission.reap_grace_ms);
     let builder = tauri::Builder::default();
@@ -86,6 +90,12 @@ pub fn run() {
                 store_path,
                 status,
                 excluded,
+            ));
+            app.manage(github::spawn(
+                app.handle().clone(),
+                github_cfg,
+                template,
+                github_store_path,
             ));
             stall::spawn(app.handle().clone());
             Ok(())
@@ -117,6 +127,7 @@ pub fn run() {
             | tauri::RunEvent::ExitRequested { .. } => reap_hosted(app, grace),
             tauri::RunEvent::Exit => {
                 reap_hosted(app, grace);
+                app.state::<github::Github>().stop();
                 app.state::<ingest::Ingest>().stop();
             }
             _ => {}

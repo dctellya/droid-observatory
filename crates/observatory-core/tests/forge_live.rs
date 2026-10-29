@@ -1,5 +1,5 @@
-//! Evidence, not a gate test: the real GitHub, the owner's token (keychain `droid-observatory/github-token`,
-//! else `GITHUB_TOKEN`) and the demo pair. It is ignored so CI never runs it; run it with
+//! Evidence, not a gate test: the real GitHub, the owner's token (`GITHUB_TOKEN` when set, else the keychain
+//! `droid-observatory/github-token`, which asks for access on a binary it has not seen) and the demo pair. It is ignored so CI never runs it; run it with
 //! `OBSERVATORY_LIVE_BRANCH=demo/<name> cargo test -p observatory-core --test forge_live -- --ignored --nocapture`.
 //! It polls on the configured interval until the branch's pull request shows up and prints the
 //! request log lines, the delay between the PR's creation and its detection, and the checks.
@@ -8,8 +8,9 @@
 use std::time::{Duration, Instant};
 
 use observatory_core::config::GithubConfig;
-use observatory_core::ingest::github::{GitHubClient, GitHubSource};
+use observatory_core::ingest::github::{GitHubClient, GitHubSource, UreqTransport};
 use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
+use observatory_core::secrets::Secret;
 
 #[test]
 #[ignore = "calls the live GitHub API"]
@@ -29,7 +30,16 @@ fn the_live_demo_pair_is_polled_with_the_keychain_token() {
         target_branch: "demo/base".into(),
         ..GithubConfig::default()
     };
-    let client = GitHubClient::from_config(&config).expect("the keychain answers");
+    let client = match std::env::var("GITHUB_TOKEN") {
+        Ok(token) if !token.is_empty() => GitHubClient::new(
+            UreqTransport::new(
+                Some(Secret::new(token)),
+                Duration::from_secs(config.request_timeout_s),
+            ),
+            &config.repo,
+        ),
+        _ => GitHubClient::from_config(&config).expect("the keychain answers"),
+    };
     let mut source = GitHubSource::new(
         client,
         MissionId("live".into()),
