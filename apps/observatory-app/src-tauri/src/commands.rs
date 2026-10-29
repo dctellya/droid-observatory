@@ -271,4 +271,68 @@ mod tests {
         assert_eq!(names.len(), 7, "the default template has seven lanes");
         let _ = std::fs::remove_file(path);
     }
+
+    const LITERAL_BRANCH: &str = "mission/observatory-v1";
+
+    fn app_with_branch_pattern(
+        pattern: &str,
+        tag: &str,
+    ) -> (tauri::App<tauri::test::MockRuntime>, PathBuf) {
+        let mut cfg = Config::default();
+        cfg.mission.branch_pattern = pattern.to_owned();
+        let path = std::env::temp_dir().join(format!(
+            "observatory-branch-{tag}-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let app = tauri::test::mock_app();
+        app.manage(Shell {
+            template: Arc::new(cfg.cycle.load_template().template),
+            store: Mutex::new(Store::open(&path).expect("the store opens")),
+            status: Arc::new(Mutex::new(AttachStatus::default())),
+            cfg,
+        });
+        (app, path)
+    }
+
+    fn s_fixture() -> String {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../fixtures/streams/2026-10-22-observatory-v1-s.jsonl"
+        )
+        .to_owned()
+    }
+
+    #[test]
+    fn an_opened_mission_names_the_branch_of_the_configured_pattern() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "pattern");
+        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
+            .expect("the capture replays");
+        println!("opened branch: {:?}", opened.branch);
+        assert_eq!(opened.branch.as_deref(), Some(LITERAL_BRANCH));
+        let again = tauri::async_runtime::block_on(open_mission(
+            app.state::<Shell>(),
+            opened.summary.mission_id.clone(),
+        ))
+        .expect("the mission opens from the store");
+        assert_eq!(again.branch.as_deref(), Some(LITERAL_BRANCH));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_opened_mission_prefers_the_branch_the_store_recorded() {
+        let (app, path) = app_with_branch_pattern("mission/<name>", "recorded");
+        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
+            .expect("the capture replays");
+        let mission = opened.summary.mission_id.clone();
+        assert!(
+            lock(&app.state::<Shell>().store)
+                .set_mission_branch(&mission, "mission/recorded")
+                .expect("the branch is recorded")
+        );
+        let again = tauri::async_runtime::block_on(open_mission(app.state::<Shell>(), mission))
+            .expect("the mission opens from the store");
+        assert_eq!(again.branch.as_deref(), Some("mission/recorded"));
+        let _ = std::fs::remove_file(path);
+    }
 }
