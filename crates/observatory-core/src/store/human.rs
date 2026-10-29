@@ -47,7 +47,7 @@ impl Store {
             params![
                 mission.to_string(),
                 action.kind(),
-                action.target().map(ToString::to_string),
+                action.target_text(),
                 at.to_rfc3339_millis(),
                 action.state(),
                 action.payload_ptr().map(ToString::to_string),
@@ -58,6 +58,21 @@ impl Store {
         insert_events_in(&tx, std::slice::from_ref(&event))?;
         tx.commit()?;
         Ok(RecordedAction { action_id, event })
+    }
+
+    /// Moves the row of a control to the state its outcome gave it (a merge goes from
+    /// `requested` to `merged`, `refused` or `failed`).
+    pub fn set_human_action_state(
+        &mut self,
+        action_id: u64,
+        state: &str,
+    ) -> Result<(), StoreError> {
+        let id = i64::try_from(action_id).unwrap_or(i64::MAX);
+        self.conn.execute(
+            "UPDATE human_actions SET state = ?1 WHERE id = ?2",
+            params![state, id],
+        )?;
+        Ok(())
     }
 
     /// Deletes the ack-derived `mission.paused` rows of `mission` that the stream reports too

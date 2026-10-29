@@ -31,6 +31,11 @@ pub enum HumanAction {
         feature_id: FeatureId,
         reason_len: u32,
     },
+    /// The Merge button of the Gate group, pressed and confirmed (FR-G5).
+    Merge {
+        pr_number: u64,
+        target: String,
+    },
 }
 
 fn length(text: &str) -> u32 {
@@ -69,6 +74,7 @@ impl HumanAction {
             Self::Deny { .. } => "deny",
             Self::MarkComplete { .. } => "mark_complete",
             Self::MarkSkipped { .. } => "mark_skipped",
+            Self::Merge { .. } => "merge",
         }
     }
 
@@ -77,6 +83,7 @@ impl HumanAction {
         match self {
             Self::Approve { .. } => "granted",
             Self::Deny { .. } => "denied",
+            Self::Merge { .. } => "requested",
             _ => "sent",
         }
     }
@@ -88,6 +95,14 @@ impl HumanAction {
                 Some(feature_id)
             }
             _ => None,
+        }
+    }
+
+    /// The `human_actions.target` text: the feature a mark names, or the PR a merge asks for.
+    pub fn target_text(&self) -> Option<String> {
+        match self {
+            Self::Merge { pr_number, .. } => Some(format!("pr:{pr_number}")),
+            other => other.target().map(ToString::to_string),
         }
     }
 
@@ -119,7 +134,7 @@ impl HumanAction {
             Self::Answer { .. } => Some(EventKind::IntentAnswered),
             Self::Approve { .. } => Some(EventKind::PermissionGranted),
             Self::Deny { .. } => Some(EventKind::PermissionDenied),
-            Self::MarkComplete { .. } => None,
+            Self::MarkComplete { .. } | Self::Merge { .. } => None,
         }
     }
 }

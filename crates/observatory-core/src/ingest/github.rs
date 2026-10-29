@@ -245,7 +245,7 @@ impl GitHubClient<UreqTransport> {
             );
         }
         let transport = UreqTransport::new(token, Duration::from_secs(config.request_timeout_s));
-        Self::new(transport, &config.repo)
+        Self::new(transport, &config.repo).with_base_url(&config.api_base)
     }
 }
 
@@ -721,6 +721,7 @@ fn gate_facts(
         reviews: u64::try_from(reviews.len()).unwrap_or(u64::MAX),
         attestation_ids: attestations.iter().map(|a| a.id.clone()).collect(),
         pr_open: pr.state == PrState::Open,
+        target: pr.base.clone(),
     }
 }
 

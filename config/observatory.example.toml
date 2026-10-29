@@ -104,6 +104,9 @@ repo = "dctellya/droid-observatory"
 # One GitHub request gives up after this long. Half the poll interval: a stuck request ends before the next poll is due,
 # so polls never queue behind it.
 request_timeout_s = 15
+# Where the API lives. GitHub's host; the window suite points it at a loopback server that answers the
+# Merge request with the 403 a read-only token gets, because a real 403 needs the owner's read-only token.
+api_base = "https://api.github.com"
 
 [intervention]
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).

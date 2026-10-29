@@ -254,6 +254,9 @@ pub struct GateFacts {
     pub attestation_ids: Vec<String>,
     /// The pull request is open: a merged or closed one offers no Merge.
     pub pr_open: bool,
+    /// The branch the PR merges into, named by the Merge confirmation.
+    #[serde(default)]
+    pub target: String,
 }
 
 /// What one poll of the forge saw, and the events it adds.

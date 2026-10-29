@@ -98,6 +98,9 @@ pub struct GateGroup {
     /// The merge commit, once `handed_to_cd` is observed.
     #[serde(default)]
     pub merge_sha: Option<String>,
+    /// The branch the PR merges into, as the last poll read it.
+    #[serde(default)]
+    pub target: Option<String>,
 }
 
 /// Text of the Gate lane before a PR exists (PRD §8).
@@ -151,8 +154,32 @@ pub struct GateCheckRow {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeOffer {
     pub pr_number: u64,
+    /// The branch the PR merges into.
+    pub target: String,
     pub label: String,
 }
+
+/// The confirmation the Merge button opens: it names the PR and the target before any request is
+/// sent (FR-G5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergeConfirmation {
+    pub text: String,
+    pub confirm: String,
+    pub cancel: String,
+}
+
+impl MergeOffer {
+    pub fn confirmation(&self) -> MergeConfirmation {
+        MergeConfirmation {
+            text: format!("Merge PR #{} into {}?", self.pr_number, self.target),
+            confirm: "Confirm merge".to_owned(),
+            cancel: "Cancel".to_owned(),
+        }
+    }
+}
+
+/// What the `merge` command answers: the state the press's row took and the text to show.
+pub type MergePressed = crate::control::merge::MergeOutcome;
 
 /// One clock the template names for the final lane, and what the Gate header says about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,6 +232,7 @@ impl GateGroup {
         self.required_checks.clone_from(&facts.required_checks);
         self.reviews = facts.reviews;
         self.attestation_ids.clone_from(&facts.attestation_ids);
+        self.target = Some(facts.target.clone()).filter(|target| !target.is_empty());
         self.merge_offered = facts.pr_open
             && facts.policy.requires_human
             && self.badge == GateBadge::CiGreen
@@ -223,6 +251,7 @@ impl GateGroup {
         self.requires_human = polled.requires_human;
         self.required_checks.clone_from(&polled.required_checks);
         self.reviews = polled.reviews;
+        self.target.clone_from(&polled.target);
         if self.attestation_ids.is_empty() {
             self.attestation_ids.clone_from(&polled.attestation_ids);
         }
@@ -249,10 +278,11 @@ impl GateGroup {
         });
         let merge = self
             .merge_offered
-            .then_some(self.pr_number)
+            .then_some(self.pr_number.zip(self.target.clone()))
             .flatten()
-            .map(|pr_number| MergeOffer {
+            .map(|(pr_number, target)| MergeOffer {
                 pr_number,
+                target,
                 label: MERGE_LABEL.to_owned(),
             });
         let (ruleset, ruleset_text) = match &self.decided_by {

@@ -161,6 +161,9 @@ pub fn terminal_text(action: &HumanAction, text: &str) -> String {
         HumanAction::Approve { .. } | HumanAction::Deny { .. } => {
             "Answer the permission request in the terminal that runs the mission.".to_owned()
         }
+        HumanAction::Merge { pr_number, target } => {
+            format!("Merge PR #{pr_number} into {target} in GitHub.")
+        }
     }
 }
 
