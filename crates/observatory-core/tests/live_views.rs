@@ -90,8 +90,12 @@ mod store {
     fn open_replay_through_the_store_lists_the_golden_events() {
         let (_dir, _store, opened) = replayed();
         let golden = golden();
+        // The capture header names a usage-log extract: its turns come with the replay.
+        let (turns, others): (Vec<&Event>, Vec<&Event>) =
+            opened.events.iter().partition(|e| e.kind.is_panel_only());
+        assert_eq!(turns.len(), 1115);
         assert_eq!(
-            opened.events.iter().map(summary).collect::<Vec<_>>(),
+            others.into_iter().map(summary).collect::<Vec<_>>(),
             golden.iter().map(summary).collect::<Vec<_>>()
         );
         assert_eq!(opened.summary.event_count, golden.len() as u64);
