@@ -10,4 +10,5 @@ pub mod model;
 pub mod secrets;
 #[cfg(feature = "store")]
 pub mod store;
+pub mod telemetry;
 pub mod view;
