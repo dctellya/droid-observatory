@@ -150,18 +150,23 @@ impl<T: HttpTransport> GitHubClient<T> {
 }
 
 impl GitHubClient<UreqTransport> {
-    /// The client of `[github]`: the token from the keychain or `GITHUB_TOKEN`. Without one the
+    /// The client of `[github]`: the token from `GITHUB_TOKEN`, else the keychain. Without one the
     /// requests go out unauthenticated, which public repositories answer within a lower rate
     /// limit.
     pub fn from_config(config: &GithubConfig) -> Result<Self, crate::secrets::SecretError> {
-        let token = crate::secrets::github_token()?;
+        Ok(Self::with_token(config, crate::secrets::github_token()?))
+    }
+
+    /// The client of `[github]` for a token the caller already resolved, so one process reads
+    /// the secret once however many clients it builds.
+    pub fn with_token(config: &GithubConfig, token: Option<Secret>) -> Self {
         if token.is_none() {
             tracing::warn!(
-                "no GitHub token in the keychain or GITHUB_TOKEN: requests are unauthenticated"
+                "no GitHub token in GITHUB_TOKEN or the keychain: requests are unauthenticated"
             );
         }
         let transport = UreqTransport::new(token, Duration::from_secs(config.request_timeout_s));
-        Ok(Self::new(transport, &config.repo))
+        Self::new(transport, &config.repo)
     }
 }
 

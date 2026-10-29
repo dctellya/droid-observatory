@@ -102,7 +102,7 @@ impl TokenSource {
     }
 }
 
-/// The GitHub token: the keychain, then `GITHUB_TOKEN` (the only environment fallback).
+/// The GitHub token: `GITHUB_TOKEN` when set, else the keychain.
 pub fn github_token() -> Result<Option<Secret>, SecretError> {
     github_token_with_source().map(|(token, _)| token)
 }
@@ -114,28 +114,21 @@ pub fn github_token_with_source() -> Result<(Option<Secret>, TokenSource), Secre
     })
 }
 
-/// Resolves the token from the environment value and a keychain read. A keychain that refuses
-/// (locked, access denied) gives way to the environment value; with none the refusal is
-/// returned.
+/// Resolves the token from the environment value and a keychain read. A non-empty `GITHUB_TOKEN`
+/// is the token and the keychain is not read at all: every rebuilt binary has a new code hash
+/// and prompts anew for the item. With the variable unset or empty the keychain is read; a
+/// refusal (locked, access denied) is then the answer.
 pub fn resolve_github_token(
     env: Option<String>,
     keychain: impl FnOnce() -> Result<Option<Secret>, SecretError>,
 ) -> Result<(Option<Secret>, TokenSource), SecretError> {
-    let env = env.filter(|value| !value.is_empty());
-    match keychain() {
-        Ok(Some(found)) => Ok((Some(found), TokenSource::Keychain)),
-        Ok(None) => Ok(match env {
-            Some(value) => (Some(Secret(value)), TokenSource::Env),
-            None => (None, TokenSource::None),
-        }),
-        Err(refusal) => match env {
-            Some(value) => {
-                tracing::warn!(%refusal, "keychain refused, using GITHUB_TOKEN");
-                Ok((Some(Secret(value)), TokenSource::Env))
-            }
-            None => Err(refusal),
-        },
+    if let Some(value) = env.filter(|value| !value.is_empty()) {
+        return Ok((Some(Secret(value)), TokenSource::Env));
     }
+    Ok(match keychain()? {
+        Some(found) => (Some(found), TokenSource::Keychain),
+        None => (None, TokenSource::None),
+    })
 }
 
 /// The OTLP headers: the keychain only (D-010).

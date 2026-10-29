@@ -1,6 +1,8 @@
-//! Evidence, not a gate test: the real GitHub, the owner's token (`GITHUB_TOKEN` when set, else the keychain
-//! `droid-observatory/github-token`, which asks for access on a binary it has not seen) and the demo pair. It is ignored so CI never runs it; run it with
-//! `OBSERVATORY_LIVE_BRANCH=demo/<name> cargo test -p observatory-core --test forge_live -- --ignored --nocapture`.
+//! An owner-run row (attended class, M3 item 18), not a gate test and never a worker's: the real GitHub, the
+//! owner's token and the demo pair. It is ignored so CI never runs it, and it returns early unless
+//! `FORGE_LIVE=1`. The token comes from `GITHUB_TOKEN` only; the keychain is never read here (each rebuilt
+//! test binary has a new code hash and would prompt for the item anew). The owner runs it in his terminal:
+//! `FORGE_LIVE=1 GITHUB_TOKEN="$(gh auth token)" OBSERVATORY_LIVE_BRANCH=demo/<name> cargo test -p observatory-core --test forge_live -- --ignored --nocapture`.
 //! It polls on the configured interval until the branch's pull request shows up and prints the
 //! request log lines, the delay between the PR's creation and its detection, and the checks.
 #![cfg(feature = "github")]
@@ -8,13 +10,17 @@
 use std::time::{Duration, Instant};
 
 use observatory_core::config::GithubConfig;
-use observatory_core::ingest::github::{GitHubClient, GitHubSource, UreqTransport};
+use observatory_core::ingest::github::{GitHubClient, GitHubSource};
 use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
 use observatory_core::secrets::Secret;
 
 #[test]
 #[ignore = "calls the live GitHub API"]
-fn the_live_demo_pair_is_polled_with_the_keychain_token() {
+fn the_live_demo_pair_is_polled_with_the_owner_run_token() {
+    if std::env::var("FORGE_LIVE").as_deref() != Ok("1") {
+        println!("skipped: FORGE_LIVE unset (owner-run)");
+        return;
+    }
     let branch =
         std::env::var("OBSERVATORY_LIVE_BRANCH").unwrap_or_else(|_| "demo/smoke-1".to_owned());
     let wait = std::env::var("OBSERVATORY_LIVE_WAIT_S")
@@ -30,16 +36,11 @@ fn the_live_demo_pair_is_polled_with_the_keychain_token() {
         target_branch: "demo/base".into(),
         ..GithubConfig::default()
     };
-    let client = match std::env::var("GITHUB_TOKEN") {
-        Ok(token) if !token.is_empty() => GitHubClient::new(
-            UreqTransport::new(
-                Some(Secret::new(token)),
-                Duration::from_secs(config.request_timeout_s),
-            ),
-            &config.repo,
-        ),
-        _ => GitHubClient::from_config(&config).expect("the keychain answers"),
-    };
+    let token = std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+        .expect("GITHUB_TOKEN is set (the keychain is never read here)");
+    let client = GitHubClient::with_token(&config, Some(Secret::new(token)));
     let mut source = GitHubSource::new(
         client,
         MissionId("live".into()),

@@ -15,6 +15,7 @@ use observatory_core::config::Config;
 use observatory_core::ingest::EventBatch;
 use observatory_core::ingest::github::{GitHubClient, GitHubSource, UreqTransport};
 use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
+use observatory_core::secrets::{self, Secret, TokenSource};
 use observatory_core::store::Store;
 use observatory_core::view::mission_branch;
 use tauri::{AppHandle, Emitter, Runtime};
@@ -81,12 +82,23 @@ fn run<R: Runtime>(
         interval_s = cfg.github.poll_interval_s,
         "github_started"
     );
+    // One secrets call per app process: a keychain read per poll or per mission would prompt
+    // again, so the value is kept here and cloned into each client.
+    let token = read_token();
     let slice = Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1));
     let interval = Duration::from_secs(cfg.github.poll_interval_s.max(1));
     let mut sources: HashMap<MissionId, Source> = HashMap::new();
     while !stop.load(Ordering::Relaxed) {
         for mission in crate::stall::live_missions(app) {
-            poll_mission(app, cfg, template, &mut store, &mut sources, mission);
+            poll_mission(
+                app,
+                cfg,
+                template,
+                &mut store,
+                &mut sources,
+                token.as_ref(),
+                mission,
+            );
         }
         let mut waited = Duration::ZERO;
         while waited < interval && !stop.load(Ordering::Relaxed) {
@@ -96,12 +108,27 @@ fn run<R: Runtime>(
     }
 }
 
+/// The token, read once at start. A refusing keychain leaves the poll unauthenticated rather than
+/// asking again.
+fn read_token() -> Option<Secret> {
+    let (token, source) = match secrets::github_token_with_source() {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            tracing::warn!(%error, "github token lookup");
+            (None, TokenSource::None)
+        }
+    };
+    tracing::info!(source = %source.as_str(), "github.token");
+    token
+}
+
 fn poll_mission<R: Runtime>(
     app: &AppHandle<R>,
     cfg: &Config,
     template: &CycleTemplate,
     store: &mut Store,
     sources: &mut HashMap<MissionId, Source>,
+    token: Option<&Secret>,
     mission: MissionId,
 ) {
     if !sources.contains_key(&mission) {
@@ -114,13 +141,10 @@ fn poll_mission<R: Runtime>(
             return;
         };
         let branch = mission_branch(&cfg.mission.branch_pattern, &name);
-        let client = match GitHubClient::from_config(&cfg.github) {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::warn!(%error, "github token lookup");
-                return;
-            }
-        };
+        let client = GitHubClient::with_token(
+            &cfg.github,
+            token.map(|secret| Secret::new(secret.expose().to_owned())),
+        );
         let _ = store.set_mission_branch(&mission, &branch);
         sources.insert(
             mission.clone(),
