@@ -11,9 +11,13 @@ make e2e
 
 The target builds `observatory-cli`, builds the app with
 `cargo tauri build --debug --no-bundle --features e2e`, runs `npm ci` in this directory and starts
-`npx wdio run wdio.conf.ts`. Output goes to `reports/e2e/<date>/`: `junit.xml` (one `<testsuite>` per
-spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scenario and
-`timing.jsonl` (the host's `observatory::timing` lines). The directory is git-ignored.
+`npx wdio run wdio.conf.ts`. Output goes to a run directory `reports/e2e/<date>/<HHMMSS>/` (the stamp is the start of the
+run): `junit.xml` (one `<testsuite>` per spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scenario,
+`timing.jsonl` (the host's `observatory::timing` lines), `record.json` and, after a red first attempt, `first-failure/`. No run
+deletes another run's directory, so two runs on one day leave two directories and the usage report counts both.
+`reports/e2e/latest` is a relative symlink to the newest run (set when the run starts, so a run that dies is still
+reachable): read `reports/e2e/latest/junit.xml`, `reports/e2e/latest/record.json` and the PNGs below through it. A symlink, not a
+pointer file, so every path that used to be `reports/e2e/<date>/<file>` only gains the `latest` segment. The tree is git-ignored.
 
 ## What it checks
 
@@ -55,7 +59,7 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 `docs/owner-feedback/inbox/2026-10-29-1552-flaky-e2e-is-a-feature.md`; a red nobody can explain is incomplete work).
 
 - On the first failing case the `afterTest` hook (and `afterHook`) names the spec in `failed-specs.txt` and calls
-  `e2e_run.py first-failure` while the app is still up. `reports/e2e/<run>/first-failure/` then holds
+  `e2e_run.py first-failure` while the app is still up. `reports/e2e/<date>/<HHMMSS>/first-failure/` then holds
   `environment.json` (E2E_RUN_DIR, ports with the pids that listen, process lines, GITHUB_TOKEN `set` or `unset` and never its
   value, FORGE_LIVE), `run-dir-listing.txt`, `backend-logs/` (the `wdio-*.log` of `captureBackendLogs`), `screenshots/`
   (`fail-*.png`), `timing.jsonl` and `failed-specs.txt`. The runner refreshes the logs when the attempt ends and writes

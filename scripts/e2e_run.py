@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs the window suite (`make e2e`) with first-failure evidence and at most one rerun; Python 3 standard library only.
 
-  e2e_run.py run --report-dir <dir> --run-dir <dir> [--cwd <dir>] -- <suite command...>
+  e2e_run.py run --report-dir <dir> --run-dir <dir> [--latest <link>] [--cwd <dir>] -- <suite command...>
   e2e_run.py first-failure --report-dir <dir> --run-dir <dir> [--port <n>]...
 
 `run` starts the suite command with E2E_ATTEMPT=1. When it fails, the evidence of that attempt is kept in
@@ -11,6 +11,10 @@ is `passed` (first attempt green), `flaked` (first attempt red, rerun green: the
 `failed` (the rerun is red too, or no spec was named so nothing could be rerun). <report-dir>/record.json keeps both attempts
 and the wall time of each, and junit.xml carries the outcome as an attribute of its root element
 (owner inbox file docs/owner-feedback/inbox/2026-10-29-1552-flaky-e2e-is-a-feature.md).
+
+Each run owns its report directory (`make e2e` passes reports/e2e/<date>/<HHMMSS>); the runner never deletes or reuses another
+run's directory and refuses one that already holds a record.json. `--latest <link>` points a relative symlink at the report
+directory before the suite starts, so the newest run, finished or not, is at one stable path.
 
 `first-failure` is the capture alone, called by the wdio hooks while the app is still up so the ports and pids are live.
 """
@@ -198,15 +202,38 @@ def write_junit(report_dir, outcome, rerun_path=None):
         f.write(text)
 
 
-def run(report_dir, run_dir, cmd, cwd=None, env=None):
+def run_name(report_dir):
+    """<date>/<HHMMSS> for a stamped run directory, the directory name for any other."""
+    parent = os.path.basename(os.path.dirname(report_dir))
+    name = os.path.basename(report_dir)
+    return "%s/%s" % (parent, name) if re.fullmatch(r"\d{4}-\d\d-\d\d", parent) else name
+
+
+def point_latest(link, report_dir):
+    """A symlink, not a pointer file: every path the validator and the PNG convention already read (`<dir>/junit.xml`,
+    `<dir>/card-lane3-cycle-1.png`) works unchanged under reports/e2e/latest/. Replaced by rename, so a reader never sees it missing."""
+    target = os.path.relpath(report_dir, os.path.dirname(os.path.abspath(link)))
+    tmp = "%s.%d.tmp" % (link, os.getpid())
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(target, tmp)
+    os.replace(tmp, link)
+
+
+def run(report_dir, run_dir, cmd, cwd=None, env=None, latest=None):
     env = dict(os.environ if env is None else env)
     shown = report_dir
     report_dir, run_dir = os.path.abspath(report_dir), os.path.abspath(run_dir)
+    if os.path.exists(os.path.join(report_dir, "record.json")):
+        print("e2e: %s already holds a record.json of another run; pick a new directory" % shown, file=sys.stderr)
+        return 2
     os.makedirs(report_dir, exist_ok=True)
+    if latest:
+        point_latest(latest, report_dir)
     started = now_utc()
     first = execute(cmd, cwd, env, 1, report_dir, run_dir)
     attempts = [first]
-    record = {"run": os.path.basename(report_dir), "started_at": started}
+    record = {"run": run_name(report_dir), "started_at": started}
     rerun_path = None
     if first["exit_code"] == 0:
         record["outcome"] = "passed"
@@ -270,6 +297,7 @@ def main(argv):
     r = sub.add_parser("run", help="run the suite command with the rerun policy")
     r.add_argument("--report-dir", required=True)
     r.add_argument("--run-dir", required=True)
+    r.add_argument("--latest", help="a symlink to point at the report directory (reports/e2e/latest)")
     r.add_argument("--cwd", help="directory the suite command runs in")
     r.add_argument("cmd", nargs=argparse.REMAINDER, help="-- <suite command...>")
     c = sub.add_parser("first-failure", help="capture the evidence of the first failing spec")
@@ -283,7 +311,7 @@ def main(argv):
     cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
     if not cmd:
         ap.error("no suite command after --")
-    return run(args.report_dir, args.run_dir, cmd, cwd=args.cwd)
+    return run(args.report_dir, args.run_dir, cmd, cwd=args.cwd, latest=args.latest)
 
 
 if __name__ == "__main__":

@@ -209,17 +209,19 @@ endif
 
 # The window suite (owner item 14): the debug app with the embedded WebDriver server (`e2e` cargo
 # feature, never a release build), driven by WebdriverIO through scripts/e2e_run.py: a failing first attempt keeps its evidence in
-# reports/e2e/<E2E_DATE>/first-failure/ and reruns the failed specs once; the outcome (passed, flaked, failed) is in record.json.
-# JUnit and screenshots land in reports/e2e/<E2E_DATE>/; the app's store, spool and fake Droid live in a scratch directory.
+# reports/e2e/<E2E_DATE>/<E2E_STAMP>/first-failure/ and reruns the failed specs once; the outcome (passed, flaked, failed) is in
+# record.json. JUnit and screenshots land in the same run directory, which no later run deletes (a flake stays countable by the
+# usage report); reports/e2e/latest is a symlink to the newest run. The app's store, spool and fake Droid live in a scratch directory.
 E2E_DATE ?= $(shell date +%Y-%m-%d)
+E2E_STAMP ?= $(shell date +%H%M%S)
 E2E_RUN_DIR ?= $(or $(TMPDIR),/tmp)/observatory-e2e
-e2e: ## Build the app with --features e2e and run the WebdriverIO suite (reports/e2e/<date>/)
+e2e: ## Build the app with --features e2e and run the WebdriverIO suite (reports/e2e/<date>/<HHMMSS>/)
 ifneq (,$(HAS_TAURI))
 	@cargo build -p observatory-cli
 	@cargo tauri build --debug --no-bundle --features e2e
-	@rm -rf "$(E2E_RUN_DIR)" "reports/e2e/$(E2E_DATE)"
+	@rm -rf "$(E2E_RUN_DIR)"
 	@cd apps/observatory-app/e2e && npm ci
-	@E2E_DATE=$(E2E_DATE) python3 scripts/e2e_run.py run --report-dir "reports/e2e/$(E2E_DATE)" --run-dir "$(E2E_RUN_DIR)" --cwd apps/observatory-app/e2e -- npx wdio run wdio.conf.ts
+	@E2E_DATE=$(E2E_DATE) python3 scripts/e2e_run.py run --report-dir "reports/e2e/$(E2E_DATE)/$(E2E_STAMP)" --latest "reports/e2e/latest" --run-dir "$(E2E_RUN_DIR)" --cwd apps/observatory-app/e2e -- npx wdio run wdio.conf.ts
 else
 	@echo "e2e: no Tauri app yet, skipped"
 endif

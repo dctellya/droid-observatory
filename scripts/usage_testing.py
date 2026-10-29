@@ -130,9 +130,14 @@ def user_testing_lines(emit, md_table, win, clf, sidecars, sessions_dir, cost, u
 
 
 def e2e_records(e2e_dir, repo_root, start, end):
-    """The reports/e2e/<run>/record.json files (scripts/e2e_run.py) that overlap the window, oldest first."""
+    """Every reports/e2e/<date>/<HHMMSS>/record.json (scripts/e2e_run.py; also the flat <run>/record.json of the runs before
+    run stamps) that overlaps the window, oldest first. `latest` is a symlink to one of them and is not counted again."""
     rows = []
-    for path in sorted(glob.glob(os.path.join(e2e_dir, "*", "record.json"))):
+    seen = set()
+    for path in sorted(glob.glob(os.path.join(e2e_dir, "*", "*", "record.json")) + glob.glob(os.path.join(e2e_dir, "*", "record.json"))):
+        if os.path.islink(os.path.dirname(path)) or os.path.realpath(path) in seen:
+            continue
+        seen.add(os.path.realpath(path))
         try:
             with open(path) as f:
                 r = json.load(f)
@@ -183,6 +188,6 @@ def e2e_lines(emit, md_table, e2e_dir, repo_root, start, end):
     emit("")
     emit("`flaked` is a first attempt that failed and one rerun that passed: the run is green and counted as a flake, never as a "
          "pass; `failed` is a rerun that failed too (or a failure that named no spec). The runs are the records "
-         "`reports/e2e/<run>/record.json` that overlap the window; the evidence of the first failure is in "
-         "`reports/e2e/<run>/first-failure/`, which is git-ignored and goes with the `e2e-reports` artifact of the CI run.")
+         "`reports/e2e/<date>/<HHMMSS>/record.json` that overlap the window (every run directory, so a flake stays counted after a later "
+         "green run); the evidence of the first failure is in `reports/e2e/<date>/<HHMMSS>/first-failure/`, which is git-ignored and goes with the `e2e-reports` artifact of the CI run.")
     emit("")
