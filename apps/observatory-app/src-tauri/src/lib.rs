@@ -87,6 +87,7 @@ pub fn run() {
         .manage(shell)
         .manage(host::Hosts::new(exclude))
         .manage(github::GateCache::default())
+        .manage(merge::MergeDesk::default())
         .setup(move |app| {
             app.manage(ingest::spawn(
                 app.handle().clone(),
@@ -120,6 +121,7 @@ pub fn run() {
             commands::app_config,
             commands::cycle_template,
             commands::gate_group,
+            merge::merge,
             #[cfg(feature = "e2e")]
             e2e_gate::e2e_gate_poll,
             commands::panel_rendered,

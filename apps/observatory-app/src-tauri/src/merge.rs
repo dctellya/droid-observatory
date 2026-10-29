@@ -1,3 +1,161 @@
+//! The Merge press (FR-G5, architecture §4.6): the confirmed press records the human-overlay row,
+//! asks GitHub once to merge the PR the last poll saw, and gives the row the state the answer
+//! earned. The poll thread feeds the desk; core decides what an answer means.
+
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
+
+use observatory_core::config::GithubConfig;
+use observatory_core::control::HumanAction;
+use observatory_core::control::merge;
+use observatory_core::ingest::forge::{Forge, GateFacts, MergeMethod, Pr, PrState};
+use observatory_core::ingest::github::{GitHubClient, UreqTransport};
+use observatory_core::model::MissionId;
+use observatory_core::secrets::Secret;
+use observatory_core::view::MergePressed;
+use tauri::{AppHandle, Manager, Runtime};
+
+use crate::{Shell, actions};
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The open PR of a mission as the last poll read it, and the methods its rule allows.
+struct Pressable {
+    pr: Pr,
+    allowed: Vec<MergeMethod>,
+}
+
+/// What a press needs and the poll knows: the open PR of each mission and the token the poll
+/// thread read once, so a press never asks the keychain.
+#[derive(Default)]
+pub struct MergeDesk {
+    open: Mutex<HashMap<MissionId, Pressable>>,
+    token: Mutex<Option<Secret>>,
+}
+
+impl MergeDesk {
+    pub fn set_token(&self, token: Option<&Secret>) {
+        *lock(&self.token) = token.map(|secret| Secret::new(secret.expose().to_owned()));
+    }
+
+    /// What the last poll of `mission` read: a PR that is open can be merged, anything else cannot.
+    pub fn note(&self, mission: &MissionId, pr: Option<&Pr>, facts: Option<&GateFacts>) {
+        let mut open = lock(&self.open);
+        match pr.filter(|pr| pr.state == PrState::Open) {
+            Some(pr) => {
+                let allowed = facts
+                    .map(|facts| facts.policy.allowed_methods.clone())
+                    .unwrap_or_default();
+                open.insert(
+                    mission.clone(),
+                    Pressable {
+                        pr: pr.clone(),
+                        allowed,
+                    },
+                );
+            }
+            None => {
+                open.remove(mission);
+            }
+        }
+    }
+
+    fn pressable(
+        &self,
+        mission: &MissionId,
+        number: u64,
+        target: &str,
+    ) -> Result<Pressable, String> {
+        let open = lock(&self.open);
+        let known = open
+            .get(mission)
+            .filter(|known| known.pr.number == number)
+            .ok_or_else(|| format!("PR #{number} is not open as far as the last poll saw"))?;
+        if known.pr.base != target {
+            return Err(format!(
+                "PR #{number} merges into {}, not {target}; the board is out of date",
+                known.pr.base
+            ));
+        }
+        Ok(Pressable {
+            pr: known.pr.clone(),
+            allowed: known.allowed.clone(),
+        })
+    }
+
+    fn client(&self, config: &GithubConfig) -> GitHubClient<UreqTransport> {
+        let token = lock(&self.token)
+            .as_ref()
+            .map(|secret| Secret::new(secret.expose().to_owned()));
+        GitHubClient::with_token(config, token)
+    }
+}
+
+/// One confirmed press: the row and its event first (state `requested`), then one request, then
+/// the row takes the state of the answer. Nothing is retried; the next poll reads the PR.
+pub fn press_merge<R: Runtime, F: Forge>(
+    app: &AppHandle<R>,
+    desk: &MergeDesk,
+    forge: &F,
+    mission: &MissionId,
+    pr_number: u64,
+    target: &str,
+) -> Result<MergePressed, String> {
+    let pressable = desk.pressable(mission, pr_number, target)?;
+    let shell = app.state::<Shell>();
+    let action = HumanAction::Merge {
+        pr_number,
+        target: target.to_owned(),
+    };
+    let recorded = actions::record(app, &shell, mission, &action, None)?;
+    tracing::info!(
+        mission_id = %mission,
+        pr = pr_number,
+        target,
+        action_id = recorded.action_id,
+        "merge_requested"
+    );
+    let outcome = merge::press(forge, &pressable.pr, &pressable.allowed);
+    lock(&shell.store)
+        .set_human_action_state(recorded.action_id, outcome.state.wire())
+        .map_err(|error| error.to_string())?;
+    tracing::info!(
+        mission_id = %mission,
+        pr = pr_number,
+        target,
+        action_id = recorded.action_id,
+        state = outcome.state.wire(),
+        "merge_result"
+    );
+    Ok(outcome)
+}
+
+/// The Merge button after its confirmation (`confirm` is the dialog's answer, never assumed).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn merge(
+    app: AppHandle,
+    mission_id: MissionId,
+    pr_number: u64,
+    target: String,
+    confirm: bool,
+) -> Result<MergePressed, String> {
+    if !confirm {
+        return Err("a merge is requested only after its confirmation".to_owned());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let desk = app.state::<MergeDesk>();
+        let shell = app.state::<Shell>();
+        let client = desk.client(&shell.cfg.github);
+        press_merge(&app, &desk, &client, &mission_id, pr_number, &target)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

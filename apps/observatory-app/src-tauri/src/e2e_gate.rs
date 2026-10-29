@@ -3,7 +3,8 @@
 //! feature builds it; the release app has no such command.
 
 use observatory_core::ingest::forge::{
-    CheckConclusion, GateFacts, MergeMethod, MergePolicy, Poll, RequiredCheck, RuleAttribution,
+    CheckConclusion, GateFacts, MergeMethod, MergePolicy, Poll, Pr, PrState, RequiredCheck,
+    RuleAttribution,
 };
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{Event, EventId, EventKind, MilestoneId, Role, SourcePtr, Timestamp};
@@ -17,6 +18,8 @@ const RULESET_ID: u64 = 26_112_925;
 const RULESET_NAME: &str = "demo-gate";
 const REQUIRED_CHECK: &str = "demo-gate";
 const MERGE_SHA: &str = "a3ec578735fbcbbd15db8dfc7612fd9f16901a63";
+const TARGET: &str = "demo/base";
+const HEAD: &str = "demo/e2e-gate";
 const PR_URL: &str = "https://api.github.com/repos/dctellya/droid-observatory/pulls/24";
 
 /// What a scenario adds: its new events, the conclusion the required check has and whether the PR
@@ -98,7 +101,20 @@ pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<Stri
         .collect();
     let poll = Poll {
         observed_at: now,
-        pr: None,
+        pr: Some(Pr {
+            number: PR_NUMBER,
+            head_sha: MERGE_SHA.to_owned(),
+            head: HEAD.to_owned(),
+            base: TARGET.to_owned(),
+            url: PR_URL.to_owned(),
+            created_at: now,
+            state: if scenario.pr_open {
+                PrState::Open
+            } else {
+                PrState::Closed
+            },
+            auto_merge: false,
+        }),
         checks: Vec::new(),
         reviews: Vec::new(),
         attestations: Vec::new(),
@@ -119,6 +135,7 @@ pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<Stri
             reviews: 0,
             attestation_ids: Vec::new(),
             pr_open: scenario.pr_open,
+            target: TARGET.to_owned(),
         }),
         events,
         windows: Vec::new(),

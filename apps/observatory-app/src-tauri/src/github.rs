@@ -103,6 +103,9 @@ fn run<R: Runtime>(
     // One secrets call per app process: a keychain read per poll or per mission would prompt
     // again, so the value is kept here and cloned into each client.
     let token = read_token();
+    if let Some(desk) = app.try_state::<crate::merge::MergeDesk>() {
+        desk.set_token(token.as_ref());
+    }
     let slice = Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1));
     let interval = Duration::from_secs(cfg.github.poll_interval_s.max(1));
     let mut sources: HashMap<MissionId, Tracked> = HashMap::new();
@@ -209,6 +212,9 @@ pub(crate) fn apply_poll<R: Runtime>(
     if let Err(error) = store.record_poll(mission, &poll) {
         tracing::error!(%error, "store");
         return;
+    }
+    if let Some(desk) = app.try_state::<crate::merge::MergeDesk>() {
+        desk.note(mission, poll.pr.as_ref(), poll.gate.as_ref());
     }
     if !poll.events.is_empty() {
         let batch = EventBatch {
