@@ -30,7 +30,7 @@ pointer file, so every path that used to be `reports/e2e/<date>/<file>` only gai
   each also in the kit's dark and light themes (cases that press `theme-dark` / `theme-light` and check
   `data-theme`, so the case PNGs show both).
 - `specs/gate.e2e.ts`: the Gate lane of a hosted mission. The `e2e` feature adds the command `e2e_gate_poll`, which
-  feeds one pull request's scenario (`red`, `green`, `merged`) through the same record and emit path as a GitHub
+  feeds one pull request's scenario (`pending`, `red`, `green`, `merged`) to the mission named by `mission_id`, else the live mission that started last, through the same record and emit path as a GitHub
   poll. The cases read the card's lane and `cycle 1`, the return arc, the gate group and the Merge button from the DOM
   and save `card-lane3-cycle-1.png`, `return-arc-cycle-1.png` and `merge-button.png` next to the per-case PNGs.
 - `specs/attached.e2e.ts`: an attached mission. `lib/attach.ts` copies the S session under the run's

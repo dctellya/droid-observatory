@@ -1,6 +1,6 @@
 import { $, browser, expect } from '@wdio/globals';
 import { E2E_BRANCH as BRANCH, WAIT_MS } from '../lib/env.js';
-import { appLog } from '../lib/attach.js';
+import { ATTACHED_ID, appLog } from '../lib/attach.js';
 import { openAttached } from '../lib/walk.js';
 
 describe('the pre-gate placeholder of an attached mission', () => {
@@ -17,7 +17,7 @@ describe('the pre-gate placeholder of an attached mission', () => {
   it('names the same branch in the pending gate_changed line of the app log', async () => {
     const answer = await browser.executeAsync((done: (value: string) => void) => {
       (window as any).__TAURI__.core
-        .invoke('e2e_gate_poll', { scenario_name: 'pending' })
+        .invoke('e2e_gate_poll', { scenario_name: 'pending', mission_id: ATTACHED_ID })
         .then((mission: string) => done(`ok ${mission}`), (error: unknown) => done(`error ${error}`));
     });
     expect(answer).toMatch(/^ok /);

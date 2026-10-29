@@ -7,7 +7,9 @@ use observatory_core::ingest::forge::{
     RuleAttribution,
 };
 use observatory_core::mapping::MappingVersion;
-use observatory_core::model::{Event, EventId, EventKind, MilestoneId, Role, SourcePtr, Timestamp};
+use observatory_core::model::{
+    Event, EventId, EventKind, MilestoneId, MissionId, Role, SourcePtr, Timestamp,
+};
 use observatory_core::view::MilestoneWorktree;
 use tauri::{AppHandle, Manager};
 
@@ -81,25 +83,40 @@ fn pending_poll(now: Timestamp) -> Poll {
     }
 }
 
-/// Runs the named scenario (`pending`, `red`, `green`, `merged`) on the first live mission.
-#[tauri::command(rename_all = "snake_case")]
-pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<String, String> {
-    let mission = crate::stall::live_missions(&app)
-        .into_iter()
-        .next()
-        .ok_or("no live mission")?;
-    let shell = app.state::<Shell>();
-    let branch = {
-        let store = lock_store(&shell);
-        let name = store
-            .missions()
-            .map_err(|error| error.to_string())?
+/// The mission a scenario runs on: the one named, else the live mission that started last. The
+/// suite keeps one app for all its specs, so earlier hosted runs are still live and the order of
+/// the host's map says nothing about which board the window shows.
+fn target_mission(
+    app: &AppHandle,
+    shell: &Shell,
+    named: Option<String>,
+) -> Result<(MissionId, String), String> {
+    let live = crate::stall::live_missions(app);
+    let rows = lock_store(shell)
+        .missions()
+        .map_err(|error| error.to_string())?;
+    let row = match named {
+        Some(id) => rows.into_iter().find(|row| row.id.0 == id),
+        None => rows
             .into_iter()
-            .find(|row| row.id == mission)
-            .map(|row| row.name)
-            .ok_or("the mission has no row")?;
-        resolve_branch(&store, &shell.cfg.mission, &mission, &name)
+            .filter(|row| live.contains(&row.id))
+            .max_by(|a, b| a.started_at.cmp(&b.started_at)),
     };
+    row.map(|row| (row.id, row.name))
+        .ok_or_else(|| "no live mission".to_owned())
+}
+
+/// Runs the named scenario (`pending`, `red`, `green`, `merged`) on the mission `mission_id`
+/// names, else on the live mission that started last.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn e2e_gate_poll(
+    app: AppHandle,
+    scenario_name: String,
+    mission_id: Option<String>,
+) -> Result<String, String> {
+    let shell = app.state::<Shell>();
+    let (mission, name) = target_mission(&app, &shell, mission_id)?;
+    let branch = resolve_branch(&lock_store(&shell), &shell.cfg.mission, &mission, &name);
     if scenario_name == "pending" {
         let mut shown = None;
         crate::github::apply_poll(
