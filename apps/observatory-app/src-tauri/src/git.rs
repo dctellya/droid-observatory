@@ -50,7 +50,7 @@ impl GitCache {
         self.lock().get(mission).cloned().unwrap_or_default()
     }
 
-    fn put(&self, mission: &MissionId, worktrees: Vec<MilestoneWorktree>) {
+    pub(crate) fn put(&self, mission: &MissionId, worktrees: Vec<MilestoneWorktree>) {
         self.lock().insert(mission.clone(), worktrees);
     }
 

@@ -13,6 +13,9 @@ const CARD = 'card-e2e-gate';
 const BUILD = { id: 'build', number: 3 };
 const GATE = { id: 'gate', number: 7 };
 
+/** The worktree the e2e build caches for the mission's milestone (src-tauri/src/e2e_gate.rs). */
+const WORKTREE = { name: 'wt-e2e-gate', path: '/e2e/worktrees/wt-e2e-gate' };
+
 const PR = 24;
 const REFUSED = `Merge of PR #${PR} into demo/base refused: token lacks pull_requests:write. Merge in GitHub; the badge updates from the next poll.`;
 
@@ -63,6 +66,14 @@ describe('the Gate lane of a hosted mission after the pull request polls', () =>
     await expect($(`[aria-label="${CARD}"] [data-testid="card-cycle"]`)).toHaveText('cycle 1');
     await expect(byId('gate-badge')).toHaveText('CI red');
     await png('card-lane3-cycle-1', cardIn(BUILD.id));
+  });
+
+  it('the card names the worktree git lists for its milestone, the path as its title', async () => {
+    const name = $(`[aria-label="${CARD}"] [data-testid="card-worktree"]`);
+    await name.waitForDisplayed({ timeout: WAIT_MS, timeoutMsg: 'the card never named its worktree' });
+    await expect(name).toHaveText(WORKTREE.name);
+    await expect(name).toHaveAttribute('title', WORKTREE.path);
+    await png('card-worktree-name', name);
   });
 
   it('red check draws the return arc with cycle 1', async () => {

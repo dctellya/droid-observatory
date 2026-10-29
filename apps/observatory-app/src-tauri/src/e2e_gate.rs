@@ -8,11 +8,14 @@ use observatory_core::ingest::forge::{
 };
 use observatory_core::mapping::MappingVersion;
 use observatory_core::model::{Event, EventId, EventKind, MilestoneId, Role, SourcePtr, Timestamp};
+use observatory_core::view::MilestoneWorktree;
 use tauri::{AppHandle, Manager};
 
 use crate::Shell;
 
 const MILESTONE: &str = "e2e-gate";
+const WORKTREE_NAME: &str = "wt-e2e-gate";
+const WORKTREE_PATH: &str = "/e2e/worktrees/wt-e2e-gate";
 const PR_NUMBER: u64 = 24;
 const RULESET_ID: u64 = 26_112_925;
 const RULESET_NAME: &str = "demo-gate";
@@ -140,6 +143,15 @@ pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<Stri
         events,
         windows: Vec::new(),
     };
+    // The worktree list a git poll would have cached for the mission, so the card names it.
+    app.state::<crate::git::GitCache>().put(
+        &mission,
+        vec![MilestoneWorktree {
+            milestone: MilestoneId(MILESTONE.to_owned()),
+            name: WORKTREE_NAME.to_owned(),
+            path: WORKTREE_PATH.to_owned(),
+        }],
+    );
     let mut store = shell
         .store
         .lock()

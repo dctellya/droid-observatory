@@ -28,3 +28,51 @@ pub fn milestone_worktrees(snapshot: &GitSnapshot) -> Vec<MilestoneWorktree> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::ingest::git::Worktree;
+
+    fn snapshot(worktrees: Vec<Worktree>) -> GitSnapshot {
+        GitSnapshot {
+            mission_branch: "mission/demo".to_owned(),
+            mission_head: "abc".to_owned(),
+            worktrees,
+            milestone_branches: Vec::new(),
+        }
+    }
+
+    fn listed(path: &str, milestone: Option<&str>) -> Worktree {
+        Worktree {
+            path: PathBuf::from(path),
+            branch: milestone.map(|m| format!("wt/{m}")),
+            head: "abc".to_owned(),
+            milestone: milestone.map(|m| MilestoneId(m.to_owned())),
+        }
+    }
+
+    #[test]
+    fn a_milestone_without_a_worktree_has_no_name() {
+        let worktrees = milestone_worktrees(&snapshot(vec![
+            listed("/work/observatory", None),
+            listed("/work/observatory-wt/m4", Some("m4")),
+        ]));
+        assert_eq!(
+            worktrees,
+            vec![MilestoneWorktree {
+                milestone: MilestoneId("m4".to_owned()),
+                name: "m4".to_owned(),
+                path: "/work/observatory-wt/m4".to_owned(),
+            }]
+        );
+        assert!(
+            worktrees
+                .iter()
+                .all(|worktree| worktree.milestone.0 != "m3")
+        );
+        assert!(milestone_worktrees(&snapshot(Vec::new())).is_empty());
+    }
+}
