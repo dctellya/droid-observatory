@@ -51,6 +51,8 @@ pub struct Hosts {
 
 pub(crate) struct Run {
     group: ProcessGroup,
+    /// The repository the mission was launched in.
+    repo: std::path::PathBuf,
     pub(crate) inner: Mutex<Inner>,
     status: Mutex<HostedStatus>,
     /// Controls written and not yet acknowledged, by what acknowledges them: the id of the
@@ -148,6 +150,11 @@ impl Hosts {
     /// The ids of the hosted runs, which are also their mission ids.
     pub fn launch_ids(&self) -> Vec<String> {
         lock(&self.runs).keys().cloned().collect()
+    }
+
+    /// The repository a hosted mission was launched in; none for a mission this app did not host.
+    pub fn repo_of(&self, launch_id: &str) -> Option<std::path::PathBuf> {
+        lock(&self.runs).get(launch_id).map(|run| run.repo.clone())
     }
 
     pub fn status(&self, launch_id: &str) -> Result<HostedStatus, String> {
@@ -259,6 +266,7 @@ pub async fn launch<R: Runtime>(
 
     let run = Arc::new(Run {
         group: spawned.group,
+        repo: std::path::PathBuf::from(&config.repo),
         inner: Mutex::new(Inner {
             channel,
             mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone())

@@ -5,6 +5,7 @@ mod actions;
 mod commands;
 #[cfg(feature = "e2e")]
 mod e2e_gate;
+mod git;
 mod github;
 mod host;
 mod ingest;
@@ -70,6 +71,8 @@ pub fn run() {
     let status = Arc::new(Mutex::new(AttachStatus::default()));
     let github_cfg = cfg.clone();
     let github_store_path = store_path.clone();
+    let git_cfg = cfg.clone();
+    let git_store_path = store_path.clone();
     let shell = Shell {
         cfg: cfg.clone(),
         template: Arc::new(loaded.template),
@@ -78,6 +81,7 @@ pub fn run() {
     };
 
     let template = shell.template.clone();
+    let git_template = template.clone();
     let (exclude, excluded) = std::sync::mpsc::channel();
     let grace = std::time::Duration::from_millis(cfg.mission.reap_grace_ms);
     let builder = tauri::Builder::default();
@@ -87,6 +91,7 @@ pub fn run() {
         .manage(shell)
         .manage(host::Hosts::new(exclude))
         .manage(github::GateCache::default())
+        .manage(git::GitCache::default())
         .manage(merge::MergeDesk::default())
         .setup(move |app| {
             app.manage(ingest::spawn(
@@ -101,6 +106,12 @@ pub fn run() {
                 github_cfg,
                 template,
                 github_store_path,
+            ));
+            app.manage(git::spawn(
+                app.handle().clone(),
+                git_cfg,
+                git_template,
+                git_store_path,
             ));
             stall::spawn(app.handle().clone());
             Ok(())
@@ -121,6 +132,7 @@ pub fn run() {
             commands::app_config,
             commands::cycle_template,
             commands::gate_group,
+            commands::milestone_worktrees,
             merge::merge,
             #[cfg(feature = "e2e")]
             e2e_gate::e2e_gate_poll,
@@ -137,6 +149,7 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 reap_hosted(app, grace);
                 app.state::<github::Github>().stop();
+                app.state::<git::Git>().stop();
                 app.state::<ingest::Ingest>().stop();
             }
             _ => {}

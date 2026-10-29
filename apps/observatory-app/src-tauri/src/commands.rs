@@ -219,6 +219,15 @@ pub async fn gate_group(
     Ok(cache.get(&mission_id))
 }
 
+/// The worktrees git listed for the milestones of a mission at the last poll, for the cards.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn milestone_worktrees(
+    cache: State<'_, crate::git::GitCache>,
+    mission_id: MissionId,
+) -> Result<Vec<observatory_core::view::MilestoneWorktree>, String> {
+    Ok(cache.get(&mission_id))
+}
+
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {
     let watched = lock(&shell.status).watched.clone();
     let store = lock(&shell.store);

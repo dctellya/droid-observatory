@@ -452,3 +452,108 @@ fn a_card_names_the_worktree_git_lists_for_its_milestone() {
         .collect();
     assert_eq!(named, listed);
 }
+
+/// The real checkout, a COPY of a store and the real runs: `GIT_WIRING_STORE` names the copy
+/// (never `~/.droid-observatory` itself), `GITHUB_TOKEN` comes from the invoking shell. Prints the
+/// three contract queries; compare them with `git log --first-parent --merges --format=%H
+/// c8524c2..mission/observatory-v1` and `gh run list --workflow mission-branch --branch
+/// mission/observatory-v1 --json databaseId,conclusion,headSha`.
+#[test]
+#[ignore = "reads the checkout it runs in, a store copy and the GitHub API"]
+fn the_real_repository_fills_a_store_copy() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let branch = "mission/observatory-v1";
+    let store_copy =
+        std::env::var("GIT_WIRING_STORE").expect("GIT_WIRING_STORE names a store copy");
+    let mut store = Store::open(Path::new(&store_copy)).unwrap();
+    let conn = rusqlite::Connection::open(&store_copy).unwrap();
+    conn.execute(
+        "INSERT OR IGNORE INTO missions (id, name, state, started_at) VALUES ('real', 'observatory-v1', 'building', '2026-10-22T09:00:00Z')",
+        [],
+    )
+    .unwrap();
+
+    let token = std::env::var("GITHUB_TOKEN").ok();
+    let runs = token
+        .map(|token| {
+            GitHubClient::with_token(
+                &observatory_core::config::GithubConfig::default(),
+                Some(observatory_core::secrets::Secret::new(token)),
+            )
+            .mission_branch_runs(branch)
+            .expect("the run list of the branch")
+        })
+        .unwrap_or_default();
+    let source = GitSource::open(
+        &repo,
+        MissionId("real".into()),
+        branch,
+        CycleTemplate::engineering(),
+        GitOptions::from_branch_pattern("mission/<name>"),
+    )
+    .expect("the mission branch exists in this checkout");
+    let sync = git_sync(&mut store, &source, &runs).unwrap();
+    println!(
+        "merges {} runs {} events {} new {}",
+        sync.merges,
+        sync.runs,
+        sync.events,
+        sync.new_events.len()
+    );
+    let again = git_sync(&mut store, &source, &runs).unwrap();
+    assert!(again.new_events.is_empty(), "the second poll adds nothing");
+
+    let print = |sql: &str| {
+        println!("-- {sql}");
+        let mut statement = conn.prepare(sql).unwrap();
+        let width = statement.column_count();
+        let rows = statement
+            .query_map([], |row| {
+                (0..width)
+                    .map(|i| {
+                        row.get::<_, Option<String>>(i)
+                            .map(|v| v.unwrap_or("NULL".into()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap();
+        for row in rows {
+            println!("{}", row.unwrap().join(" | "));
+        }
+    };
+    print(
+        "SELECT sha, milestone_id FROM events WHERE kind='integration.merged' AND lane = 'integrate' AND source='git' AND mission_id='real' ORDER BY at",
+    );
+    print(
+        "SELECT kind, url, milestone_id FROM events WHERE kind IN ('gate_command.run','gate_command.passed','gate_command.failed') AND lane = 'integrate' AND source='github' AND mission_id='real' ORDER BY url, kind",
+    );
+    print("SELECT id, branch FROM missions WHERE id='real'");
+
+    let range = String::from_utf8(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args([
+                "log",
+                "--first-parent",
+                "--merges",
+                "--format=%H",
+                "c8524c2..mission/observatory-v1",
+            ])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    println!("-- git log --first-parent --merges --format=%H c8524c2..{branch}\n{range}");
+    for sha in range.lines() {
+        let milestone: Option<String> = conn
+            .query_row(
+                "SELECT milestone_id FROM events WHERE kind='integration.merged' AND sha=?1 AND mission_id='real'",
+                [sha],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|error| panic!("{sha} missing: {error}"));
+        assert!(milestone.is_some(), "{sha} has a milestone");
+    }
+}
