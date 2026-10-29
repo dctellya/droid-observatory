@@ -1,6 +1,9 @@
 //! `core::secrets` (architecture §12): the keychain, then `GITHUB_TOKEN`; a value never prints.
 
-use observatory_core::secrets::{Secret, SecretName, lookup_service, resolve_github_token};
+use observatory_core::secrets::{
+    Secret, SecretError, SecretName, lookup_service, resolve_github_token,
+    resolve_github_token_or_fallback,
+};
 
 #[test]
 fn a_secret_prints_as_redacted_in_debug_and_display() {
@@ -45,4 +48,26 @@ fn the_environment_is_the_fallback_and_an_empty_value_is_no_token() {
     assert_eq!(token.expose(), "from-env");
     assert!(resolve_github_token(None, Some(String::new())).is_none());
     assert!(resolve_github_token(None, None).is_none());
+}
+
+#[test]
+fn a_refusing_keychain_falls_back_to_the_environment() {
+    let refused = Err(SecretError::Keychain {
+        service: "droid-observatory/github-token".into(),
+        message: "User canceled the operation.".into(),
+    });
+    let token = resolve_github_token_or_fallback(refused, Some("from-env".into())).unwrap();
+    assert_eq!(token.expose(), "from-env");
+
+    let refused = Err(SecretError::Keychain {
+        service: "droid-observatory/github-token".into(),
+        message: "locked".into(),
+    });
+    assert!(
+        resolve_github_token_or_fallback(refused, None).is_err(),
+        "no environment value: the refusal is the answer"
+    );
+    let found = Ok(Some(Secret::new("from-keychain".into())));
+    let token = resolve_github_token_or_fallback(found, Some("from-env".into())).unwrap();
+    assert_eq!(token.expose(), "from-keychain");
 }
