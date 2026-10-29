@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use observatory_core::config::GithubConfig;
@@ -492,12 +492,16 @@ impl HttpTransport for Limited {
     }
 }
 
-#[derive(Clone, Default)]
-struct Capture(Arc<Mutex<Vec<u8>>>);
+/// Everything the process logs. A global subscriber, not `with_default`: tracing caches a
+/// callsite's interest per process, and a test that ran first without a subscriber would
+/// silence the callsite for a scoped one.
+static LOG: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+
+struct Capture;
 
 impl Write for Capture {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        LOG.lock().unwrap().extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -563,19 +567,16 @@ fn token_is_redacted_from_logs() {
         CycleTemplate::engineering(),
     );
 
-    let capture = Capture::default();
-    let sink = capture.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
         .with_ansi(false)
-        .with_writer(move || sink.clone())
+        .with_writer(|| Capture)
         .finish();
-    let poll = tracing::subscriber::with_default(subscriber, || {
-        source
-            .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
-            .unwrap()
-            .expect("due")
-    });
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    let poll = source
+        .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
+        .unwrap()
+        .expect("due");
     let requests = server.join().unwrap();
 
     assert_eq!(
@@ -595,10 +596,10 @@ fn token_is_redacted_from_logs() {
         );
     }
 
-    let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    let log = String::from_utf8(LOG.lock().unwrap().clone()).unwrap();
     let lines: Vec<&str> = log
         .lines()
-        .filter(|line| line.contains("github.request"))
+        .filter(|line| line.contains("github.request") && line.contains(&base))
         .collect();
     assert_eq!(lines.len(), 3, "one line per request: {log}");
     assert!(

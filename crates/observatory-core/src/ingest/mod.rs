@@ -1,7 +1,10 @@
 //! Readers that turn files into raw records (architecture §4). Blocking IO only.
 
 mod capture;
+pub mod forge;
 pub mod git;
+#[cfg(feature = "github")]
+pub mod github;
 mod jsonl;
 mod live;
 mod memory;

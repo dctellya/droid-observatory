@@ -14,7 +14,7 @@ default = ["store", "watch", "rpc", "github", "secrets"]
 store = ["dep:rusqlite"]
 watch = ["dep:notify"]
 rpc = []
-github = ["dep:ureq"]
+github = ["dep:ureq", "secrets"]
 secrets = ["dep:keyring-core", "dep:apple-native-keyring-store"]
 
 [dependencies]

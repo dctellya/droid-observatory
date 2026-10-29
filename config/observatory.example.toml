@@ -101,6 +101,9 @@ merge_policy = "auto"
 target_branch = "main"
 # owner/repo the forge client reads. The default is this repository.
 repo = "dctellya/droid-observatory"
+# One GitHub request gives up after this long. Half the poll interval: a stuck request ends before the next poll is due,
+# so polls never queue behind it.
+request_timeout_s = 15
 
 [intervention]
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
