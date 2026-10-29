@@ -156,6 +156,14 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   (`reports/gate/<tree>/<command>.json`, a hit is evidence, `--force` reruns) (27); gate flow: inner
   loop per rule 23, one full `make check` on the final tree of the milestone's last implementation worker, red runs
   redirected to a file with the exit code pasted (28).
+- Rules 29 to 31 ([ai/RULES.md](ai/RULES.md), owner items 1 to 4 of the M3 boundary): incomplete work is replanned, never appended (a
+  `turnBudget` per feature under the 120-turn cap; a worker that will exceed it hands off `partial` with a split) (29); a
+  worker lists `claims: [{assertion, evidence}]` for every assertion it fulfils in its hand-off (30); a resumed agent reads its
+  predecessor's transcript and the recorded proofs after the model check, states in one line what was done and does only the rest,
+  and validators write one verdict file per flow group as it finishes (31).
+- Money (D-038): the mission notify-and-ask line is 1350 USD-eq (was 950), milestone caps M4 200 and M5 140, orchestrator 30 per
+  milestone; stop-and-decide lines under R-055, never walls. At 1350 mission-to-date and at a usage-limit stop the orchestrator
+  reports the state and the figures and asks whether to proceed; the weekly allowance is the owner's to manage.
 - Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
   BACKLOG rows, deferred clauses, library notes) and commits it with the feature; the integrator merges the files (F-066).
 - Waits (owner item 6, F-056): the orchestrator starts the mission run as a background Script (`startInBackground`) and
@@ -187,6 +195,7 @@ Models per role (rule 19; `.factory/settings.json`; D-006):
 | Orchestrator | `claude-fable-5.1` |
 | Workers | `claude-sonnet-5-5` |
 | Validators (scrutiny, user testing) | `claude-opus-5-5` |
+| Subagents | `claude-sonnet-5-5` for mechanical work and flow runners, `claude-opus-5-5` for scrutiny reviewers and verdicts; pinned by the droid files in `.factory/droids/` (D-039, SPEC §2); the Task `complexity` tier routes nothing here |
 | Scratch missions (self-checks) | `claude-haiku-4-5-20251001`, effort `low` (F-042, SPEC §2) |
 
 Command: see README "Running it as a mission".
