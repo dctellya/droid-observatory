@@ -19,7 +19,7 @@ store, `observatory-cli replay` and `inspect`, view models, the attach watcher, 
 Leptos board with Details and agents views and a Tauri host that attaches to live sessions. The Leptos go/no-go at
 M1 is **go** (D-030). Dogfooding started at the M1 integration: `make app-dev` from this checkout lists this
 mission's own orchestrator session on the board (`reports/usage/m1.md`, session log entry 35). Host, intervention,
-gate and metrics follow in M4-M5 (SPEC §3); the mission stops at the M3 boundary until the owner decides (cost past the 950 USD-eq line, `reports/usage/m3.md`).
+gate and metrics follow in M4-M5 (SPEC §3); the mission continues into M4 under the 1350 USD-eq line (owner decision, 25-oct, D-038; the cost was past the old 950 line, `reports/usage/m3.md`).
 
 ## What it will show
 
