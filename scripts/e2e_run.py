@@ -159,11 +159,12 @@ def failures_of(tag):
 
 def write_junit(report_dir, outcome, rerun_path=None):
     """junit.xml = attempt 1 with each failed suite replaced by the rerun's suite of the same name (marked with the outcome
-    property); the root element names the outcome. The attempts stay as junit-attempt-1.xml and junit-attempt-2.xml.
+    property); the root element names the outcome. The attempts stay as attempt-1-junit.xml and attempt-2-junit.xml, named so that
+    the `junit-<cid>.xml` merge of wdio.conf.ts onComplete does not take them.
     Read as text: the junit reporter's output is flat (no nested suites) and the stdlib XML parser is not always loadable
     (Homebrew's python 3.14.7 here fails to import pyexpat)."""
     try:
-        with open(os.path.join(report_dir, "junit-attempt-1.xml")) as f:
+        with open(os.path.join(report_dir, "attempt-1-junit.xml")) as f:
             text = f.read()
     except OSError:
         return
@@ -178,10 +179,17 @@ def write_junit(report_dir, outcome, rerun_path=None):
         again = rerun.get(attribute(opening.group(0), "name"))
         if failures_of(opening.group(0)) == 0 or again is None:
             return suite
-        props = ('<properties><property name="outcome" value="%s"/><property name="first_attempt_failures" value="%d"/>'
-                 "</properties>" % (outcome, failures_of(opening.group(0))))
+        props = ('<property name="outcome" value="%s"/><property name="first_attempt_failures" value="%d"/>'
+                 % (outcome, failures_of(opening.group(0))))
         head = OPEN_TAG.match(again)
-        return again if head.group(1) else again[:head.end()] + props + again[head.end():]
+        if head.group(1):
+            return again
+        # The reporter writes its own <properties> block first in each suite; the outcome joins it.
+        own = re.match(r"\s*<properties>", again[head.end():])
+        if own:
+            at = head.end() + own.end()
+            return again[:at] + props + again[at:]
+        return again[:head.end()] + "<properties>" + props + "</properties>" + again[head.end():]
 
     text = SUITE.sub(replace, text)
     text = re.sub(r'(<testsuites\b[^>]*?)(\s+outcome="[^"]*")?(\s*/?>)', lambda m: '%s outcome="%s"%s' % (m.group(1), outcome, m.group(3)),
@@ -207,7 +215,7 @@ def run(report_dir, run_dir, cmd, cwd=None, env=None):
         first["failed_specs"] = failed
         capture_first_failure(report_dir, run_dir, env=dict(env, E2E_ATTEMPT="1"), final=True)
         record["first_failure"] = os.path.join(shown, FIRST_FAILURE)
-        for name, kept in (("junit.xml", "junit-attempt-1.xml"), (FAILED_SPECS, "failed-specs-attempt-1.txt")):
+        for name, kept in (("junit.xml", "attempt-1-junit.xml"), (FAILED_SPECS, "failed-specs-attempt-1.txt")):
             if os.path.exists(os.path.join(report_dir, name)):
                 shutil.move(os.path.join(report_dir, name), os.path.join(report_dir, kept))
         if not failed:
@@ -220,8 +228,8 @@ def run(report_dir, run_dir, cmd, cwd=None, env=None):
             attempts.append(second)
             record["rerun_seconds"] = second["seconds"]
             if os.path.exists(os.path.join(report_dir, "junit.xml")):
-                shutil.move(os.path.join(report_dir, "junit.xml"), os.path.join(report_dir, "junit-attempt-2.xml"))
-                rerun_path = os.path.join(report_dir, "junit-attempt-2.xml")
+                shutil.move(os.path.join(report_dir, "junit.xml"), os.path.join(report_dir, "attempt-2-junit.xml"))
+                rerun_path = os.path.join(report_dir, "attempt-2-junit.xml")
             if second["exit_code"] == 0:
                 record["outcome"] = "flaked"
                 record["flaked_specs"] = failed
@@ -234,7 +242,7 @@ def run(report_dir, run_dir, cmd, cwd=None, env=None):
     if record["outcome"] == "passed":
         junit = os.path.join(report_dir, "junit.xml")
         if os.path.exists(junit):
-            os.replace(junit, os.path.join(report_dir, "junit-attempt-1.xml"))
+            os.replace(junit, os.path.join(report_dir, "attempt-1-junit.xml"))
     write_junit(report_dir, record["outcome"], rerun_path)
     with open(os.path.join(report_dir, "record.json"), "w") as f:
         json.dump(record, f, indent=2)

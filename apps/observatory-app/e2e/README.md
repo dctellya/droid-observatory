@@ -65,7 +65,7 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 - `record.json` keeps both attempts (outcome, exit code, wall seconds, failed specs) and one outcome: `passed` (attempt 1
   green), `flaked` (attempt 1 red, the rerun green; exit code 0), `failed` (the rerun is red too; exit code of the rerun).
   `junit.xml` names it on its root element (`<testsuites outcome="flaked">`); a rerun-replaced suite carries the property
-  `outcome=flaked`; `junit-attempt-1.xml` and `junit-attempt-2.xml` are the two attempts as the reporter wrote them.
+  `outcome=flaked`; `attempt-1-junit.xml` and `attempt-2-junit.xml` are the two attempts as the reporter wrote them.
 - A flake is never counted as a pass: the gate row is green on `flaked`, and the usage report's testing section lists the
   run (`e2e flake:` line: the specs and the wall time of the rerun).
 - `E2E_INDUCE_FAILURE=panel make e2e` fails the first case of `specs/panel.e2e.ts` on the first attempt only (`lib/induce.ts`):
