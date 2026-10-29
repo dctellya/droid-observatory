@@ -8,7 +8,7 @@
       ]
     },
     {
-      "matcher": "Execute|Edit|Create|Grep|TodoWrite",
+      "matcher": "*",
       "hooks": [
         { "type": "command", "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/officer-decides.sh", "timeout": 10 }
       ]
