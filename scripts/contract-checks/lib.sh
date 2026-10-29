@@ -1,0 +1,55 @@
+# shellcheck shell=sh
+# Shared helpers of the contract checks (owner item 14b). Sourced by every check; a check prints exactly one line
+#   <check> <ok|FAIL|skip (<why>)> <assertion ids> [note]
+# and exits 0 (ok, skip) or 1 (FAIL). Reasons for a FAIL go to stderr, one line each.
+# CONTRACT_ROOT points a check at a scratch tree (the self-test plants violations there).
+set -u
+CHECK=$(basename "$0" .sh)
+ROOT=${CONTRACT_ROOT:-$(git rev-parse --show-toplevel 2> /dev/null || pwd)}
+cd "$ROOT" || exit 2
+FAILS=
+PENDING=
+fail() {
+  FAILS="$FAILS$*
+"
+}
+# A clause whose code has not landed yet is `pending`, not red: the check stays green and names what it waits for, so a
+# validator reading the gate record sees which assertions the gate does not cover yet.
+pending() { PENDING="${PENDING:+$PENDING; }$*"; }
+finish() { # finish <assertion ids>
+  if [ -n "$FAILS" ]; then
+    printf '%s FAIL %s\n' "$CHECK" "$1"
+    printf '%s' "$FAILS" | sed "s/^/  $CHECK: /" >&2
+    exit 1
+  fi
+  printf '%s ok %s%s\n' "$CHECK" "$1" "${PENDING:+ [pending: $PENDING]}"
+  exit 0
+}
+skip() { # skip <why> <assertion ids>
+  printf '%s skip (%s) %s\n' "$CHECK" "$1" "$2"
+  exit 0
+}
+need_tool() { # need_tool <tool>...: a missing tool is a FAIL, never a silent pass
+  for t in "$@"; do
+    command -v "$t" > /dev/null 2>&1 || {
+      fail "tool $t is not installed"
+      finish "${IDS:--}"
+    }
+  done
+}
+mission_ref() {
+  for r in mission/observatory-v1 origin/mission/observatory-v1; do
+    if git rev-parse --verify -q "$r^{commit}" > /dev/null 2>&1; then
+      echo "$r"
+      return 0
+    fi
+  done
+  return 1
+}
+# The GitHub token the gh checks use; without one they skip (no network in the sandbox, no secret in CI).
+need_network() { # need_network <assertion ids>
+  GH_TOKEN=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+  [ -n "$GH_TOKEN" ] || skip "no network" "$1"
+  export GH_TOKEN
+  REPO=${CONTRACT_REPO:-dctellya/droid-observatory}
+}

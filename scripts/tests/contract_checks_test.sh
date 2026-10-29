@@ -145,7 +145,7 @@ pins="$d/pins.txt"
 {
   printf '%s  fixtures/streams/a.jsonl\n' "$(shasum -a 256 "$d/fixtures/streams/a.jsonl" | cut -d' ' -f1)"
   printf '%s  fixtures/streams/a.children/c.jsonl\n' "$(shasum -a 256 "$d/fixtures/streams/a.children/c.jsonl" | cut -d' ' -f1)"
-  printf 'dir %s crates/observatory-core/src/mapping\n' "$(cd "$d" && find crates/observatory-core/src/mapping -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+  printf 'dir crates/observatory-core/src/mapping %s\n' "$(cd "$d" && find crates/observatory-core/src/mapping -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 } > "$pins"
 out=$(CONTRACT_ROOT="$d" CONTRACT_FROZEN="$pins" sh "$checks/g5-frozen-fixtures.sh" 2> /dev/null)
 rc=$?
