@@ -162,8 +162,8 @@ def failures_of(tag):
 
 
 def write_junit(report_dir, outcome, rerun_path=None):
-    """junit.xml = attempt 1 with each failed suite replaced by the rerun's suite of the same name (marked with the outcome
-    property); the root element names the outcome. The attempts stay as attempt-1-junit.xml and attempt-2-junit.xml, named so that
+    """junit.xml = attempt 1 with each failed suite replaced by the rerun's suite of the same name (marked with its own
+    rerun_outcome property, passed or failed, never the run's outcome); the root element names the outcome. The attempts stay as attempt-1-junit.xml and attempt-2-junit.xml, named so that
     the `junit-<cid>.xml` merge of wdio.conf.ts onComplete does not take them.
     Read as text: the junit reporter's output is flat (no nested suites) and the stdlib XML parser is not always loadable
     (Homebrew's python 3.14.7 here fails to import pyexpat)."""
@@ -183,12 +183,12 @@ def write_junit(report_dir, outcome, rerun_path=None):
         again = rerun.get(attribute(opening.group(0), "name"))
         if failures_of(opening.group(0)) == 0 or again is None:
             return suite
-        props = ('<property name="outcome" value="%s"/><property name="first_attempt_failures" value="%d"/>'
-                 % (outcome, failures_of(opening.group(0))))
         head = OPEN_TAG.match(again)
+        props = ('<property name="rerun_outcome" value="%s"/><property name="first_attempt_failures" value="%d"/>'
+                 % ("failed" if failures_of(head.group(0)) else "passed", failures_of(opening.group(0))))
         if head.group(1):
             return again
-        # The reporter writes its own <properties> block first in each suite; the outcome joins it.
+        # The reporter writes its own <properties> block first in each suite; the rerun outcome joins it.
         own = re.match(r"\s*<properties>", again[head.end():])
         if own:
             at = head.end() + own.end()
