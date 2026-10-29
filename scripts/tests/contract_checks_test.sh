@@ -328,6 +328,86 @@ expect_ok g9-make-targets "$d" "three targets exit 0"
 printf 'check-decisions-index:\n\t@true\ncheck-file-size:\n\t@false\ncheck-todos:\n\t@true\n' > "$d/Makefile"
 expect_red g9-make-targets "$d" "check-file-size exits non-zero"
 
+# --- G2: named cargo tests --------------------------------------------------------------------------------------
+
+# g2 <check> <root> <manifest> <log>: runs the check with a scratch manifest and test log.
+g2() {
+  out=$(CONTRACT_ROOT="$2" CONTRACT_TESTS_FILE="$3" CONTRACT_TESTLOG="$4" sh "$checks/$1.sh" 2> "$tmp/err")
+  rc=$?
+}
+g2_expect() { # g2_expect <ok|FAIL> <label>
+  case "$out" in
+    "g2-gate-tests $1 "*) if [ "$1" = ok ]; then [ "$rc" -eq 0 ] || fail "$2: exit $rc"; else [ "$rc" -eq 1 ] || fail "$2: exit $rc"; fi ;;
+    *) fail "$2: wanted '$1', got '$out' ($(cat "$tmp/err"))" ;;
+  esac
+}
+d=$(fresh g2a)
+put "$d" crates/x/src/lib.rs '#[cfg(test)]
+mod tests {
+    #[test]
+    fn first_test() {
+        let lane = "build";
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn later_test() {
+        assert!(true);
+    }
+}'
+tab=$(printf '\t')
+man="$d/g2.tsv"
+log="$d/test.tests"
+printf 'R x\nok tests::first_test\nok tests::later_test\n' > "$log"
+printf 'gate%sVAL-X-1%sfirst_test%syes%sbuild~~\\b1\\b\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect ok "landed test with its body patterns and an ok log line"
+case "$out" in *pending*) fail "g2: a fully covered group must not report pending: $out" ;; esac
+case "$out" in "g2-gate-tests ok VAL-X-1") ;; *) fail "g2: ids not listed on the line: $out" ;; esac
+printf 'gate%sVAL-X-2%sunwritten_test%sno%s-\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect ok "landed=no and absent is pending"
+case "$out" in *"[pending: unwritten_test]"*) ;; *) fail "g2: pending note missing: $out" ;; esac
+printf 'gate%sVAL-X-2%sfirst_test%sno%s-\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "landed=no but the test exists (flip the row)"
+printf 'gate%sVAL-X-2%sunwritten_test%syes%s-\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "landed=yes but the test is missing"
+printf 'gate%sVAL-X-1%sfirst_test%syes%sbuild~~\\b2\\b\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "body pattern absent from the test body"
+printf 'gate%sVAL-X-1%slater_test%syes%s\\b1\\b\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "a body pattern that only matches the neighbouring test must not pass"
+printf 'gate%sVAL-X-1%sfirst_test%syes%s-\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+printf 'R x\nignored tests::first_test\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "test ignored in the log"
+printf 'R x\nFAILED tests::first_test\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "test FAILED in the log"
+printf 'R x\nok tests::other_test\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "test absent from the log"
+printf 'gate%sVAL-X-3%starget:mapping%syes%s-\n' "$tab" "$tab" "$tab" "$tab" > "$man"
+printf 'R x\nok tests::a\nR mapping\nok m::one\nok m::two\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect ok "test binary all ok"
+printf 'R mapping\nok m::one\nFAILED m::two\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "test binary with a failure"
+printf 'R x\nok tests::a\n' > "$log"
+g2 g2-gate-tests "$d" "$man" "$log"
+g2_expect FAIL "test binary absent from the log"
+out=$(CONTRACT_ROOT="$d" CONTRACT_TESTS_FILE="$man" CONTRACT_TESTLOG=none CONTRACT_REQUIRE_TESTLOG=1 sh "$checks/g2-gate-tests.sh" 2> /dev/null)
+case "$out" in "g2-gate-tests ok "*"presence only"*) ;; *) fail "CONTRACT_TESTLOG=none must check presence only: $out" ;; esac
+out=$(CONTRACT_ROOT="$d" CONTRACT_TESTS_FILE="$man" CONTRACT_REQUIRE_TESTLOG=1 sh "$checks/g2-gate-tests.sh" 2> /dev/null)
+case "$out" in "g2-gate-tests FAIL "*) ;; *) fail "a missing log under CONTRACT_REQUIRE_TESTLOG=1 must FAIL: $out" ;; esac
+for c in g2-gate-tests g2-metric-tests g2-telemetry-tests; do
+  expect_ok "$c" '' "$c on the real tree"
+done
+
 # --- the runner --------------------------------------------------------------------------------------------------
 
 out=$(CONTRACT_SKIP="g5-fixture-secrets" sh "$checks/run-all.sh" 2> /dev/null)
