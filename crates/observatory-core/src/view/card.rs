@@ -179,7 +179,42 @@ pub fn card_lane(events_of_milestone: &[Event], template: &CycleTemplate) -> Lan
     tracker.lane(template)
 }
 
+/// The loop a fix cycle draws on a card: out of the final lane, back into the lane the workers
+/// belong to (FR-B4).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReturnArc {
+    pub from: LaneId,
+    pub to: LaneId,
+    pub from_name: String,
+    pub to_name: String,
+    /// Fix cycles the card has been through.
+    pub cycle: u32,
+    /// `cycle 1`.
+    pub label: String,
+    /// The card is still being fixed: no green check has come since the red one.
+    pub active: bool,
+}
+
 impl Card {
+    /// The arc of the card's fix cycles, from the template's final lane to the lane its workers
+    /// belong to; none before the first red check.
+    pub fn return_arc(&self, template: &CycleTemplate) -> Option<ReturnArc> {
+        if self.cycle == 0 {
+            return None;
+        }
+        let from = template.final_lane().clone();
+        let to = template.home(Role::Worker).clone();
+        Some(ReturnArc {
+            from_name: template.name_of(&from),
+            to_name: template.name_of(&to),
+            from,
+            to,
+            cycle: self.cycle,
+            label: format!("cycle {}", self.cycle),
+            active: self.track.fixing,
+        })
+    }
+
     pub(super) fn start(milestone: MilestoneId, first: &Event, template: &CycleTemplate) -> Self {
         let mut card = Self {
             milestone,

@@ -45,6 +45,18 @@ impl GateBadge {
         }
     }
 
+    /// The text of the badge on the Gate header.
+    pub fn label(self) -> &'static str {
+        match self {
+            GateBadge::Pending => "pending",
+            GateBadge::ChecksRunning => "checks running",
+            GateBadge::CiRed => "CI red",
+            GateBadge::CiGreen => "CI green",
+            GateBadge::Blocked => "blocked",
+            GateBadge::HumanMerged | GateBadge::PolicyMerged => "handed to CD",
+        }
+    }
+
     pub fn parse(text: &str) -> Option<GateBadge> {
         GateBadge::ALL
             .into_iter()
@@ -83,6 +95,9 @@ pub struct GateGroup {
     pub reviews: u64,
     #[serde(default)]
     pub attestation_ids: Vec<String>,
+    /// The merge commit, once `handed_to_cd` is observed.
+    #[serde(default)]
+    pub merge_sha: Option<String>,
 }
 
 /// Text of the Gate lane before a PR exists (PRD §8).
@@ -107,6 +122,57 @@ pub struct GatePlaceholder {
     pub gate_runs: u64,
     pub last_gate_command: Option<GateVerdict>,
     pub clocks: Vec<ClockLabel>,
+}
+
+/// Length of the merge sha the badge shows.
+const SHORT_SHA_LEN: usize = 7;
+const MERGE_LABEL: &str = "Merge";
+
+fn short_sha(sha: &str) -> &str {
+    sha.get(..SHORT_SHA_LEN).unwrap_or(sha)
+}
+
+/// A required check and what the poll reads for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GateCheckRow {
+    pub name: String,
+    /// The `checks.conclusion` text (`passed`, `failed`, `running`, ...).
+    pub conclusion: String,
+}
+
+/// The Merge button: offered only when a person decides and every required check is green.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergeOffer {
+    pub pr_number: u64,
+    pub label: String,
+}
+
+/// One clock the template names for the final lane, and what the Gate header says about it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GateClockLine {
+    pub label: String,
+    pub note: String,
+}
+
+/// The Gate group as the lane draws it (FR-B3): checks, reviews, ruleset and attestations, each
+/// with its text, the merge offer, the `handed to CD` reading and the two clocks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GateGroupView {
+    pub badge: GateBadge,
+    pub badge_text: String,
+    pub pr_number: Option<u64>,
+    pub checks: Vec<GateCheckRow>,
+    pub reviews: u64,
+    pub reviews_text: String,
+    /// The ruleset's name, when a ruleset decides who merges.
+    pub ruleset: Option<String>,
+    pub ruleset_text: String,
+    pub attestations: Vec<String>,
+    pub attestations_text: String,
+    pub merge: Option<MergeOffer>,
+    /// Set once the merge is observed.
+    pub handed_to_cd: Option<String>,
+    pub clocks: Vec<GateClockLine>,
 }
 
 /// The mission branch for a mission name (`[mission].branch_pattern`).
@@ -140,6 +206,98 @@ impl GateGroup {
                 .iter()
                 .all(|check| check.conclusion == CheckConclusion::Passed);
         self
+    }
+
+    /// The header of `self` (read from the events a scrubber keeps) with what the last poll read
+    /// around the merge. Merge stays withheld unless these events are green too.
+    #[must_use]
+    pub fn with_polled(mut self, polled: &GateGroup) -> Self {
+        self.decided_by.clone_from(&polled.decided_by);
+        self.requires_human = polled.requires_human;
+        self.required_checks.clone_from(&polled.required_checks);
+        self.reviews = polled.reviews;
+        if self.attestation_ids.is_empty() {
+            self.attestation_ids.clone_from(&polled.attestation_ids);
+        }
+        self.merge_offered = polled.merge_offered && self.badge == GateBadge::CiGreen;
+        self
+    }
+
+    /// What the Gate lane draws for this header: the group, the merge offer, the
+    /// `handed to CD` reading and the clocks the template names for its final lane.
+    pub fn view(&self, template: &CycleTemplate) -> GateGroupView {
+        let merged_by = match self.badge {
+            GateBadge::HumanMerged => Some("human"),
+            GateBadge::PolicyMerged => Some("policy"),
+            _ => None,
+        };
+        let handed_to_cd = merged_by.zip(self.pr_number).map(|(by, pr)| {
+            let sha = self.merge_sha.as_deref().map_or("", short_sha);
+            let attestations = if self.attestation_ids.is_empty() {
+                "none".to_owned()
+            } else {
+                self.attestation_ids.join(", ")
+            };
+            format!("handed to CD: {sha} · PR #{pr} · attestations {attestations} · merged by {by}")
+        });
+        let merge = self
+            .merge_offered
+            .then_some(self.pr_number)
+            .flatten()
+            .map(|pr_number| MergeOffer {
+                pr_number,
+                label: MERGE_LABEL.to_owned(),
+            });
+        let (ruleset, ruleset_text) = match &self.decided_by {
+            Some(RuleAttribution::Ruleset { name, .. }) => {
+                (Some(name.clone()), format!("ruleset: {name}"))
+            }
+            Some(RuleAttribution::ConfigOverride(text)) => {
+                (None, format!("decided by: [github].merge_policy = {text}"))
+            }
+            Some(RuleAttribution::BranchProtection) => {
+                (None, "decided by: branch protection".to_owned())
+            }
+            Some(RuleAttribution::NoRule) => (None, "decided by: no rule".to_owned()),
+            None => (None, "ruleset: not read yet".to_owned()),
+        };
+        let sha = self.merge_sha.as_deref().map(short_sha);
+        let clocks = template
+            .lane(template.final_lane())
+            .into_iter()
+            .flat_map(|lane| &lane.clocks)
+            .filter_map(|id| template.clocks.iter().find(|clock| clock.id == *id))
+            .map(|clock| GateClockLine {
+                label: clock.label.clone(),
+                note: match (&clock.end, sha) {
+                    (Some(end), _) => format!("closed at {end}"),
+                    (None, Some(sha)) => format!("starts at {sha}; not computed here"),
+                    (None, None) => "starts at the merge sha; not computed here".to_owned(),
+                },
+            })
+            .collect();
+        GateGroupView {
+            badge: self.badge,
+            badge_text: self.badge.label().to_owned(),
+            pr_number: self.pr_number,
+            checks: self
+                .required_checks
+                .iter()
+                .map(|check| GateCheckRow {
+                    name: check.name.clone(),
+                    conclusion: check.conclusion.wire().to_owned(),
+                })
+                .collect(),
+            reviews: self.reviews,
+            reviews_text: format!("reviews: {}", self.reviews),
+            ruleset,
+            ruleset_text,
+            attestations: self.attestation_ids.clone(),
+            attestations_text: format!("attestations: {}", self.attestation_ids.len()),
+            merge,
+            handed_to_cd,
+            clocks,
+        }
     }
 
     /// The placeholder, while the gate is pending and no PR number is known.
@@ -181,7 +339,13 @@ impl GateGroup {
             EventKind::CheckRequiredMissing | EventKind::RulesetBlocked => {
                 self.badge = GateBadge::Blocked;
             }
-            EventKind::HandedToCd { pr_number, .. } => {
+            EventKind::HandedToCd {
+                merge_sha,
+                pr_number,
+                attestation_ids,
+            } => {
+                self.merge_sha = Some(merge_sha.clone());
+                self.attestation_ids.clone_from(attestation_ids);
                 self.badge = if event.role == Role::Human {
                     GateBadge::HumanMerged
                 } else {
