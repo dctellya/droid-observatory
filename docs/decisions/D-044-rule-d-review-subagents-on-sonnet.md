@@ -27,8 +27,10 @@ subagents 1.07; round 3 (`f07cd47d`) 1.28 + 2 Sonnet 0.53 against round 1 35.38;
 against M3 round 2 16.10, 46 min.
 
 **Inverse:** subagents go back to Opus for the next round if the Sonnet pass misses a defect that the Opus synthesis then finds.
-The integrator did not re-read the validators' syntheses for such a miss; the M4 user-testing synthesis
-(`validation/m4/user-testing/synthesis.json`) is where one would be recorded, and the first M5 validator round reads it.
+Read from `validation/m4/scrutiny/synthesis*.json` at the M4 boundary: round 1 (Opus subagents, before the rule) found 2 blocking
+issues in 2 features (`m4-contract-checks-gate`, `m4-git-source-core`; M3 round 1: 6 in 4); round 2 (Sonnet subagents) passed with Opus
+re-reads of the claims the Sonnet pass marked failed, unsure or "for you to judge"; round 3 passed and the synthesis states "No Sonnet verdict
+was overturned". No miss that would trigger the inverse is recorded; the first M5 validator round reads the same files again.
 
 ## Alternatives
 
