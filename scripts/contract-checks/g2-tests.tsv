@@ -3,8 +3,8 @@
 # landed=no: the test must not exist yet (the check reports it pending); the commit that adds it flips the row to yes,
 # and from then on the test must exist, match its body patterns and read ok in the gate's test log.
 gate	VAL-GATE-006	pr_for_mission_branch_is_detected_within_poll_interval	yes	-
-gate	VAL-GATE-006 VAL-GATE-019	red_required_check_opens_a_fix_cycle_on_the_affected_card	no	build~~\b1\b
-gate	VAL-GATE-006	fix_cycle_keeps_the_same_pr	no	-
+gate	VAL-GATE-006 VAL-GATE-019	red_required_check_opens_a_fix_cycle_on_the_affected_card	yes	build~~\b1\b
+gate	VAL-GATE-006	fix_cycle_keeps_the_same_pr	yes	-
 gate	VAL-GATE-006 VAL-GATE-022	merge_button_shows_only_when_policy_is_human_and_checks_are_green	no	human~~green
 gate	VAL-GATE-006	rule_attribution_names_the_ruleset	no	-
 gate	VAL-GATE-006	policy_merged_detected_without_human_action	no	-

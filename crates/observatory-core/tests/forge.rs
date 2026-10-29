@@ -1065,3 +1065,55 @@ fn the_affected_card_is_the_milestone_integrated_last() {
         "the last merge that names a milestone"
     );
 }
+
+#[test]
+fn a_failed_commit_status_is_a_check_failed_event_and_a_pending_one_is_not() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, r#"{"workflow_runs":[]}"#);
+    replay.answer(
+        &format!("/repos/{REPO}/commits/{HEAD_SHA}/status"),
+        200,
+        r#"{"state":"failure","statuses":[
+            {"context":"ci/unit","state":"failure","target_url":null,"updated_at":"2026-10-29T09:57:00Z"},
+            {"context":"ci/slow","state":"pending","target_url":"https://ci.example.invalid/3"}]}"#,
+    );
+    let mut source = gate_source(&replay);
+    let now = Timestamp::parse("2026-10-29T10:00:00Z").unwrap();
+    let poll = source.poll(now).unwrap();
+
+    let failed: Vec<_> = poll
+        .events
+        .iter()
+        .filter(|event| matches!(event.kind, EventKind::CheckFailed | EventKind::CheckPassed))
+        .collect();
+    let [failed] = failed.as_slice() else {
+        panic!("only the failed status is an event: {:?}", poll.events);
+    };
+    assert_eq!(failed.kind, EventKind::CheckFailed);
+    assert_eq!(
+        failed.id.to_string(),
+        format!("github:check:24:{HEAD_SHA}:ci/unit:failed")
+    );
+    assert_eq!(failed.at, Timestamp::parse("2026-10-29T09:57:00Z").unwrap());
+    assert!(
+        matches!(&failed.source, SourcePtr::GitHub { url } if url.ends_with(&format!("/commits/{HEAD_SHA}/status"))),
+        "a status without a target URL points at the status API: {:?}",
+        failed.source
+    );
+    let [open] = poll.windows.as_slice() else {
+        panic!("one window opens: {:?}", poll.windows);
+    };
+    assert!(matches!(
+        open,
+        observatory_core::ingest::forge::WindowChange::Open { check, .. } if check == "ci/unit"
+    ));
+
+    // a status still running has no time of its own and makes no event
+    let slow = poll
+        .checks
+        .iter()
+        .find(|check| check.name == "ci/slow")
+        .unwrap();
+    assert_eq!(slow.at, None);
+    assert_eq!(slow.conclusion, CheckConclusion::Running);
+}
