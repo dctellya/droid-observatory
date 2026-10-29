@@ -75,6 +75,120 @@ class ContextRewrites(unittest.TestCase):
         self.assertEqual(table(text, "Lead context rewrites")[1][0]["Time"], "none")
 
 
+LINE = "orchestrator turns per feature boundary: "
+
+
+def completed(s, ts, feature="m9-x", kind="worker_completed"):
+    s.progress(ts, kind, workerSessionId="ffffffff-2222-4222-8222-222222222222", featureId=feature)
+
+
+def flat_turns(s, cost_usd_each=(1, 1, 1, 1, 1, 1)):
+    """Six lead turns without cache reads (so no context and no rewrite); 20 000 output tokens cost 1.00 USD-eq."""
+    for hhmm, c in zip(("00:10:00", "00:20:00", "00:30:00", "00:40:00", "00:50:00", "01:00:00"), cost_usd_each):
+        s.turn(at(hhmm), MISSION, FABLE, o=20_000 * c)
+
+
+class BoundaryTurns(unittest.TestCase):
+    def run_with(self, scenario):
+        s = Scratch()
+        try:
+            scenario(s)
+            return s.run().text
+        finally:
+            s.close()
+
+    def test_the_line_divides_the_lead_turns_by_the_worker_hand_offs_of_the_window(self):
+        def scenario(s):
+            flat_turns(s)
+            completed(s, at("00:15:00"))
+            completed(s, at("00:45:00"))
+
+        text = self.run_with(scenario)
+        self.assertIn(LINE + "6 / 2 = 3.0 (target 3)", text)
+
+    def test_the_line_sits_in_the_lead_context_rewrites_section(self):
+        def scenario(s):
+            flat_turns(s)
+            completed(s, at("00:15:00"))
+
+        text = self.run_with(scenario)
+        section = text.split("### Lead context rewrites per milestone")[1].split("\n### ")[0]
+        self.assertIn(LINE + "6 / 1 = 6.0 (target 3)", section)
+
+    def test_without_a_compaction_marker_the_one_line_stands_alone(self):
+        def scenario(s):
+            flat_turns(s)
+            completed(s, at("00:15:00"))
+            completed(s, at("00:45:00"))
+
+        self.assertNotIn("before compaction:", self.run_with(scenario))
+
+    def test_only_completed_hand_offs_inside_the_window_count(self):
+        def scenario(s):
+            flat_turns(s)
+            completed(s, at("00:15:00"))
+            completed(s, at("00:25:00"), kind="worker_failed")
+            completed(s, "2026-10-25T23:00:00.000Z")
+            completed(s, "2026-10-26T07:00:00.000Z")
+
+        self.assertIn(LINE + "6 / 1 = 6.0 (target 3)", self.run_with(scenario))
+
+    def test_without_a_hand_off_the_ratio_is_not_available(self):
+        def scenario(s):
+            flat_turns(s)
+
+        text = self.run_with(scenario)
+        self.assertIn(LINE + "6 / 0 = n/a (target 3)", text)
+
+    def test_a_mission_resumed_line_splits_the_ratio_and_the_cost_per_turn(self):
+        def scenario(s):
+            flat_turns(s, (2, 2, 2, 1, 1, 1))
+            completed(s, at("00:05:00"))
+            completed(s, at("00:15:00"))
+            s.progress(at("00:35:00"), "mission_resumed")
+            completed(s, at("00:45:00"))
+            completed(s, at("00:55:00"))
+            completed(s, at("01:05:00"))
+
+        text = self.run_with(scenario)
+        self.assertIn(LINE + "6 / 5 = 1.2 (target 3)", text)
+        self.assertIn("before compaction: 3 turns / 2 boundaries = 1.5, 2.00 USD-eq per turn; "
+                      "after: 3 turns / 3 boundaries = 1.0, 1.00 USD-eq per turn "
+                      "(marker: mission_resumed %s)" % at("00:35:00"), text)
+
+    def test_a_lead_context_rewrite_is_a_marker_too(self):
+        def scenario(s):
+            lead_scenario(s)
+            completed(s, at("00:15:00"))
+            completed(s, at("00:35:00"))
+            completed(s, at("00:45:00"))
+
+        text = self.run_with(scenario)
+        self.assertIn("before compaction: 2 turns / 1 boundaries = 2.0, 0.04 USD-eq per turn; "
+                      "after: 4 turns / 2 boundaries = 2.0, 2.36 USD-eq per turn "
+                      "(marker: lead context rewrite %s)" % at("00:30:00"), text)
+
+    def test_the_earliest_marker_splits(self):
+        def scenario(s):
+            lead_scenario(s)
+            completed(s, at("00:15:00"))
+            s.progress(at("00:25:00"), "mission_resumed")
+
+        text = self.run_with(scenario)
+        self.assertIn("before compaction: 2 turns / 1 boundaries = 2.0", text)
+        self.assertIn("(marker: mission_resumed %s)" % at("00:25:00"), text)
+
+    def test_a_side_without_a_hand_off_prints_not_available(self):
+        def scenario(s):
+            flat_turns(s)
+            completed(s, at("00:45:00"))
+            s.progress(at("00:35:00"), "mission_resumed")
+
+        text = self.run_with(scenario)
+        self.assertIn("before compaction: 3 turns / 0 boundaries = n/a, 1.00 USD-eq per turn; "
+                      "after: 3 turns / 1 boundaries = 3.0, 1.00 USD-eq per turn", text)
+
+
 def allowance_scenario(s, next_features):
     s.turn(at("00:10:00"), MISSION, FABLE, i=1_000_000)
     s.features(next_features)
