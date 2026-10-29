@@ -6,7 +6,7 @@ ids="VAL-PROC-009"
 need_network "$ids"
 need_tool jq
 sha=$(git rev-parse HEAD 2> /dev/null)
-run=$(gh run list -R "$REPO" --commit "$sha" --json databaseId,conclusion,status --jq '.[0]' 2> /dev/null)
+run=$(gh run list -R "$REPO" --workflow mission-branch.yml --event push --commit "$sha" --json databaseId,conclusion,status --jq '.[0]' 2> /dev/null)
 case "$run" in '' | null) skip "no CI run for $(printf '%s' "$sha" | cut -c1-7)" "$ids" ;; esac
 [ "$(printf '%s' "$run" | jq -r .status)" = completed ] || skip "CI run in progress" "$ids"
 [ "$(printf '%s' "$run" | jq -r .conclusion)" = success ] || fail "the run of $sha concluded '$(printf '%s' "$run" | jq -r .conclusion)'"

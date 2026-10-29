@@ -4,6 +4,6 @@
 ids="VAL-PROC-006"
 [ "$(git rev-parse --abbrev-ref HEAD 2> /dev/null)" = "wt/m4" ] || skip "not on wt/m4" "$ids"
 base=$(range_base) || skip "no mission branch ref" "$ids"
-stat=$(git diff --stat "$base" HEAD -- crates/observatory-core/src/metrics)
+stat=$(git diff --stat "$base" "$(head_ref)" -- crates/observatory-core/src/metrics)
 [ -z "$stat" ] || fail "metrics sources changed: $stat"
 finish "$ids"

@@ -7,7 +7,7 @@ ids="VAL-PROC-008"
 base=$(range_base) || skip "no mission branch ref" "$ids"
 bad=$(mktemp "${TMPDIR:-/tmp}/contract-commit-format.XXXXXX")
 bot='factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>'
-git log --format='%x01%h %s%n%(trailers:key=Co-authored-by,valueonly)' "$base..HEAD" 2> /dev/null |
+git log --format='%x01%h %s%n%(trailers:key=Co-authored-by,valueonly)' "$base..$(head_ref)" 2> /dev/null |
   awk -v bot="$bot" 'BEGIN { RS = "\001" } NR > 1 {
     split($0, lines, "\n"); head = lines[1]; sha = substr(head, 1, 7); subj = substr(head, 9)
     if (length(subj) > 72) print sha " subject is " length(subj) " characters"

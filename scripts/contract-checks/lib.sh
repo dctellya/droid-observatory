@@ -57,14 +57,24 @@ need_network() { # need_network <assertion ids>
 excepted() { # excepted <sha7>
   grep -q "^$CHECK $1 " "$(dirname "$0")/exceptions.txt" 2> /dev/null
 }
-# The commits a branch adds: from the merge base with the mission branch, or from the pinned baseline when HEAD is the
-# mission branch itself.
+# The commit a check judges. GitHub checks out a pull_request as a synthetic merge commit (refs/pull/N/merge) that
+# carries no trailer and hides the branch behind it; the branch is its second parent.
+head_ref() {
+  if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && git rev-parse --verify -q 'HEAD^2' > /dev/null 2>&1; then
+    git rev-parse 'HEAD^2'
+  else
+    git rev-parse HEAD
+  fi
+}
+# The commits a branch adds: from the merge base with the mission branch, or from the pinned baseline when the head is
+# the mission branch itself.
 range_base() {
   m=$(mission_ref) || return 1
-  b=$(git merge-base "$m" HEAD 2> /dev/null) || return 1
-  if [ "$b" = "$(git rev-parse HEAD)" ]; then
+  h=$(head_ref)
+  b=$(git merge-base "$m" "$h" 2> /dev/null) || return 1
+  if [ "$b" = "$h" ]; then
     pin=$(cat "$(dirname "$0")/git-baseline.txt" 2> /dev/null)
-    if [ -n "$pin" ] && git merge-base --is-ancestor "$pin" HEAD 2> /dev/null; then
+    if [ -n "$pin" ] && git merge-base --is-ancestor "$pin" "$h" 2> /dev/null; then
       b=$pin
     fi
   fi
