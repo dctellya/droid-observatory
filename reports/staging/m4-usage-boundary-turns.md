@@ -58,3 +58,11 @@ None.
 - Inner loop (rule 23), no cargo involved: `python3 scripts/tests/usage_rewrites_test.py` 21 tests OK, 1.7 s; the other four usage python
   tests (`usage_test` 82, `usage_idle_test` 20, `usage_testing_test` 7, `usage_e2e_test` 11) OK, 8.4 s together. Red run
   `/tmp/red-boundary.txt`: exit 1, `FAILED (failures=8)` of 9 (the ninth, no second line without a marker, passes before the code).
+- Gate (rule 28, item 17b; last implementation worker before m5-integrate-m4): one full `make check` on the final tree,
+  `make check > /tmp/make-check-m4-usage.txt 2>&1`, exit 0, real 5m47.367s; record `reports/gate/d0c73e0b40618412ac59d97a5b1d7e37bd997792/check.json`
+  (code tree `d0c73e0b...`, `exit_code` 0, 341.718 s), with `lint.json` (8.191 s) and `test.json` (209.225 s) beside it. The first run on
+  the tree before d344112 failed `lint` (exit 2, 2m42.391s): `apps/observatory-app/src-tauri/src/host.rs:617` `fn store` had a cognitive
+  complexity of 27 against the limit of 25, introduced by 92b18dc (m4-wire-dedupe-paused, whose inner loop did not run the
+  `-W clippy::cognitive_complexity` clippy of `make lint`). d344112 extracts the echoed-pause retraction into an associated function
+  (behaviour and log lines unchanged, the same split as 995fa86); `cargo clippy -p observatory-app --all-targets -- -D warnings -W
+  clippy::cognitive_complexity` exit 0 and `cargo test -p observatory-app` exit 0 (19.067 s) before the rerun.
