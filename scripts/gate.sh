@@ -220,4 +220,15 @@ jq -n --arg name "$name" --arg tree "$tree" --arg code_tree "$code_tree" --arg f
   '{name: $name, tree: $tree, code_tree: $code_tree, fingerprint: $fingerprint, tool: $tool, command: $command, exit_code: $exit_code,
     summary: $summary, seconds: $seconds, started_at: $started_at, finished_at: $finished_at,
     session: $session, session_source: $session_source}' > "$file.tmp" && mv "$file.tmp" "$file"
+# A `test` record keeps the name and verdict of every test beside it (`R <binary>`, then `<status> <name>`), which the
+# contract checks read to prove named tests ran and passed; the record's summary holds only the counts.
+if [ "$name" = test ]; then
+  LC_ALL=C awk '
+    /^ +Running / { n = $NF; sub(/^\(.*\//, "", n); sub(/\)$/, "", n); sub(/-[0-9a-f]+$/, "", n); print "R " n; next }
+    /^ +Doc-tests / { print "R doc-" $2; next }
+    /^test .* \.\.\. / {
+      i = index($0, " ... "); split(substr($0, i + 5), a, ",")
+      if (a[1] == "ok" || a[1] == "FAILED" || a[1] == "ignored") print a[1] " " substr($0, 6, i - 6)
+    }' "$out" > "$dir/$name.tests"
+fi
 exit "$code"
