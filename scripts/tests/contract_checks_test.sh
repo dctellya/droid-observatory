@@ -550,6 +550,59 @@ gh_check g7-demo-red-pr ok "exactly one PR for demo/red-1"
 gh_rule 1 'pr list' '2'
 gh_check g7-demo-red-pr FAIL "two PRs for demo/red-1"
 
+# --- G3: CLI output rules over the metrics CSV and JSON ------------------------------------------------------------
+
+header='scope,id,name,cycle_s,first_pass_active_s,rework_s,waste_waiting_human_question_s,waste_waiting_human_permission_s,waste_waiting_merge_s,waste_waiting_validation_s,waste_rework_s,waste_retry_failure_s,waste_idle_queued_s,waste_idle_unscheduled_s,rework_windows,throttled_minutes,tokens_input,tokens_output,tokens_cache_read,tokens_cache_write,cost_usd,price_table'
+good_row1='feature,F-1,"Name, with comma",100,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,1.25,2026-10-22'
+good_row2='milestone,m0,m0,900,500,400,1,2,3,4,5,6,7,8,2,755,10,20,30,40,12.50,2026-10-22'
+good_json='{"overhead":{"seconds":5},"rows":[{"scope":"feature","id":"F-1","cycle_s":100,"first_pass_active_s":60,"rework_s":40,"rework_windows":1,"throttled_minutes":0,"tokens_input":10,"tokens_output":20,"tokens_cache_read":30,"tokens_cache_write":40,"cost_usd":1.25,"price_table":"2026-10-22"},{"scope":"milestone","id":"m0","cycle_s":900,"first_pass_active_s":500,"rework_s":400,"rework_windows":2,"throttled_minutes":755,"tokens_input":10,"tokens_output":20,"tokens_cache_read":30,"tokens_cache_write":40,"cost_usd":12.5,"price_table":"2026-10-22"}]}'
+# m3 <csv text> <json text>: runs g3-metrics-contract on scratch output files.
+m3() {
+  printf '%s\n' "$1" > "$tmp/m.csv"
+  printf '%s\n' "$2" > "$tmp/m.json"
+  out=$(CONTRACT_METRICS_CSV="$tmp/m.csv" CONTRACT_METRICS_JSON="$tmp/m.json" sh "$checks/g3-metrics-contract.sh" 2> "$tmp/err")
+  rc=$?
+}
+m3_expect() {
+  case "$out" in
+    "g3-metrics-contract $1 "*) if [ "$1" = ok ]; then [ "$rc" -eq 0 ] || fail "$2: exit $rc"; else [ "$rc" -eq 1 ] || fail "$2: exit $rc"; fi ;;
+    *) fail "$2: wanted '$1', got '$out' ($(cat "$tmp/err"))" ;;
+  esac
+}
+nl='
+'
+m3 "$header$nl$good_row1$nl$good_row2" "$good_json"
+m3_expect ok "a conforming CSV and JSON"
+case "$out" in *pending*) fail "g3: conforming output must not report pending: $out" ;; esac
+m3 "$(printf '%s' "$header" | sed 's/,throttled_minutes//')$nl$good_row1" "$good_json"
+m3_expect FAIL "header without throttled_minutes (21 columns)"
+m3 "$(printf '%s' "$header" | sed 's/rework_windows,throttled_minutes/throttled_minutes,rework_windows/')$nl$good_row1" "$good_json"
+m3_expect FAIL "reordered columns"
+m3 "$header${nl}feature,F-1,n,10.5,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,1.25,2026-10-22" "$good_json"
+m3_expect FAIL "a non-integer _s column"
+m3 "$header${nl}feature,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,1.25,2026-10-23" "$good_json"
+m3_expect FAIL "price_table other than 2026-10-22"
+m3 "$header${nl}run,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,1.25,2026-10-22" "$good_json"
+m3_expect FAIL "scope outside feature and milestone"
+m3 "$header${nl}feature,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,x,10,20,30,40,1.25,2026-10-22" "$good_json"
+m3_expect FAIL "a non-integer throttled_minutes"
+m3 "$header${nl}feature,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,0,10,2.5,30,40,1.25,2026-10-22" "$good_json"
+m3_expect FAIL "a non-integer tokens column"
+m3 "$header${nl}feature,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,abc,2026-10-22" "$good_json"
+m3_expect FAIL "a non-decimal cost_usd"
+m3 "$header${nl}feature,F-1,n,100,60,40,1,2,3,4,5,6,7,8,1,0,10,20,30,40,1.25" "$good_json"
+m3_expect FAIL "a row with 21 fields"
+m3 "$header$nl$good_row1$nl$good_row2" "$(printf '%s' "$good_json" | sed 's/"cycle_s":100/"cycle_s":101/')"
+m3_expect FAIL "JSON cycle_s disagrees with the CSV"
+m3 "$header$nl$good_row1$nl$good_row2" "$(printf '%s' "$good_json" | sed 's/"id":"m0"/"id":"m9"/')"
+m3_expect FAIL "a CSV row without a JSON counterpart"
+m3 "$header$nl$good_row1$nl$good_row2" "$(printf '%s' "$good_json" | sed 's/"overhead":{"seconds":5}/"overhead":null/')"
+m3_expect FAIL "overhead line null under the default config"
+m3 "$header$nl$good_row1$nl$good_row2" 'not json'
+m3_expect FAIL "JSON that does not parse"
+expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command not landed: pending)"
+case "$out" in *pending*) ;; *) fail "g3: the real tree has no metrics command yet, wanted pending: $out" ;; esac
+
 # --- the runner --------------------------------------------------------------------------------------------------
 
 out=$(CONTRACT_SKIP="g5-fixture-secrets" sh "$checks/run-all.sh" 2> /dev/null)
