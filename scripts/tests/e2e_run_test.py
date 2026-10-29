@@ -75,7 +75,9 @@ class Harness:
 
     def __init__(self, fail_attempts=""):
         self.tmp = tempfile.TemporaryDirectory()
-        self.report = os.path.join(self.tmp.name, "reports", "e2e", "2026-10-29")
+        self.e2e = os.path.join(self.tmp.name, "reports", "e2e")
+        self.report = os.path.join(self.e2e, "2026-10-29", "153012")
+        self.latest = os.path.join(self.e2e, "latest")
         self.run_dir = os.path.join(self.tmp.name, "run")
         self.log = os.path.join(self.tmp.name, "stub-calls.jsonl")
         self.stub = os.path.join(self.tmp.name, "stub.py")
@@ -86,8 +88,11 @@ class Harness:
                         FORGE_LIVE="1")
         self.proc = None
 
-    def run(self):
-        self.proc = subprocess.run([sys.executable, SCRIPT, "run", "--report-dir", self.report, "--run-dir", self.run_dir, "--",
+    def run(self, report=None, latest=False):
+        report = report or self.report
+        os.makedirs(report, exist_ok=True)
+        extra = ["--latest", self.latest] if latest else []
+        self.proc = subprocess.run([sys.executable, SCRIPT, "run", "--report-dir", report, "--run-dir", self.run_dir, *extra, "--",
                                     sys.executable, self.stub], capture_output=True, text=True, env=self.env)
         return self.proc
 
@@ -273,6 +278,47 @@ class RerunPolicy(unittest.TestCase):
         self.assertTrue(os.path.isdir(os.path.join(h.report, "first-failure")))
 
 
+class RunDirectories(unittest.TestCase):
+    """Each `make e2e` run owns reports/e2e/<date>/<HHMMSS>/; nothing a run does touches another run's directory."""
+
+    def setUp(self):
+        self.h = Harness(fail_attempts="1")
+        self.addCleanup(self.h.close)
+        self.first = os.path.join(self.h.e2e, "2026-10-29", "153012")
+        self.second = os.path.join(self.h.e2e, "2026-10-29", "161500")
+        self.h.run(self.first, latest=True)
+        self.first_files = sorted(os.path.relpath(os.path.join(r, n), self.first) for r, _, fs in os.walk(self.first) for n in fs)
+        self.first_record = read(os.path.join(self.first, "record.json"))
+
+    def test_a_second_run_on_the_same_day_leaves_the_first_runs_directory_whole(self):
+        self.h.env["STUB_FAIL_ATTEMPTS"] = ""
+        self.assertEqual(self.h.run(self.second, latest=True).returncode, 0)
+        after = sorted(os.path.relpath(os.path.join(r, n), self.first) for r, _, fs in os.walk(self.first) for n in fs)
+        self.assertEqual(after, self.first_files)
+        self.assertEqual(read(os.path.join(self.first, "record.json")), self.first_record)
+        self.assertEqual(json.loads(self.first_record)["outcome"], "flaked")
+        self.assertTrue(os.path.isfile(os.path.join(self.first, "first-failure", "environment.json")))
+        self.assertEqual(os.listdir(os.path.join(self.h.e2e, "2026-10-29")).count("161500"), 1)
+
+    def test_the_record_names_the_run_by_its_date_and_stamp(self):
+        self.assertEqual(json.loads(self.first_record)["run"], "2026-10-29/153012")
+
+    def test_the_latest_link_is_a_relative_symlink_to_the_newest_run(self):
+        self.assertTrue(os.path.islink(self.h.latest))
+        self.assertEqual(os.readlink(self.h.latest), os.path.join("2026-10-29", "153012"))
+        self.h.env["STUB_FAIL_ATTEMPTS"] = ""
+        self.h.run(self.second, latest=True)
+        self.assertEqual(os.readlink(self.h.latest), os.path.join("2026-10-29", "161500"))
+        self.assertEqual(json.loads(read(os.path.join(self.h.latest, "record.json")))["outcome"], "passed")
+
+    def test_a_run_never_writes_into_a_directory_that_already_holds_a_record(self):
+        calls_before = len(self.h.calls())
+        proc = self.h.run(self.first, latest=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(len(self.h.calls()), calls_before, "the suite ran into another run's directory")
+        self.assertEqual(read(os.path.join(self.first, "record.json")), self.first_record)
+
+
 class Wiring(unittest.TestCase):
     def text(self, *path):
         with open(os.path.join(REPO, *path)) as f:
@@ -282,6 +328,15 @@ class Wiring(unittest.TestCase):
         target = re.search(r"^e2e:.*?(?=^clean:)", self.text("Makefile"), re.M | re.S).group(0)
         self.assertIn("scripts/e2e_run.py run", target)
         self.assertIn("wdio run wdio.conf.ts", target)
+
+    def test_make_e2e_stamps_the_run_directory_and_deletes_no_report_directory(self):
+        target = re.search(r"^e2e:.*?(?=^clean:)", self.text("Makefile"), re.M | re.S).group(0)
+        self.assertRegex(target, r'--report-dir "reports/e2e/\$\(E2E_DATE\)/\$\(E2E_STAMP\)"')
+        self.assertIn('--latest "reports/e2e/latest"', target)
+        self.assertNotRegex(target, r"rm -rf[^\n]*reports/e2e")
+
+    def test_the_latest_link_is_git_ignored(self):
+        self.assertIn("reports/e2e/latest", self.text(".gitignore").split())
 
     def test_the_wdio_hooks_record_the_failed_spec_and_call_the_capture(self):
         conf = self.text("apps", "observatory-app", "e2e", "wdio.conf.ts")

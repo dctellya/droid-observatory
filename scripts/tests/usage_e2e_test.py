@@ -49,6 +49,49 @@ def report(records):
         s.close()
 
 
+STAMPED_FLAKE = record("2026-10-26/030000", "flaked", "2026-10-26T03:00:00Z",
+                       [attempt(1, "failed", 104.25, failed_specs=["specs/panel.e2e.ts"]), attempt(2, "passed", 41.5)],
+                       flaked_specs=["specs/panel.e2e.ts"], rerun_seconds=41.5)
+STAMPED_GREEN = record("2026-10-26/051500", "passed", "2026-10-26T05:15:00Z", [attempt(1, "passed", 120.0)])
+
+
+def report_with_latest(records, latest):
+    """Run directories as `make e2e` leaves them, plus the `latest` symlink at reports/e2e/latest."""
+    s = Scratch()
+    try:
+        e2e = os.path.join(s.root, "e2e")
+        for r in records:
+            os.makedirs(os.path.join(e2e, r["run"]))
+            with open(os.path.join(e2e, r["run"], "record.json"), "w") as f:
+                json.dump(r, f)
+        os.symlink(latest, os.path.join(e2e, "latest"))
+        return s.run(["--e2e-dir", e2e]).text
+    finally:
+        s.close()
+
+
+class E2eRunDirectories(unittest.TestCase):
+    def test_a_flaked_run_stays_a_flake_line_after_a_later_green_run_the_same_day(self):
+        text = report([STAMPED_FLAKE, STAMPED_GREEN])
+        self.assertIn("e2e flake: 2026-10-26/030000: specs/panel.e2e.ts; rerun 41.50 s (first attempt 104.25 s)", text)
+        self.assertIn("e2e runs: 2, passed 1, flaked 1, failed 0; rerun seconds: 41.50", text)
+
+    def test_the_runs_table_lists_every_run_directory_with_its_own_source_path(self):
+        _, rows = table(report([STAMPED_FLAKE, STAMPED_GREEN]), "E2E runs")
+        self.assertEqual([(r["Run"], r["Outcome"]) for r in rows],
+                         [("2026-10-26/030000", "flaked"), ("2026-10-26/051500", "passed")])
+        self.assertTrue(rows[0]["Source"].endswith("2026-10-26/030000/record.json`"), rows[0]["Source"])
+
+    def test_the_latest_symlink_is_not_a_run_of_its_own(self):
+        text = report_with_latest([STAMPED_FLAKE, STAMPED_GREEN], "2026-10-26/051500")
+        self.assertIn("e2e runs: 2, passed 1, flaked 1, failed 0; rerun seconds: 41.50", text)
+
+    def test_a_record_written_before_run_stamps_is_still_counted(self):
+        text = report([FLAKED, STAMPED_GREEN])
+        self.assertIn("e2e runs: 2, passed 1, flaked 1, failed 0; rerun seconds: 41.50", text)
+        self.assertIn("e2e flake: 2026-10-26:", text)
+
+
 class E2eFlakes(unittest.TestCase):
     def test_a_flaked_run_is_a_line_with_its_specs_and_the_cost_of_the_rerun(self):
         text = report([FLAKED])
@@ -80,7 +123,7 @@ class E2eFlakes(unittest.TestCase):
     def test_the_section_says_flaked_is_green_and_where_the_evidence_is(self):
         text = report([FLAKED])
         self.assertIn("`flaked` is a first attempt that failed and one rerun that passed", text)
-        self.assertIn("reports/e2e/<run>/first-failure/", text)
+        self.assertIn("reports/e2e/<date>/<HHMMSS>/first-failure/", text)
 
 
 if __name__ == "__main__":
