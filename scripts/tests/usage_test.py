@@ -643,5 +643,65 @@ class UsageReportPricing(unittest.TestCase):
             self.assertNotIn("gpt-6-sol", {r["Model"] for r in models})
 
 
+class UsageReportTokenClasses(unittest.TestCase):
+    CLASSES = ["input", "cache write", "cache read", "output"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+        cls.header, cls.rows = table(cls.text, "Cost by token class")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def scope(self, name):
+        return [r for r in self.rows if r["Scope"] == name]
+
+    def test_the_table_has_a_row_per_token_class_for_each_role_and_the_milestone(self):
+        self.assertEqual(self.header, ["Scope", "Class", "Tokens", "Share of tokens %", "USD-eq", "Share of cost %"])
+        for name in ("orchestrator", "orchestrator subagent", "worker", "validator", "self-check", "other", "milestone"):
+            self.assertEqual([r["Class"] for r in self.scope(name)], self.CLASSES, name)
+
+    def test_cost_and_token_shares_of_the_worker_role_follow_the_class_arithmetic(self):
+        got = {r["Class"]: (r["Tokens"], r["Share of tokens %"], r["USD-eq"], r["Share of cost %"]) for r in self.scope("worker")}
+        self.assertEqual(got, {
+            "input": ("1500000", "3.4", "3.00", "16.7"),
+            "cache write": ("2000000", "4.5", "5.00", "27.8"),
+            "cache read": ("40000000", "90.7", "4.00", "22.2"),
+            "output": ("600000", "1.4", "6.00", "33.3"),
+        })
+
+    def test_cost_follows_the_class_not_the_token_count_for_the_orchestrator(self):
+        got = {r["Class"]: (r["Tokens"], r["Share of tokens %"], r["USD-eq"], r["Share of cost %"]) for r in self.scope("orchestrator")}
+        self.assertEqual(got, {
+            "input": ("3600007", "19.4", "36.00", "55.0"),
+            "cache write": ("640000", "3.4", "8.00", "12.2"),
+            "cache read": ("14000005", "75.3", "3.50", "5.3"),
+            "output": ("360003", "1.9", "18.00", "27.5"),
+        })
+
+    def test_the_classes_add_up_to_the_role_cost_in_tokens_per_role(self):
+        _, roles = table(self.text, "Tokens per role")
+        for r in roles:
+            name = "milestone" if r["Role"] == "total" else r["Role"]
+            rows = self.scope(name)
+            if r["Turns"] == "0":
+                self.assertEqual(rows, [], name)
+                continue
+            self.assertAlmostEqual(sum(float(x["USD-eq"]) for x in rows), float(r["USD-eq"]), delta=0.02, msg=name)
+            self.assertEqual(sum(int(x["Tokens"]) for x in rows), int(r["Input"]) + int(r["Output"]) + int(r["Cache read"]) + int(r["Cache write"]), name)
+            self.assertAlmostEqual(sum(float(x["Share of cost %"]) for x in rows), 100.0, delta=0.2, msg=name)
+            self.assertAlmostEqual(sum(float(x["Share of tokens %"]) for x in rows), 100.0, delta=0.2, msg=name)
+
+    def test_the_caption_says_what_a_share_is(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("Cost by token class:"))
+        self.assertIn("share of cost", line)
+        self.assertIn("share of tokens", line)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
