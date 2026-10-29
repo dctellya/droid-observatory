@@ -413,7 +413,9 @@ pub fn StallBannerView(flags: Signal<Vec<StallFlagView>>) -> impl IntoView {
 /// The theme switch of the kit: follow the system, or force dark or light with `data-theme`.
 #[component]
 pub fn ThemeSwitch() -> impl IntoView {
-    let set = |theme: Option<&'static str>| {
+    let current = RwSignal::new(None::<&'static str>);
+    let set = move |theme: Option<&'static str>| {
+        current.set(theme);
         let root = web_sys::window()
             .and_then(|window| window.document())
             .and_then(|document| document.document_element());
@@ -426,9 +428,30 @@ pub fn ThemeSwitch() -> impl IntoView {
     };
     view! {
         <div class="switch theme-switch" role="group" aria-label="theme">
-            <button type="button" data-testid="theme-system" on:click=move |_| set(None)>"System"</button>
-            <button type="button" data-testid="theme-dark" on:click=move |_| set(Some("dark"))>"Dark"</button>
-            <button type="button" data-testid="theme-light" on:click=move |_| set(Some("light"))>"Light"</button>
+            <button
+                type="button"
+                data-testid="theme-system"
+                class:on=move || current.get().is_none()
+                on:click=move |_| set(None)
+            >
+                "System"
+            </button>
+            <button
+                type="button"
+                data-testid="theme-dark"
+                class:on=move || current.get() == Some("dark")
+                on:click=move |_| set(Some("dark"))
+            >
+                "Dark"
+            </button>
+            <button
+                type="button"
+                data-testid="theme-light"
+                class:on=move || current.get() == Some("light")
+                on:click=move |_| set(Some("light"))
+            >
+                "Light"
+            </button>
         </div>
     }
 }

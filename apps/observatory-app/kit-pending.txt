@@ -2,10 +2,3 @@
 # `make check-kit` tolerates until a feature fixes them. One key per line: `<file> <tag>[<aria-label>]` or
 # `<file> <tag> `<expression>``, as the lint prints it in square brackets. The list must be exact: a line whose
 # violation is fixed turns the lint red until the line is deleted, and a violation that is not listed is red.
-# The first five (agents agent-count, details-milestone, details-row-count, overlay-human-count, tray-count) are the
-# heading count spans of the UT round 3 note, fixed by `m4-gate-group-ui`.
-agents.rs span[agent-count]
-details.rs span[details-milestone]
-details.rs span[details-row-count]
-panel.rs span[overlay-human-count]
-tray.rs span[tray-count]

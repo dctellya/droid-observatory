@@ -37,7 +37,7 @@ pub fn AgentPanel(
         <section class="agents" aria-label="agents">
             <h2>
                 "Agents "
-                <span class="count" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
+                <span class="count mono" aria-label="agent-count">{move || entries.with(Vec::len)}</span>
             </h2>
             <div class="agent-table"><div class="lib"><div class="scroll">
                 <table aria-label="agent-table">

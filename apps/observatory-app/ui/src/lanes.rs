@@ -1,15 +1,22 @@
 use leptos::prelude::*;
-use observatory_core::model::LaneGrouping;
+use observatory_core::model::{CycleTemplate, LaneGrouping};
 use observatory_core::view::{
-    BoardView, Card, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping, session_name,
+    BoardView, Card, GateGroupView, GateVerdict, LaneView, RowGroup, TimelineRow, WorkerGrouping,
+    session_name,
 };
 
 use crate::controls::{FeatureMarks, stall_marker};
 use crate::ctx::BoardCtx;
+use crate::gate::GateGroupBox;
 
 /// The template's lanes, left to right (F-028, D-024, F-041).
 #[component]
-pub fn Lanes(board: Memo<BoardView>, grouping: RwSignal<WorkerGrouping>) -> impl IntoView {
+pub fn Lanes(
+    board: Memo<BoardView>,
+    grouping: RwSignal<WorkerGrouping>,
+    gate: Signal<GateGroupView>,
+) -> impl IntoView {
+    let template = expect_context::<RwSignal<CycleTemplate>>();
     view! {
         <div class="lanes">
             {move || {
@@ -21,11 +28,13 @@ pub fn Lanes(board: Memo<BoardView>, grouping: RwSignal<WorkerGrouping>) -> impl
                             .find(|lane| lane.grouping == LaneGrouping::Milestones)
                             .map(|lane| lane.name.clone())
                             .unwrap_or_default();
+                        let final_lane = template.with(|template| template.final_lane().clone());
                         b.lanes
                             .iter()
                             .enumerate()
                             .map(|(index, lane)| {
-                                lane_column(lane, index + 1, &command_lane, grouping)
+                                let gate = (lane.lane == final_lane).then_some(gate);
+                                lane_column(lane, index + 1, &command_lane, grouping, gate)
                             })
                             .collect_view()
                     })
@@ -39,6 +48,7 @@ fn lane_column(
     number: usize,
     command_lane: &str,
     grouping: RwSignal<WorkerGrouping>,
+    gate: Option<Signal<GateGroupView>>,
 ) -> AnyView {
     let toggle = (lane.grouping == LaneGrouping::Sessions).then(|| {
         view! {
@@ -108,6 +118,7 @@ fn lane_column(
                 >{lane.event_count}</span>
             </h2>
             {toggle}
+            {gate.map(|gate| view! { <GateGroupBox view=gate /> })}
             <div class="cards">{cards}</div>
             {placeholder}
             <div class="rows">{groups}</div>
@@ -224,6 +235,33 @@ fn card_view(card: &Card) -> AnyView {
     let details = card.milestone.clone();
     let marker = stall_marker(card.features.clone());
     let marks = view! { <FeatureMarks features=card.features.clone() /> };
+    let template = expect_context::<RwSignal<CycleTemplate>>();
+    let arc = template
+        .with(|template| card.return_arc(template))
+        .map(|arc| {
+            view! {
+                <p
+                    class=if arc.active { "return-arc active" } else { "return-arc" }
+                    aria-label="return-arc"
+                    data-testid="return-arc"
+                    data-from=arc.from.0.clone()
+                    data-to=arc.to.0.clone()
+                >
+                    <svg viewBox="0 0 24 12" width="24" height="12" aria-hidden="true">
+                        <path
+                            d="M22 2 C22 11 2 11 2 4 M2 4 L5 2 M2 4 L0 7"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                        />
+                    </svg>
+                    <span class="mono" data-testid="return-arc-lanes">
+                        {format!("{} → {}", arc.from_name, arc.to_name)}
+                    </span>
+                    <span class="chip mono" data-testid="card-cycle">{arc.label.clone()}</span>
+                </p>
+            }
+        });
     view! {
         <article class="card" aria-label=format!("card-{}", card.milestone)>
             <h3 class="mono">{card.milestone.0.clone()}</h3>
@@ -238,6 +276,7 @@ fn card_view(card: &Card) -> AnyView {
                 {card.features.len()} " features" {(!features.is_empty()).then(|| format!(": {features}"))}
             </p>
             {marker}
+            {arc}
             {now}
             {marks}
             <button
