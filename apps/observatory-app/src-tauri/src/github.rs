@@ -56,6 +56,17 @@ pub fn spawn<R: Runtime>(
     store_path: PathBuf,
 ) -> Github {
     let stop = Arc::new(AtomicBool::new(false));
+    if !secrets::forge_source_enabled_in_env() {
+        tracing::info!(
+            source = %TokenSource::Off.as_str(),
+            reason = %secrets::OFF_REASON,
+            "github.token"
+        );
+        return Github {
+            stop,
+            thread: Mutex::new(None),
+        };
+    }
     let flag = stop.clone();
     let started = std::thread::Builder::new()
         .name("github".to_owned())
