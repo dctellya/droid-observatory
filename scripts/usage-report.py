@@ -856,6 +856,46 @@ def build(args):
         emit(r)
     emit("")
 
+    # Subagent classes
+    emit("### Subagent classes")
+    emit("")
+    declarations = usage_classes.read_declarations(mission_dir, args.milestone)
+    sub_models = collections.defaultdict(set)
+    for (sid, model), a in win.items():
+        if clf.of(sid)["kind"] != "root":
+            sub_models[sid].add(model)
+    srows, undeclared, subagent_sessions = [], 0, 0
+    for cls, caller in (("orchestrator subagents", "orchestrator"), ("validator subagents", "validator"), ("worker subagents", "worker")):
+        agg = Agg()
+        for (sid, model), a in win.items():
+            if clf.of(sid)["kind"] != "root" and clf.of(sid)["caller_role"] == caller:
+                agg.add(sid, model, a, price(prices, model, a))
+        models, purposes, sources, none, off = set(), set(), set(), 0, 0
+        for sid in sorted(agg.sessions):
+            d = usage_classes.declaration_of(declarations, sid)
+            if d is None:
+                none += 1
+                continue
+            models.add(d[0])
+            purposes.add(d[1])
+            sources.add(d[2])
+            off += bool(sub_models[sid] - {d[0]})
+        undeclared += none
+        subagent_sessions += len(agg.sessions)
+        srows.append([cls, len(agg.sessions), agg.turns, usd(agg.usd), ", ".join(sorted(models)) or "-", "; ".join(sorted(purposes)) or "-",
+                      none, off, ", ".join("`%s`" % x for x in sorted(sources)) or "-"])
+    for r in md_table(["Class", "Sessions", "Turns", "USD-eq", "Declared model", "Purpose", "No declared model", "Off declared model",
+                       "Source"], srows):
+        emit(r)
+    emit("")
+    emit("- no declared model: %d of %d subagent sessions" % (undeclared, subagent_sessions))
+    emit("")
+    emit("A subagent's class is the role of the session that started it. Declared model and purpose are read from `handoffs/*.json` and "
+         "`validation/%s/**/synthesis*.json` in the mission directory (a `subagents` list or `subagentSessions` object, or a line "
+         "`subagent <session id or 8-hex prefix>: model = <id>; purpose = <text>` in any string); a session with none counts under `No declared "
+         "model`, and `Off declared model` counts the sessions with a turn in the window on a model other than the declared one." % args.milestone)
+    emit("")
+
     # Self-check
     emit("### Self-check missions")
     emit("")
