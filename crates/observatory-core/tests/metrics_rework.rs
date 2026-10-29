@@ -76,9 +76,24 @@ fn rework_window_closes_on_resolution() {
     assert_eq!(
         shape,
         vec![
-            (ReworkKind::Finding, "scrutiny", "a:finding", Some("a:resolved")),
-            (ReworkKind::Scenario, "user_testing", "b:failed", Some("b:passed")),
-            (ReworkKind::Conflict, "integrate", "c:conflict", Some("c:resolved")),
+            (
+                ReworkKind::Finding,
+                "scrutiny",
+                "a:finding",
+                Some("a:resolved")
+            ),
+            (
+                ReworkKind::Scenario,
+                "user_testing",
+                "b:failed",
+                Some("b:passed")
+            ),
+            (
+                ReworkKind::Conflict,
+                "integrate",
+                "c:conflict",
+                Some("c:resolved")
+            ),
             (ReworkKind::Check, "gate", "d:red", Some("d:green")),
         ],
         "each pair closes, and a pass for another scenario or check does not"
@@ -161,14 +176,18 @@ fn unresolved_window_is_reported_at_mission_end() {
 #[test]
 fn first_pass_excludes_rework_windows() {
     let events = vec![
-        ev("w:0", EventKind::FileTouched, 100).feature("f").lasting(100),
+        ev("w:0", EventKind::FileTouched, 100)
+            .feature("f")
+            .lasting(100),
         ev("w:finding", EventKind::FindingBlocking, 50)
             .feature("f")
             .by(Role::ScrutinyValidator),
         ev("w:resolved", EventKind::ReworkResolved, 150)
             .feature("f")
             .by(Role::ScrutinyValidator),
-        ev("w:1", EventKind::FileTouched, 200).feature("f").lasting(80),
+        ev("w:1", EventKind::FileTouched, 200)
+            .feature("f")
+            .lasting(80),
     ];
     let mut sorted = events.clone();
     sorted.sort_by_key(|e| e.at);
@@ -180,7 +199,11 @@ fn first_pass_excludes_rework_windows() {
     // Active [0,100] and [120,200]; the window is [50,150].
     assert_eq!(rework.as_secs(), 50 + 30);
     assert_eq!(first_pass.as_secs(), 50 + 50);
-    assert_eq!((first_pass + rework).as_secs(), 180, "the sum is the Active time");
+    assert_eq!(
+        (first_pass + rework).as_secs(),
+        180,
+        "the sum is the Active time"
+    );
 }
 
 #[test]
@@ -206,7 +229,11 @@ fn red_check_opens_gate_rework_window() {
 
     let found = windows(&events, &notes, 400);
 
-    assert_eq!(found.len(), 1, "a second red of the same check opens no second window");
+    assert_eq!(
+        found.len(),
+        1,
+        "a second red of the same check opens no second window"
+    );
     assert_eq!(found[0].cause.as_str(), "gate");
     assert_eq!(found[0].opened_by.0, "pr:red");
     assert_eq!(closed_by(&found[0]), Some("pr:green"));
