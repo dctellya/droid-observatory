@@ -2,6 +2,8 @@
 # Factory PreToolUse hook: rule C, the officer's tools are an allow-list (owner inbox 1845 and 2049, 2026-10-29;
 # D-041). For the sessions listed in officer-sessions.txt (the mission orchestrator) only the tools of the officer's
 # activities pass; Read and LS are limited to the mission directory, the owner inbox and reports/staging of the worktree.
+# Rule F (owner inbox 2247, D-042): a Script with startInBackground that calls StartMissionRun, DismissHandoffItems,
+# EndFeatureRun or Task is denied; the rule E heartbeat (a background Script) passes.
 # Every other session is untouched. Exit 2 = block.
 set -u
 input=$(cat)
@@ -26,8 +28,23 @@ in_scope() {
   return 1
 }
 
+deny_background_decision() {
+  # A decision call wrapped in a background Script returns out of order and unrecognised (rule F, D-042); the harness
+  # exposes the runner tools only as Script bindings, so only the startInBackground form is refused.
+  script=$(printf '%s' "$input" | jq -r '.tool_input.script? // empty')
+  if printf '%s' "$script" | grep -Eq 'startInBackground' &&
+    printf '%s' "$script" | grep -Eq 'tools\.(StartMissionRun|DismissHandoffItems|EndFeatureRun|Task)\('; then
+    echo "decisions are direct calls (rule F)" >&2
+    exit 2
+  fi
+}
+
 case "$tool" in
-  Script | Task | DismissHandoffItems | StartMissionRun | EndFeatureRun) exit 0 ;;
+  Script)
+    deny_background_decision
+    exit 0
+    ;;
+  Task | DismissHandoffItems | StartMissionRun | EndFeatureRun) exit 0 ;;
   Read)
     path=$(printf '%s' "$input" | jq -r '.tool_input.file_path? // empty')
     in_scope "$path" && exit 0
