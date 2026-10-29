@@ -5,9 +5,9 @@
 gate	VAL-GATE-006	pr_for_mission_branch_is_detected_within_poll_interval	yes	-
 gate	VAL-GATE-006 VAL-GATE-019	red_required_check_opens_a_fix_cycle_on_the_affected_card	yes	build~~\b1\b
 gate	VAL-GATE-006	fix_cycle_keeps_the_same_pr	yes	-
-gate	VAL-GATE-006 VAL-GATE-022	merge_button_shows_only_when_policy_is_human_and_checks_are_green	no	human~~green
-gate	VAL-GATE-006	rule_attribution_names_the_ruleset	no	-
-gate	VAL-GATE-006	policy_merged_detected_without_human_action	no	-
+gate	VAL-GATE-006 VAL-GATE-022	merge_button_shows_only_when_policy_is_human_and_checks_are_green	yes	human~~green
+gate	VAL-GATE-006	rule_attribution_names_the_ruleset	yes	-
+gate	VAL-GATE-006	policy_merged_detected_without_human_action	yes	-
 gate	VAL-GATE-006	gate_command_runs_are_lane6_events_attributed_to_the_milestone	yes	-
 gate	VAL-GATE-006	target_branch_is_read_from_config_not_hardcoded	yes	-
 metric	VAL-METRIC-003	metrics_match_reference_spreadsheet_within_tolerance	no	toler

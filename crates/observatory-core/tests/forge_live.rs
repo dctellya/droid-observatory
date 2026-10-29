@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use observatory_core::config::GithubConfig;
+use observatory_core::config::{GithubConfig, MergePolicy};
 use observatory_core::ingest::github::{GitHubClient, GitHubSource};
 use observatory_core::model::{CycleTemplate, MilestoneId, MissionId, Timestamp};
 use observatory_core::secrets::Secret;
@@ -171,6 +171,105 @@ fn the_live_fix_cycle_is_recorded_in_a_store_file() {
         println!("{sql}");
         for row in rows(sql) {
             println!("  {row}");
+        }
+    }
+}
+
+/// One poll of the live demo PR under the `[github].merge_policy` named by `OBSERVATORY_LIVE_POLICY`
+/// (`auto`, `human` or `policy`), recorded into `OBSERVATORY_LIVE_STORE`, then the Gate header's
+/// `decided_by`, `requires_human` and `merge_offered`, and the rows a merge adds: `prs.merged_by`,
+/// `handed_to_cd` (role, sha, `at`) and `missions.completed_at`. Run it against an open PR for the
+/// attribution rows, and again after the owner merges it (the token owner's own merge reads `human`,
+/// another login's reads `external`).
+/// `FORGE_LIVE=1 GITHUB_TOKEN="$(gh auth token)" OBSERVATORY_LIVE_BRANCH=demo/<name> OBSERVATORY_LIVE_POLICY=auto
+/// OBSERVATORY_LIVE_STORE=/tmp/<file>.sqlite cargo test -p observatory-core --test forge_live the_live_gate -- --ignored --nocapture`.
+#[test]
+#[ignore = "calls the live GitHub API"]
+fn the_live_gate_names_the_rule_and_records_a_merge() {
+    if std::env::var("FORGE_LIVE").as_deref() != Ok("1") {
+        println!("skipped: FORGE_LIVE unset (owner-run)");
+        return;
+    }
+    let var = |name: &str| std::env::var(name).expect(name);
+    let (branch, store_path) = (
+        var("OBSERVATORY_LIVE_BRANCH"),
+        var("OBSERVATORY_LIVE_STORE"),
+    );
+    let merge_policy = match var("OBSERVATORY_LIVE_POLICY").as_str() {
+        "human" => MergePolicy::Human,
+        "policy" => MergePolicy::Policy,
+        _ => MergePolicy::Auto,
+    };
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .with_writer(std::io::stdout)
+        .init();
+    let config = GithubConfig {
+        target_branch: "demo/base".into(),
+        merge_policy,
+        ..GithubConfig::default()
+    };
+    let token = std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+        .expect("GITHUB_TOKEN is set (the keychain is never read here)");
+    let mission = MissionId("live".into());
+    let mut source = GitHubSource::new(
+        GitHubClient::with_token(&config, Some(Secret::new(token))),
+        mission.clone(),
+        &branch,
+        &config,
+        CycleTemplate::engineering(),
+    );
+    let mut store = Store::open(std::path::Path::new(&store_path)).unwrap();
+    let conn = rusqlite::Connection::open(&store_path).unwrap();
+    conn.execute(
+        "INSERT OR IGNORE INTO missions (id, name, state, started_at) VALUES ('live', 'live', 'at_gate', '2026-10-29T00:00:00Z')",
+        [],
+    )
+    .unwrap();
+    let poll = source.poll(Timestamp::now()).expect("the poll succeeds");
+    store.record_poll(&mission, &poll).unwrap();
+    let events = store
+        .events(&EventScope::Mission(mission), TimeRange::ALL)
+        .unwrap();
+    let mut group = GateGroup::of(&events);
+    if let Some(facts) = &poll.gate {
+        group = group.with_facts(facts);
+    }
+    println!(
+        "badge {} decided_by {:?} requires_human {} merge_offered {} required {:?} reviews {} attestations {:?}",
+        group.badge.as_str(),
+        group.decided_by,
+        group.requires_human,
+        group.merge_offered,
+        group.required_checks,
+        group.reviews,
+        group.attestation_ids
+    );
+    for sql in [
+        "SELECT number, state, merged_by FROM prs",
+        "SELECT COUNT(*) FROM reviews",
+        "SELECT COUNT(*) FROM attestations",
+        "SELECT kind, role, lane, sha, url, at FROM events WHERE kind = 'handed_to_cd'",
+        "SELECT state, completed_at FROM missions WHERE id = 'live'",
+    ] {
+        println!("{sql}");
+        let mut statement = conn.prepare(sql).unwrap();
+        let columns = statement.column_count();
+        let rows = statement
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|i| {
+                        row.get::<_, rusqlite::types::Value>(i)
+                            .map(|v| format!("{v:?}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap();
+        for row in rows {
+            println!("  {}", row.unwrap().join(" | "));
         }
     }
 }
