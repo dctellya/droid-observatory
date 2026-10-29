@@ -756,5 +756,85 @@ class UsageReportFeatureBudgets(unittest.TestCase):
             self.assertEqual((a["Turn budget"], a["Over budget"]), ("-", "-"))
 
 
+class UsageReportCostPerAssertion(unittest.TestCase):
+    HEADING = "Cost per assertion and per feature"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def units(self, text):
+        header, rows = table(text, self.HEADING)
+        self.assertEqual(header, ["Unit", "Count", "Window USD-eq", "USD-eq per unit", "Source"])
+        return {r["Unit"]: r for r in rows}
+
+    def window_usd(self, text):
+        _, roles = table(text, "Tokens per role")
+        return float(next(r for r in roles if r["Role"] == "total")["USD-eq"])
+
+    def test_cost_per_assertion_counts_the_assertions_passed_at_the_milestone(self):
+        got = self.units(self.text)
+        a = got["assertion fulfilled"]
+        total = self.window_usd(self.text)
+        self.assertEqual(a["Count"], "3")
+        self.assertEqual(a["Window USD-eq"], "%.2f" % total)
+        self.assertEqual(a["USD-eq per unit"], "%.2f" % (total / 3))
+        self.assertIn("validation-state.json", a["Source"])
+
+    def test_cost_per_feature_sits_beside_it_for_the_features_completed(self):
+        f = self.units(self.text)["feature completed"]
+        self.assertEqual(f["Count"], "1")
+        self.assertEqual(f["USD-eq per unit"], "%.2f" % self.window_usd(self.text))
+        self.assertIn("features.json", f["Source"])
+
+    def test_the_fulfilled_assertions_are_listed_by_id(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("assertions fulfilled in the window:"))
+        self.assertEqual(line, "assertions fulfilled in the window: VAL-A-001, VAL-A-002, VAL-A-003")
+
+    def test_a_state_file_given_by_path_replaces_the_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = os.path.join(tmp, "state.json")
+            with open(state, "w") as f:
+                json.dump({"assertions": {"X-1": {"status": "passed", "validatedAtMilestone": "m9"},
+                                          "X-2": {"status": "passed", "validatedAtMilestone": "m8"}}}, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--validation-state", state], out=out)
+            text = read(out)
+            a = self.units(text)["assertion fulfilled"]
+            self.assertEqual(a["Count"], "1")
+            self.assertEqual(a["USD-eq per unit"], "%.2f" % self.window_usd(text))
+            self.assertIn("assertions fulfilled in the window: X-1", text)
+
+    def test_without_a_state_file_the_row_says_so_and_shows_no_cost(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = os.path.join(tmp, "mission")
+            shutil.copytree(os.path.join(FIX, "mission"), mission)
+            os.remove(os.path.join(mission, "validation-state.json"))
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            text = read(out)
+            a = self.units(text)["assertion fulfilled"]
+            self.assertEqual((a["Count"], a["USD-eq per unit"]), ("0", "-"))
+            self.assertIn("not found", a["Source"])
+
+    def test_a_missing_state_file_given_by_path_fails_the_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = run(["--validation-state", os.path.join(tmp, "nope.json")], out=os.path.join(tmp, "m9.md"), check=False)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("nope.json", proc.stderr)
+
+    def test_the_caption_states_the_window_of_an_assertion(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("Cost per assertion:"))
+        self.assertIn("`validatedAtMilestone`", line)
+        self.assertIn("status `passed`", line)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
