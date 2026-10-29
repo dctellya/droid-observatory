@@ -99,6 +99,15 @@ pub fn mission_branch(pattern: &str, name: &str) -> String {
 }
 
 impl GateGroup {
+    /// The header of the Gate lane after `events`, in time order.
+    pub fn of(events: &[Event]) -> Self {
+        let mut group = Self::default();
+        for event in events {
+            group.apply(event);
+        }
+        group
+    }
+
     /// The placeholder, while the gate is pending and no PR number is known.
     pub fn placeholder(&self, branch: &str, template: &CycleTemplate) -> Option<GatePlaceholder> {
         if self.badge != GateBadge::Pending || self.pr_number.is_some() {

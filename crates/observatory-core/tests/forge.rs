@@ -1021,3 +1021,47 @@ fn a_second_red_after_green_opens_a_second_window_on_the_same_pr() {
     assert_eq!(mission_state(&conn), "fixing");
     assert_eq!(board(&store).cards[0].cycle, 2);
 }
+
+fn merge_event(id: &str, milestone: Option<&str>, second: i64) -> observatory_core::model::Event {
+    let template = CycleTemplate::engineering();
+    observatory_core::model::Event {
+        id: observatory_core::model::EventId(id.into()),
+        mission_id: mission(),
+        milestone_id: milestone.map(|m| MilestoneId(m.into())),
+        feature_id: None,
+        lane: template.lane_of(&EventKind::IntegrationMerged, Role::Orchestrator),
+        overlay: None,
+        kind: EventKind::IntegrationMerged,
+        role: Role::Orchestrator,
+        session_id: None,
+        model: None,
+        at: at(Timestamp::parse("2026-10-29T09:00:00Z").unwrap(), second),
+        duration: None,
+        usage: None,
+        source: SourcePtr::Git {
+            repo: "r".into(),
+            sha: id.into(),
+        },
+        mapping_version: observatory_core::mapping::MappingVersion::LATEST,
+    }
+}
+
+#[test]
+fn the_affected_card_is_the_milestone_integrated_last() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, _conn) = store_with_mission(dir.path());
+    assert_eq!(store.affected_milestone(&mission()).unwrap(), None);
+
+    store
+        .insert_events(&[
+            merge_event("aaa", Some("m1"), 1),
+            merge_event("bbb", Some("m2"), 2),
+            merge_event("ccc", None, 3),
+        ])
+        .unwrap();
+    assert_eq!(
+        store.affected_milestone(&mission()).unwrap(),
+        Some(MilestoneId("m2".into())),
+        "the last merge that names a milestone"
+    );
+}

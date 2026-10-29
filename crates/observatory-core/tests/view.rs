@@ -1648,3 +1648,26 @@ fn a_red_check_returns_the_card_to_the_build_lane_and_counts_one_cycle() {
     assert_eq!(board.cards[0].lane, *template.home(Role::Worker));
     assert_eq!(board.cards[0].cycle, 2);
 }
+
+#[test]
+fn the_gate_header_of_a_list_of_events_is_the_one_the_board_shows() {
+    let gh = |kind, second| Build::new(kind, Role::External, "gh", second).done();
+    let events = vec![
+        gh(EventKind::PrOpened, 1),
+        gh(EventKind::CheckFailed, 2),
+        gh(EventKind::CheckPassed, 3),
+        gh(EventKind::CheckFailed, 4),
+    ];
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&events),
+        all(&events).gate
+    );
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&events).badge,
+        GateBadge::CiRed
+    );
+    assert_eq!(
+        observatory_core::view::GateGroup::of(&[]).badge,
+        GateBadge::Pending
+    );
+}

@@ -17,10 +17,16 @@ use observatory_core::ingest::github::{GitHubClient, GitHubSource, UreqTransport
 use observatory_core::model::{CycleTemplate, MissionId, Timestamp};
 use observatory_core::secrets::{self, Secret, TokenSource};
 use observatory_core::store::Store;
+use observatory_core::store::{EventScope, TimeRange};
 use observatory_core::view::mission_branch;
+use observatory_core::view::{GateBadge, GateGroup};
 use tauri::{AppHandle, Emitter, Runtime};
 
-type Source = GitHubSource<GitHubClient<UreqTransport>>;
+/// One mission's source and the badge and PR the window was last told about.
+struct Tracked {
+    source: GitHubSource<GitHubClient<UreqTransport>>,
+    shown: Option<(GateBadge, Option<u64>)>,
+}
 
 /// The running poll thread.
 pub struct Github {
@@ -87,7 +93,7 @@ fn run<R: Runtime>(
     let token = read_token();
     let slice = Duration::from_millis(cfg.ingest.jsonl_poll_ms.max(1));
     let interval = Duration::from_secs(cfg.github.poll_interval_s.max(1));
-    let mut sources: HashMap<MissionId, Source> = HashMap::new();
+    let mut sources: HashMap<MissionId, Tracked> = HashMap::new();
     while !stop.load(Ordering::Relaxed) {
         for mission in crate::stall::live_missions(app) {
             poll_mission(
@@ -127,7 +133,7 @@ fn poll_mission<R: Runtime>(
     cfg: &Config,
     template: &CycleTemplate,
     store: &mut Store,
-    sources: &mut HashMap<MissionId, Source>,
+    sources: &mut HashMap<MissionId, Tracked>,
     token: Option<&Secret>,
     mission: MissionId,
 ) {
@@ -148,19 +154,25 @@ fn poll_mission<R: Runtime>(
         let _ = store.set_mission_branch(&mission, &branch);
         sources.insert(
             mission.clone(),
-            GitHubSource::new(
-                client,
-                mission.clone(),
-                &branch,
-                &cfg.github,
-                template.clone(),
-            ),
+            Tracked {
+                source: GitHubSource::new(
+                    client,
+                    mission.clone(),
+                    &branch,
+                    &cfg.github,
+                    template.clone(),
+                ),
+                shown: None,
+            },
         );
     }
-    let Some(source) = sources.get_mut(&mission) else {
+    let Some(tracked) = sources.get_mut(&mission) else {
         return;
     };
-    match source.poll(Timestamp::now()) {
+    tracked
+        .source
+        .set_affected_milestone(store.affected_milestone(&mission).ok().flatten());
+    match tracked.source.poll(Timestamp::now()) {
         Ok(poll) => {
             tracing::info!(
                 mission_id = %mission,
@@ -176,7 +188,7 @@ fn poll_mission<R: Runtime>(
             if !poll.events.is_empty() {
                 let batch = EventBatch {
                     unknown_total: store.unknown_count(&mission).unwrap_or(0),
-                    mission_id: mission,
+                    mission_id: mission.clone(),
                     events: poll.events,
                     retracted: Vec::new(),
                     retracted_events: Vec::new(),
@@ -184,7 +196,33 @@ fn poll_mission<R: Runtime>(
                 crate::ingest::log_batch(&batch);
                 let _ = app.emit("events_appended", &batch);
             }
+            announce_gate(app, store, &mission, &mut tracked.shown);
         }
         Err(error) => tracing::warn!(mission_id = %mission, %error, "github_poll_failed"),
     }
+}
+
+/// Tells the window and the log when the Gate header's badge or PR changed since the last poll.
+fn announce_gate<R: Runtime>(
+    app: &AppHandle<R>,
+    store: &Store,
+    mission: &MissionId,
+    shown: &mut Option<(GateBadge, Option<u64>)>,
+) {
+    let Ok(events) = store.events(&EventScope::Mission(mission.clone()), TimeRange::ALL) else {
+        return;
+    };
+    let gate = GateGroup::of(&events);
+    let now = (gate.badge, gate.pr_number);
+    if *shown == Some(now) {
+        return;
+    }
+    *shown = Some(now);
+    tracing::info!(
+        mission_id = %mission,
+        badge = gate.badge.as_str(),
+        pr = gate.pr_number,
+        "gate_changed"
+    );
+    let _ = app.emit("gate_changed", &gate);
 }
