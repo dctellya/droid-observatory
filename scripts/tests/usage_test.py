@@ -526,6 +526,20 @@ class UsageReportFile(unittest.TestCase):
             run(["--cross-check"], out=out)
             self.assertIn("cross-check: identical", read(out))
 
+    def test_the_cross_check_compares_cache_write_and_the_price_table_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            run(["--cross-check"], out=out)
+            line = next(l for l in read(out).splitlines() if l.startswith("cross-check:"))
+            self.assertIn("input, output, cache read, cache write", line)
+            self.assertTrue(line.startswith("cross-check: identical"), line)
+            bad = os.path.join(tmp, "prices.toml")
+            with open(bad, "w") as f:
+                f.write(read(os.path.join(FIX, "prices.toml")).replace("[models.\"kimi-k3\"]", "[models.\"kimi-k3-renamed\"]"))
+            proc = run(["--cross-check", "--prices", bad], out=os.path.join(tmp, "x.md"), check=False)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("kimi-k3", proc.stderr)
+
     def test_a_line_logged_out_of_order_at_the_window_end_is_still_counted(self):
         # The real log is not time-ordered (lines up to 48 s backwards): a line past --to is skipped, not a stop.
         with tempfile.TemporaryDirectory() as tmp:
