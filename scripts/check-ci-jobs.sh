@@ -7,8 +7,11 @@
 # libraries: apt install and a larger cache) to the macOS bundle job, worktree
 # pushes (`wt/**`) trigger the same checks, the core tests run once (the coverage job, B-056) and a push that
 # changes only reports, the tool-call log or docs triggers nothing (the paths scripts/gate.sh leaves out of its key).
+# The demo target's workflow (demo-gate.yml) is pinned too: a missing trigger type means a label change on the demo pull
+# request starts no run and the check keeps a stale result.
 set -eu
 wf="${1:-.github/workflows/mission-branch.yml}"
+demo_wf="${2:-.github/workflows/demo-gate.yml}"
 required="machete coverage"
 
 needs=$(awk '
@@ -79,4 +82,51 @@ for ignored in 'reports/**' 'build-log/**' 'docs/**'; do
     status=1
   fi
 done
+
+if [ ! -f "$demo_wf" ]; then
+  echo "check-ci-jobs: $demo_wf does not exist"
+  exit 1
+fi
+demo_pr=$(awk '
+  /^on:/ { in_on = 1; next }
+  /^[A-Za-z]/ { in_on = 0 }
+  in_on && /^  pull_request:/ { in_pr = 1; next }
+  in_on && /^  [A-Za-z_]/ { in_pr = 0 }
+  in_pr { print }
+' "$demo_wf")
+demo_on=$(awk '/^on:/ { in_on = 1; next } /^[A-Za-z]/ { in_on = 0 } in_on { print }' "$demo_wf")
+if ! printf '%s\n' "$demo_pr" | grep -Eq '^      - demo/base[[:space:]]*$'; then
+  echo "check-ci-jobs: $demo_wf on.pull_request.branches does not list demo/base"
+  status=1
+fi
+if [ "$(printf '%s\n' "$demo_pr" | sed -n '/branches:/,/types:/p' | grep -c '^      - ')" != 1 ]; then
+  echo "check-ci-jobs: $demo_wf on.pull_request.branches lists more than demo/base"
+  status=1
+fi
+for type in opened synchronize labeled unlabeled; do
+  if ! printf '%s\n' "$demo_pr" | sed -n '/types:/,$p' | grep -Eq "^      - ${type}[[:space:]]*\$"; then
+    echo "check-ci-jobs: $demo_wf on.pull_request.types does not list $type"
+    status=1
+  fi
+done
+if [ "$(printf '%s\n' "$demo_pr" | sed -n '/types:/,$p' | grep -c '^      - ')" != 4 ]; then
+  echo "check-ci-jobs: $demo_wf on.pull_request.types is not exactly opened, synchronize, labeled, unlabeled"
+  status=1
+fi
+if printf '%s\n' "$demo_on" | grep -Eq '^  (push|pull_request_target|workflow_dispatch|schedule):'; then
+  echo "check-ci-jobs: $demo_wf has a trigger besides pull_request"
+  status=1
+fi
+if ! grep -Eq '^  demo-gate:[[:space:]]*$' "$demo_wf"; then
+  echo "check-ci-jobs: $demo_wf has no job demo-gate"
+  status=1
+fi
+if [ "$(grep -Ec '^  [A-Za-z0-9_-]+:[[:space:]]*$' "$demo_wf")" != 1 ]; then
+  echo "check-ci-jobs: $demo_wf must hold exactly one job"
+  status=1
+fi
+if ! awk '/^permissions:/ { p = 1; next } /^[A-Za-z]/ { p = 0 } p && /^  contents: read[[:space:]]*$/ { ok = 1 } END { exit !ok }' "$demo_wf"; then
+  echo "check-ci-jobs: $demo_wf permissions is not contents: read"
+  status=1
+fi
 exit $status
