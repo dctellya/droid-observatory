@@ -2,8 +2,8 @@
 # Milestone boundary as a target (owner item 19, VAL-TOOL-006): `make integrate M=<milestone> FROM=<branch>...`.
 #   1. refuse on a dirty tree (build-log/ may differ)
 #   2. git merge --no-ff of each branch, message from scripts/templates/integrate-commit.txt, trailers from .git-trailers
-#   3. final gate through `make check` (scripts/gate.sh): a hit when the merged tree is a proven tree, a real run on a miss;
-#      red aborts with the summary, nothing is rerun
+#   3. final gate through `make check` (scripts/gate.sh), keyed by the code paths: a HIT when the merged code paths equal a
+#      proven gate, a real run on a MISS that lists the code files that differ; red aborts with the summary, nothing is rerun
 #   4. make usage M=<milestone>
 #   5. merge reports/staging/*.md into SPEC.md section 9, BACKLOG.md and the decision files, delete them,
 #      make decisions-index (scripts/integrate-staging.py)
@@ -31,7 +31,7 @@ branches="$*"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/integrate.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-# (1) the tree must be clean: the gate key hashes the whole working tree, so stray files would turn a hit into a miss
+# (1) the tree must be clean: the gate key hashes the code paths of the working tree, so stray code files would turn a hit into a miss
 dirty=$(git status --porcelain -- . ':(exclude)build-log')
 if [ -n "$dirty" ]; then
   echo "integrate: working tree not clean (only build-log/ may differ):"
@@ -82,7 +82,7 @@ done
 # (3) the final gate
 tree=$(sh scripts/gate.sh --key | sed -n 1p)
 rec="reports/gate/$tree/check.json"
-echo "integrate: final gate on tree $tree"
+echo "integrate: final gate on code tree $tree"
 { make --no-print-directory check; echo $? > "$tmp/gate.code"; } 2>&1 | tee "$tmp/gate.out"
 gcode=$(cat "$tmp/gate.code" 2> /dev/null || echo 1)
 summary=
@@ -90,7 +90,7 @@ summary=
 [ -n "$summary" ] || summary=$(tail -n 5 "$tmp/gate.out")
 if [ "$gcode" -ne 0 ]; then
   echo
-  echo "gate: RED (make check exit $gcode) on tree $tree"
+  echo "gate: RED (make check exit $gcode) on code tree $tree"
   echo "$summary"
   echo "integrate: aborted before usage and staging; the merges stay. Fix with a new commit and run the target again."
   exit 1
@@ -105,18 +105,18 @@ if [ "$check_hit" -eq 1 ]; then
   for b in $branches; do
     git cat-file -e "$b:$rec" 2> /dev/null && validated="$validated $b"
   done
-  gnote="the merged tree is a proven tree ($proven${validated:+; record present on$validated})"
+  gnote="the merged code tree is a proven tree ($proven${validated:+; record present on$validated})"
   greport="cache hit, $proven"
 else
   gstate=MISS
   reason=
   for b in $branches; do
-    reason="$reason$(git diff --stat "$b" HEAD -- . ':(exclude)build-log' ':(exclude)reports/gate')"
+    reason="$reason$(sh scripts/gate.sh --diff "$b")"
   done
-  [ -n "$reason" ] || reason="no check record for this tree on the branches (inner gates may have hit)"
-  gnote="no record for the merged tree, the gate ran for real; reason: git diff --stat <branch> HEAD:
+  [ -n "$reason" ] || reason="no check record for this code tree on the branches (inner gates may have hit)"
+  gnote="no record for the merged code tree, the gate ran for real; reason: code files that differ (gate.sh --diff <branch>):
 $reason"
-  greport="real run, no record for the merged tree"
+  greport="real run, no record for the merged code tree"
 fi
 
 # (4) usage
@@ -142,7 +142,7 @@ report="reports/readiness/$date-$m.md"
   echo
   echo "## Final gate"
   echo
-  echo "Tree \`$tree\`: $greport. Numbers below are copied from \`reports/gate/$tree/*.json\`."
+  echo "Code tree \`$tree\`: $greport. Numbers below are copied from \`reports/gate/$tree/*.json\`."
   echo
   echo "| Gate | Exit | Seconds | Proven at | Session |"
   echo "|---|---|---|---|---|"
@@ -191,7 +191,7 @@ echo "==== Boundary summary: $m (FROM $branches) ===="
 echo "mission branch: $mission, start $(git rev-parse --short "$start"), end $(git log -1 --format='%h %s')"
 echo "merges:"
 git log --merges --format='  %h parents %p  %s' "$start..HEAD"
-echo "gate: $gstate on tree $tree"
+echo "gate: $gstate on code tree $tree"
 echo "  $gnote"
 echo "  summary: $(echo "$summary" | tr '\n' ' ')"
 echo "usage: reports/usage/$m.md"
