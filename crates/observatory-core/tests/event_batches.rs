@@ -288,11 +288,12 @@ mod live {
             percentile(&deltas, 95),
             *deltas.last().unwrap(),
         );
+        let bound = common::latency_bound(Duration::from_secs(1));
         println!(
-            "append to flush over {total} lines at {} ms gap in {batches} batches: p50={p50:?} p95={p95:?} max={max:?}",
+            "append to flush over {total} lines at {} ms gap in {batches} batches: p50={p50:?} p95={p95:?} max={max:?} bound={bound:?}",
             APPEND_GAP.as_millis()
         );
-        assert!(max < Duration::from_secs(1), "slowest line took {max:?}");
+        assert!(max < bound, "slowest line took {max:?}, bound {bound:?}");
         assert!(
             batches < received.len(),
             "events are batched, not sent one by one"
@@ -358,16 +359,14 @@ mod live {
             .collect();
         deltas.sort();
         let max = *deltas.last().unwrap();
+        let bound = common::latency_bound(Duration::from_millis(450));
         println!(
-            "open handle, {} events: p50={:?} p95={:?} max={max:?}",
+            "open handle, {} events: p50={:?} p95={:?} max={max:?} bound={bound:?}",
             deltas.len(),
             percentile(&deltas, 50),
             percentile(&deltas, 95),
         );
-        assert!(
-            max < Duration::from_millis(450),
-            "slowest line took {max:?}"
-        );
+        assert!(max < bound, "slowest line took {max:?}, bound {bound:?}");
     }
 
     #[test]
