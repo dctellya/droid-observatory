@@ -45,7 +45,7 @@ input[type=text] { min-width: 180px; }
 .rows-list { list-style: none; margin: 0; padding: 0; }
 .sublane h3 { font-size: 11px; margin: 6px 0 2px; word-break: break-all; }
 
-.card { padding: 6px 10px; gap: 4px; }
+.card { padding: 12px 14px; gap: 8px; }
 .card h3 { margin: 0 0 2px; }
 .card .meta, .card .now { margin: 1px 0; color: var(--muted); word-break: break-all; font-size: 12px; }
 .card .now { color: var(--text); }

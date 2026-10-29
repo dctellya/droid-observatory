@@ -311,7 +311,7 @@ pub fn FeatureMarks(features: Vec<FeatureId>) -> impl IntoView {
             let (done, skipped) = (feature.clone(), feature.clone());
             view! {
                 <li data-testid="feature-mark" data-feature=feature.0.clone()>
-                    <span>{feature.0.clone()}</span>
+                    <span class="mono">{feature.0.clone()}</span>
                     <button
                         type="button"
                         aria-label=format!("mark-complete-{}", feature.0)

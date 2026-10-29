@@ -70,7 +70,7 @@ pub fn AttachPanel() -> impl IntoView {
                     <li aria-label="watched-session">
                         <span aria-label="watched-name">{row.name.clone()}</span>
                         " "
-                        <code>{row.session_id.0.clone()}</code>
+                        <code class="mono">{row.session_id.0.clone()}</code>
                         " "
                         <button
                             aria-label="attach-session"

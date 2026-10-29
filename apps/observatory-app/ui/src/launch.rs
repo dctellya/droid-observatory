@@ -233,8 +233,8 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                 <strong aria-label="hosted-state" data-testid="hosted-state">
                     {move || status().map(|s| state_text(&s.state))}
                 </strong>
-                ", pid " <span aria-label="hosted-pid">{launched.pid}</span> ", session "
-                <code aria-label="hosted-session">{launched.session_id.clone()}</code>
+                ", pid " <span class="mono" aria-label="hosted-pid">{launched.pid}</span> ", session "
+                <code class="mono" aria-label="hosted-session">{launched.session_id.clone()}</code>
             </p>
             <p>
                 <code aria-label="hosted-command">{launched.command.clone()}</code>
@@ -253,7 +253,7 @@ fn hosted_view(hosted: HostedCtx, launched: Launched) -> impl IntoView {
                         .map(|ack| {
                             view! {
                                 <li aria-label="host-ack-row">
-                                    <code>{ack.request_id}</code>
+                                    <code class="mono">{ack.request_id}</code>
                                     " "
                                     {ack.method}
                                     " "
@@ -279,7 +279,7 @@ pub fn LiveOutputView() -> impl IntoView {
     view! {
         <section class="live-output" aria-label="live-output">
             <h3>
-                "Live output " <span class="count" aria-label="live-output-total">
+                "Live output " <span class="count mono" aria-label="live-output-total">
                     {move || hosted.output.with(LiveOutput::total)}
                 </span> " lines"
             </h3>
