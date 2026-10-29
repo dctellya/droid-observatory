@@ -48,8 +48,10 @@ pub struct UreqTransport {
 
 impl UreqTransport {
     pub fn new(token: Option<Secret>, timeout: Duration) -> Self {
+        // native-tls without webpki-roots has no roots of its own: name the system store.
         let tls = ureq::tls::TlsConfig::builder()
             .provider(ureq::tls::TlsProvider::NativeTls)
+            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
             .build();
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
