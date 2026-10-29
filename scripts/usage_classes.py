@@ -27,3 +27,9 @@ def class_rows(scope, totals):
     tokens = sum(t for t, _ in totals.values())
     cost = sum(c for _, c in totals.values())
     return [[scope, name, n, share(n, tokens), "%.2f" % c, share(c, cost)] for name, (n, c) in totals.items()]
+
+
+def fulfilled_assertions(state, milestone):
+    """Ids of the assertions that moved to passed at `milestone` (validation-state.json has no timestamps, only the milestone)."""
+    return sorted(k for k, v in (state.get("assertions") or {}).items()
+                  if isinstance(v, dict) and v.get("status") == "passed" and v.get("validatedAtMilestone") == milestone)

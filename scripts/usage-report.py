@@ -1015,6 +1015,34 @@ def build(args):
          "feature's sessions and of the subagents they started." % (pl_label, ft_label))
     emit("")
 
+    # Cost per assertion and per feature
+    emit("### Cost per assertion and per feature")
+    emit("")
+    vs_path = args.validation_state or os.path.join(mission_dir, "validation-state.json")
+    vs_label = os.path.basename(mission_dir.rstrip("/")) + "/validation-state.json" if not args.validation_state else args.validation_state
+    state = None
+    if os.path.exists(vs_path):
+        with open(vs_path) as f:
+            state = json.load(f)
+    elif args.validation_state:
+        fail("validation state %s not found" % args.validation_state)
+    fulfilled = usage_classes.fulfilled_assertions(state, args.milestone) if state else []
+    done = [x["id"] for x in features if x.get("milestone") == args.milestone and x.get("status") == "completed"]
+    cost_per = lambda n: usd(window_total.usd / n) if n else "-"  # noqa: E731
+    for r in md_table(["Unit", "Count", "Window USD-eq", "USD-eq per unit", "Source"], [
+            ["assertion fulfilled", len(fulfilled), usd(window_total.usd), cost_per(len(fulfilled)),
+             "`%s`%s" % (vs_label, "" if state else " not found")],
+            ["feature completed", len(done), usd(window_total.usd), cost_per(len(done)),
+             "`%s`%s" % (ft_label, "" if features else " not found")]]):
+        emit(r)
+    emit("")
+    emit("assertions fulfilled in the window: %s" % (", ".join(fulfilled) or "none"))
+    emit("")
+    emit("Cost per assertion: the window total of Tokens per role divided by the assertions with status `passed` and `validatedAtMilestone` "
+         "equal to the milestone (the state file carries no timestamps, so the milestone is its window); cost per feature divides the same "
+         "total by the milestone's features with status `completed` in `features.json`. Fix rounds and re-tests are inside the window total.")
+    emit("")
+
     # Mission to date
     emit("### Mission to date by role")
     emit("")
@@ -1112,6 +1140,7 @@ def main(argv=None):
     ap.add_argument("--sessions-dir", default=os.path.expanduser("~/.factory/sessions"))
     prices = sorted(glob.glob(os.path.join(repo_root, "config", "prices", "*.toml")))
     ap.add_argument("--prices", default=prices[-1] if prices else None)
+    ap.add_argument("--validation-state", help="validation-state.json for the cost per assertion; default <mission-dir>/validation-state.json")
     ap.add_argument("--gate-dir", default=os.path.join(repo_root, "reports", "gate"))
     ap.add_argument("--from", dest="start", help="window start (RFC 3339); default the milestone's first worker_started")
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")
