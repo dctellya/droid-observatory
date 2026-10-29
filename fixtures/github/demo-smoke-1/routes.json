@@ -1,0 +1,13 @@
+{
+ "recorded": "2026-10-29",
+ "how": "gh api against dctellya/droid-observatory (the read-only paths the client requests); bodies are verbatim except the commit author email and name in runs.json, rewritten to user@example.invalid and Test Author",
+ "repo": "dctellya/droid-observatory",
+ "mission_branch": "demo/smoke-1",
+ "target_branch": "demo/base",
+ "routes": [
+  {"method": "GET", "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/smoke-1&base=demo/base&state=all", "status": 200, "body": "pulls.json"},
+  {"method": "GET", "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/none-yet&base=demo/base&state=all", "status": 200, "body": "pulls-none.json"},
+  {"method": "GET", "path": "/repos/dctellya/droid-observatory/actions/runs?head_sha=1d994af00fb141466e46021e9c6f8adbf314db55", "status": 200, "body": "runs.json"},
+  {"method": "GET", "path": "/repos/dctellya/droid-observatory/commits/1d994af00fb141466e46021e9c6f8adbf314db55/status", "status": 200, "body": "status.json"}
+ ]
+}
