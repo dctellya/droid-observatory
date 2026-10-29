@@ -1,13 +1,75 @@
 {
- "recorded": "2026-10-29",
- "how": "gh api against dctellya/droid-observatory (the read-only paths the client requests); bodies are verbatim except the commit author email and name in runs.json, rewritten to user@example.invalid and Test Author",
- "repo": "dctellya/droid-observatory",
- "mission_branch": "demo/smoke-1",
- "target_branch": "demo/base",
- "routes": [
-  {"method": "GET", "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/smoke-1&base=demo/base&state=all", "status": 200, "body": "pulls.json"},
-  {"method": "GET", "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/none-yet&base=demo/base&state=all", "status": 200, "body": "pulls-none.json"},
-  {"method": "GET", "path": "/repos/dctellya/droid-observatory/actions/runs?head_sha=1d994af00fb141466e46021e9c6f8adbf314db55", "status": 200, "body": "runs.json"},
-  {"method": "GET", "path": "/repos/dctellya/droid-observatory/commits/1d994af00fb141466e46021e9c6f8adbf314db55/status", "status": 200, "body": "status.json"}
- ]
+  "recorded": "2026-10-29",
+  "how": "gh api against dctellya/droid-observatory (the read-only paths the client requests); bodies are verbatim except the commit author email and name in runs.json, rewritten to user@example.invalid and Test Author, and pull-24.json, pull-23-merged.json and user.json, reduced to the fields the client reads (merged_by keeps the login only)",
+  "repo": "dctellya/droid-observatory",
+  "mission_branch": "demo/smoke-1",
+  "target_branch": "demo/base",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/smoke-1&base=demo/base&state=all",
+      "status": 200,
+      "body": "pulls.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/pulls?head=dctellya:demo/none-yet&base=demo/base&state=all",
+      "status": 200,
+      "body": "pulls-none.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/actions/runs?head_sha=1d994af00fb141466e46021e9c6f8adbf314db55",
+      "status": 200,
+      "body": "runs.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/commits/1d994af00fb141466e46021e9c6f8adbf314db55/status",
+      "status": 200,
+      "body": "status.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/rules/branches/demo/base",
+      "status": 200,
+      "body": "rules.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/rulesets",
+      "status": 200,
+      "body": "rulesets.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/branches/demo/base/protection",
+      "status": 404,
+      "body": "protection-none.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/pulls/24",
+      "status": 200,
+      "body": "pull-24.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/pulls/23",
+      "status": 200,
+      "body": "pull-23-merged.json"
+    },
+    {
+      "method": "GET",
+      "path": "/repos/dctellya/droid-observatory/pulls/24/reviews",
+      "status": 200,
+      "body": "reviews-24.json"
+    },
+    {
+      "method": "GET",
+      "path": "/user",
+      "status": 200,
+      "body": "user.json"
+    }
+  ]
 }
