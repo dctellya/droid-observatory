@@ -510,8 +510,8 @@ fn opening_a_store_twice_applies_the_schema_once() {
 
     assert_eq!(
         query_count(&db, "SELECT count(*) FROM schema_version"),
-        3,
-        "0001, 0002 and 0003, each applied once"
+        4,
+        "0001 to 0004, each applied once"
     );
     assert_eq!(query_count(&db, "SELECT count(*) FROM mapping_versions"), 1);
 }

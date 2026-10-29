@@ -97,7 +97,10 @@ fn migration_0002_converts_seven_lane_numbers_to_their_ids() {
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3, "0002 converts the lanes, 0003 follows it");
+    assert_eq!(
+        version, 4,
+        "0002 converts the lanes, 0003 and 0004 follow it"
+    );
     let usage: i64 = conn
         .query_row("SELECT COUNT(*) FROM usage", [], |r| r.get(0))
         .unwrap();
