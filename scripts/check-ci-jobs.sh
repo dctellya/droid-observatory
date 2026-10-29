@@ -89,7 +89,7 @@ if [ ! -f "$demo_wf" ]; then
 fi
 demo_pr=$(awk '
   /^on:/ { in_on = 1; next }
-  /^[A-Za-z]/ { in_on = 0 }
+  /^[A-Za-z]/ { in_on = 0; in_pr = 0 }
   in_on && /^  pull_request:/ { in_pr = 1; next }
   in_on && /^  [A-Za-z_]/ { in_pr = 0 }
   in_pr { print }
@@ -121,7 +121,7 @@ if ! grep -Eq '^  demo-gate:[[:space:]]*$' "$demo_wf"; then
   echo "check-ci-jobs: $demo_wf has no job demo-gate"
   status=1
 fi
-if [ "$(grep -Ec '^  [A-Za-z0-9_-]+:[[:space:]]*$' "$demo_wf")" != 1 ]; then
+if [ "$(awk '/^jobs:/ { in_jobs = 1; next } /^[A-Za-z]/ { in_jobs = 0 } in_jobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { n++ } END { print n + 0 }' "$demo_wf")" != 1 ]; then
   echo "check-ci-jobs: $demo_wf must hold exactly one job"
   status=1
 fi
