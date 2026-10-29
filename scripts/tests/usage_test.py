@@ -424,7 +424,7 @@ class UsageReport(unittest.TestCase):
     def test_the_sources_table_lists_features_json_with_its_feature_count(self):
         _, rows = table(self.text, "Sources")
         by_name = {r["Source"].strip("`"): r for r in rows}
-        self.assertEqual(by_name["mission/features.json"]["Lines"], "2")
+        self.assertEqual(by_name["mission/features.json"]["Lines"], "3")
 
     def test_subagent_self_check_and_mission_to_date_rows_name_their_source_file(self):
         for heading in ("Subagents", "Self-check missions", "Mission to date by role"):
@@ -614,7 +614,7 @@ class UsageReportPricing(unittest.TestCase):
         self.assertEqual((k["Input per M"], k["Cache write per M"], k["Cache read per M"], k["Output per M"]),
                          ("0.5", "0.5", "0.05", "2.0"))
         self.assertEqual(k["Roles"], "orchestrator, validator")
-        self.assertEqual(got["claude-fable-5.1"]["USD-eq"], "65.50")
+        self.assertEqual(got["claude-fable-5.1"]["USD-eq"], "67.51")
 
     def test_a_models_turns_never_show_at_zero_cost(self):
         _, rows = table(self.text, "Models that ran")

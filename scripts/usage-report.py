@@ -40,6 +40,7 @@ MATCH_TOLERANCE_S = 3.0
 LOG_REORDER_MARGIN_S = 600
 # Owner item 4 (M2 boundary): a wait that returns before this is reported as short.
 SHORT_WAIT_S = 60.0
+RATE_KEYS = ("input", "output", "cache_read", "cache_write")
 # Owner item 8: a feature finishes in one round under this many worker turns.
 FEATURE_TURN_CAP = 120
 # AGENTS.md "Mission setup": self-check missions run on the cheapest explicit model.
@@ -152,18 +153,48 @@ def read_jsonl(path):
     return out
 
 
+def fail(message):
+    print("usage-report.py: " + message, file=sys.stderr)
+    sys.exit(2)
+
+
 def load_prices(path):
     with open(path, "rb") as f:
         data = tomllib.load(f)
     return data.get("models", {})
 
 
+def rates(model, p):
+    """(basis, per-million rates by token class): the plan price when the row carries one, else the list price."""
+    plan = ["plan_%s_per_m" % k for k in RATE_KEYS]
+    if any(k in p for k in plan):
+        if not all(k in p for k in plan):
+            fail("the price row of %s has some plan_*_per_m keys but not all four" % model)
+        return "plan", {k: p["plan_%s_per_m" % k] for k in RATE_KEYS}
+    missing = [k + "_per_m" for k in RATE_KEYS if k + "_per_m" not in p]
+    if missing:
+        fail("the price row of %s lacks %s" % (model, ", ".join(missing)))
+    return "list", {k: p[k + "_per_m"] for k in RATE_KEYS}
+
+
+def check_priced(prices, models, path):
+    """A model that ran in the window is priced, and not at zero: its turns never show at zero cost."""
+    for model, turns in sorted(models.items()):
+        p = prices.get(model)
+        if p is None:
+            fail("no price for model %s (%d turns in the window) in %s; add a [models.\"%s\"] row (plan or list price)"
+                 % (model, turns, path, model))
+        _, r = rates(model, p)
+        if r["input"] <= 0 or r["output"] <= 0:
+            fail("the price of model %s has a zero input or output rate in %s; its turns would show at zero cost" % (model, path))
+
+
 def price(prices, model, a):
     p = prices.get(model)
     if p is None:
         return None
-    return (a.i * p["input_per_m"] + a.o * p["output_per_m"] + a.cr * p["cache_read_per_m"]
-            + a.cw * p["cache_write_per_m"]) / 1e6
+    _, r = rates(model, p)
+    return (a.i * r["input"] + a.o * r["output"] + a.cr * r["cache_read"] + a.cw * r["cache_write"]) / 1e6
 
 
 def scan_logs(files, start, end):
@@ -299,6 +330,10 @@ def md_table(header, rows):
 
 def usd(x):
     return "%.2f" % x
+
+
+def usd_nonzero(x):
+    return "<0.01" if 0 < x < 0.005 else usd(x)
 
 
 def ts_or_dash(x):
@@ -586,6 +621,10 @@ def build(args):
     clf = Classifier(sidecars, progress, mission_id)
     scan_logs.orch_id = mission_id
     win, upto, router, loginfo, orch_turns, unparsed, unjoined = scan_logs(files, start, end)
+    ran = collections.Counter()
+    for (_, model), a in win.items():
+        ran[model] += a.turns
+    check_priced(prices, ran, os.path.relpath(args.prices, repo_root) if args.prices.startswith(repo_root) else args.prices)
 
     ms_path = os.path.join(mission_dir, "model-settings.json")
     ms = {}
@@ -691,7 +730,32 @@ def build(args):
     for r in md_table(hdr, rows):
         emit(r)
     emit("")
-    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); turns on a model with no price row are counted in `Unpriced turns` and add nothing to USD-eq.")
+    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); a model that ran in the window with no price row, or a zero input or output price, stops the run (exit 2, naming the model), so `Unpriced turns` is 0 here; it only counts turns before the window (Mission to date by role). A price row with `plan_*_per_m` keys is the plan price and wins over the list price (see Models that ran).")
+    emit("")
+
+    # Models that ran
+    emit("### Models that ran")
+    emit("")
+    mrows = []
+    per_model = collections.OrderedDict()
+    for (sid, model), a in sorted(win.items(), key=lambda kv: (kv[1].first, kv[0])):
+        m = per_model.setdefault(model, [Acc(), 0.0, []])
+        for k in ("turns", "i", "o", "cr", "cw", "rs"):
+            setattr(m[0], k, getattr(m[0], k) + getattr(a, k))
+        m[1] += price(prices, model, a)
+        if role_of(sid) not in m[2]:
+            m[2].append(role_of(sid))
+    for model, (a, cost, roles) in per_model.items():
+        basis, r = rates(model, prices[model])
+        mrows.append([model, basis, a.turns, a.i, a.cw, a.cr, a.o, r["input"], r["cache_write"], r["cache_read"], r["output"],
+                      usd_nonzero(cost), ", ".join(sorted(roles, key=ROLES.index))])
+    for r in md_table(["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output", "Input per M",
+                       "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles"], mrows):
+        emit(r)
+    emit("")
+    emit("Every model with a log turn in the window is listed, declared or routed. Price basis is `plan` when the model's row in `%s` "
+         "carries the four `plan_*_per_m` keys (the plan's price) and `list` otherwise (the list price); per-million rates are USD."
+         % os.path.basename(args.prices))
     emit("")
 
     # Tokens per session
@@ -936,6 +1000,14 @@ def build(args):
     emit("Role rows and `total` are every log line up to the end of the window, no start bound. `milestone window total` is the "
          "total row of Tokens per role (the window only). Caps are those passed with `--cap role=USD`, `--cap total=USD` and "
          "`--cap milestone=USD`.")
+    history = collections.Counter()
+    for (_, model), a in upto.items():
+        if model not in prices:
+            history[model] += a.turns
+    emit("")
+    emit("Models with no price before the window: %s." % (
+        "none" if not history else "; ".join("%s (%d turns)" % kv for kv in sorted(history.items())) +
+        "; these turns are not in the window, so the run does not stop for them, and they add nothing to USD-eq (counted in `Unpriced turns`)"))
     # Sidecars: lifetime totals of sessions that may still be running, so the one section that can change between runs.
     emit("")
     emit("### Sidecar readings")
