@@ -59,7 +59,7 @@ mechanical clause instead of grading it (owner item 14).
 | `g6-shared-files` | VAL-PROC-033 | a worktree branch leaves the integrator's files and SPEC rows alone |
 | `g7-demo-base` | VAL-GATE-001 | `demo/base` exists and descends from the baseline |
 | `g7-demo-ruleset` | VAL-GATE-002, VAL-GATE-031 | the `demo-gate` ruleset fields |
-| `g7-demo-red-pr` | VAL-GATE-020 | exactly one PR for `demo/red-1` |
+| `g7-demo-red-pr` | VAL-GATE-020 | exactly one PR for `demo/red-1` created since the run window start (`CONTRACT_RUN_START`, the walk store's `pr.opened` row or the walk's recorded PR) |
 | `g7-demo-branches` | VAL-GATE-030 | `demo/base` is the only `demo/*` branch |
 | `g7-main-untouched` | VAL-PROC-021, VAL-PROC-006 | `main` unchanged, `main-gate` ruleset equals `main-gate.json` |
 | `g7-no-force-push` | VAL-PROC-020 | the GitHub activity log lists no `force_push` |
