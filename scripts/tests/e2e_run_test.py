@@ -250,7 +250,8 @@ class RerunPolicy(unittest.TestCase):
         self.assertEqual(root_outcome(junit), "flaked")
         gate = suites(junit)["gate lane"]
         self.assertIn('failures="0"', gate)
-        self.assertIn('<property name="outcome" value="flaked"/>', gate)
+        self.assertIn('<property name="rerun_outcome" value="passed"/>', gate)
+        self.assertNotIn('<property name="outcome"', gate)
         self.assertEqual(gate.count("<properties>"), 1, "the reporter's own properties element takes the outcome property")
         self.assertIn('<property name="specId" value="0"/>', gate)
         self.assertNotIn("<failure", read(junit))
@@ -265,6 +266,24 @@ class RerunPolicy(unittest.TestCase):
         junit = os.path.join(h.report, "junit.xml")
         self.assertEqual(root_outcome(junit), "failed")
         self.assertEqual(read(junit).count("<failure"), 1)
+        self.assertIn('<property name="rerun_outcome" value="failed"/>', suites(junit)["gate lane"])
+
+    def test_a_failed_run_labels_a_suite_that_is_green_on_rerun_passed(self):
+        sys.path.insert(0, SCRIPTS)
+        import e2e_run
+        with tempfile.TemporaryDirectory() as d:
+            def doc(*bad):
+                body = "".join('<testsuite name="%s" tests="1" failures="%d" time="1.0"><properties></properties>%s</testsuite>'
+                               % (n, n in bad, '<testcase name="c"><failure message="x"/></testcase>' if n in bad else "")
+                               for n in ("alpha", "beta"))
+                return '<?xml version="1.0"?><testsuites>%s</testsuites>' % body
+            for name, text in (("attempt-1-junit.xml", doc("alpha", "beta")), ("attempt-2-junit.xml", doc("beta"))):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write(text)
+            e2e_run.write_junit(d, "failed", os.path.join(d, "attempt-2-junit.xml"))
+            out = suites(os.path.join(d, "junit.xml"))
+        self.assertIn('<property name="rerun_outcome" value="passed"/>', out["alpha"])
+        self.assertIn('<property name="rerun_outcome" value="failed"/>', out["beta"])
 
     def test_a_failure_that_names_no_spec_is_red_without_a_rerun(self):
         h = Harness("1")
