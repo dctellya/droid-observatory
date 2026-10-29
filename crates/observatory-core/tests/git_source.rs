@@ -311,6 +311,27 @@ fn integration_merges_become_lane6_events_one_per_first_parent_merge() {
 }
 
 #[test]
+fn the_pointer_names_the_repository_by_its_resolved_path() {
+    let repo = Repo::new();
+    let roundabout = repo.main.join("..").join("repo");
+    let source = GitSource::open(
+        &roundabout,
+        MissionId("mission-1".into()),
+        "mission/demo",
+        CycleTemplate::engineering(),
+        GitOptions::default(),
+    )
+    .unwrap();
+    for event in source.integration_events().unwrap() {
+        assert!(
+            matches!(&event.source, SourcePtr::Git { repo: path, .. } if *path == repo.main),
+            "{:?}",
+            event.source
+        );
+    }
+}
+
+#[test]
 fn integration_event_ids_are_stable_across_reads() {
     let repo = Repo::new();
     let first = repo.source().integration_events().unwrap();
@@ -521,4 +542,109 @@ mod store {
             assert_eq!(event.lane, integration_lane());
         }
     }
+}
+
+/// The real repository and its real runs: `GIT_SOURCE_BRANCH` (default `mission/observatory-v1`)
+/// and, when set, `GIT_SOURCE_RUNS_JSON`, the output of
+/// `gh run list --workflow mission-branch --branch <branch> --json databaseId,conclusion,headSha,createdAt,updatedAt,url`.
+/// Run with `cargo test -p observatory-core --test git_source -- --ignored --nocapture`.
+#[test]
+#[ignore = "reads the checkout it runs in and, optionally, a saved `gh run list`"]
+fn the_real_repository_yields_lane6_events_and_no_unknown() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let branch =
+        std::env::var("GIT_SOURCE_BRANCH").unwrap_or_else(|_| "mission/observatory-v1".into());
+    let source = GitSource::open(
+        &repo,
+        MissionId("real".into()),
+        &branch,
+        CycleTemplate::engineering(),
+        GitOptions::default(),
+    )
+    .expect("the mission branch exists in this checkout");
+
+    let snapshot = source.snapshot().unwrap();
+    println!(
+        "mission branches: {:?}",
+        GitSource::mission_branches(&repo).unwrap()
+    );
+    for worktree in &snapshot.worktrees {
+        println!(
+            "worktree {} {:?} {:?}",
+            worktree.path.display(),
+            worktree.branch,
+            worktree.milestone
+        );
+    }
+
+    let events = source.integration_events().unwrap();
+    for event in &events {
+        println!(
+            "merge {:?} {:?} {:?}",
+            event.source, event.milestone_id, event.at
+        );
+    }
+    let listed = String::from_utf8(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args([
+                "log",
+                "--first-parent",
+                "--merges",
+                "--format=%H",
+                &format!("refs/heads/{branch}"),
+            ])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    assert_eq!(events.len(), listed.lines().count());
+
+    let mut all = events;
+    if let Ok(path) = std::env::var("GIT_SOURCE_RUNS_JSON") {
+        let json: Vec<serde_json::Value> =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let runs: Vec<FastCheckRun> = json
+            .iter()
+            .map(|r| {
+                let text = |key: &str| r[key].as_str().unwrap().to_owned();
+                FastCheckRun {
+                    run_id: r["databaseId"].as_u64().unwrap(),
+                    url: text("url"),
+                    head_sha: text("headSha"),
+                    started_at: Timestamp::parse(&text("createdAt")).unwrap(),
+                    finished_at: Some(Timestamp::parse(&text("updatedAt")).unwrap()),
+                    conclusion: RunConclusion::from_github(&text("conclusion")),
+                }
+            })
+            .collect();
+        let gate = source.gate_command_events(&runs).unwrap();
+        for run in &runs {
+            let of_run: Vec<_> = gate
+                .iter()
+                .filter(|e| matches!(&e.source, SourcePtr::GitHub { url } if *url == run.url))
+                .collect();
+            println!(
+                "run {} {:?} head {} -> {:?} {:?}",
+                run.run_id,
+                run.conclusion,
+                &run.head_sha[..8],
+                of_run
+                    .iter()
+                    .map(|e| e.kind.prd_name().into_owned())
+                    .collect::<Vec<_>>(),
+                of_run.first().and_then(|e| e.milestone_id.clone()),
+            );
+            assert!(!of_run.is_empty());
+        }
+        all.extend(gate);
+    }
+    assert!(
+        all.iter()
+            .all(|e| !matches!(e.kind, EventKind::Unknown { .. }))
+    );
+    assert!(all.iter().all(|e| e.lane == integration_lane()));
+    println!("lane-6 events: {}, unknown: 0", all.len());
 }
