@@ -244,7 +244,7 @@ git checkout -q -- src/main.rs
 echo "// edit" >> src/main.rs
 edited=$(gate_key)
 [ "$edited" != "$tree" ] || fail "tracked edit did not change the key"
-[ "$edited" = "$(indep_tree)" ] || fail "edited key differs from the independent tree"
+[ "$edited" = "$(indep_code_tree)" ] || fail "edited key differs from the independent code tree"
 before=$(runs)
 sh "$gate" unit -- sh "$tmp/ok.sh" > "$tmp/edit.out" 2>&1
 [ "$(runs)" -eq $((before + 1)) ] || fail "tracked edit was not a miss"
