@@ -5,7 +5,7 @@ use observatory_core::config::MissionConfig;
 use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
     BoardView, ControlBar, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber,
-    ViewConfig, WorkerGrouping, branch_of, tray_count,
+    ViewConfig, WorkerGrouping, tray_count,
 };
 
 use crate::agents::AgentPanel;
@@ -29,7 +29,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let mission = MissionConfig::default();
     let declared = DeclaredModels::from_config(&mission);
     let agent_declared = declared.clone();
-    let branch = branch_of(&mission, &capture.summary.name);
+    let branch = capture.branch.clone();
     let events = capture.events.clone();
     let options = Memo::new({
         let events = events.clone();

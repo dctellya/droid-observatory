@@ -12,6 +12,7 @@ use observatory_core::view::MilestoneWorktree;
 use tauri::{AppHandle, Manager};
 
 use crate::Shell;
+use crate::commands::resolve_branch;
 
 const MILESTONE: &str = "e2e-gate";
 const WORKTREE_NAME: &str = "wt-e2e-gate";
@@ -66,16 +67,53 @@ fn scenario(name: &str) -> Option<Scenario> {
     })
 }
 
-/// Runs the named scenario (`red`, `green`, `merged`) on the first live mission.
+/// What a poll reads while the mission branch has no pull request yet.
+fn pending_poll(now: Timestamp) -> Poll {
+    Poll {
+        observed_at: now,
+        pr: None,
+        checks: Vec::new(),
+        reviews: Vec::new(),
+        attestations: Vec::new(),
+        gate: None,
+        events: Vec::new(),
+        windows: Vec::new(),
+    }
+}
+
+/// Runs the named scenario (`pending`, `red`, `green`, `merged`) on the first live mission.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<String, String> {
-    let scenario =
-        scenario(&scenario_name).ok_or_else(|| format!("no scenario {scenario_name}"))?;
     let mission = crate::stall::live_missions(&app)
         .into_iter()
         .next()
         .ok_or("no live mission")?;
     let shell = app.state::<Shell>();
+    let branch = {
+        let store = lock_store(&shell);
+        let name = store
+            .missions()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|row| row.id == mission)
+            .map(|row| row.name)
+            .ok_or("the mission has no row")?;
+        resolve_branch(&store, &shell.cfg.mission, &mission, &name)
+    };
+    if scenario_name == "pending" {
+        let mut shown = None;
+        crate::github::apply_poll(
+            &app,
+            &mut lock_store(&shell),
+            &mission,
+            &branch,
+            pending_poll(Timestamp::now()),
+            &mut shown,
+        );
+        return Ok(mission.to_string());
+    }
+    let scenario =
+        scenario(&scenario_name).ok_or_else(|| format!("no scenario {scenario_name}"))?;
     let template = shell.template.clone();
     let now = Timestamp::now();
     let events = scenario
@@ -152,11 +190,15 @@ pub async fn e2e_gate_poll(app: AppHandle, scenario_name: String) -> Result<Stri
             path: WORKTREE_PATH.to_owned(),
         }],
     );
-    let mut store = shell
+    let mut store = lock_store(&shell);
+    let mut shown = None;
+    crate::github::apply_poll(&app, &mut store, &mission, &branch, poll, &mut shown);
+    Ok(mission.to_string())
+}
+
+fn lock_store<'a>(shell: &'a Shell) -> std::sync::MutexGuard<'a, observatory_core::store::Store> {
+    shell
         .store
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut shown = None;
-    crate::github::apply_poll(&app, &mut store, &mission, poll, &mut shown);
-    Ok(mission.to_string())
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

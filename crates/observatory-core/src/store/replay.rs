@@ -125,6 +125,7 @@ impl Store {
             events,
             sessions,
             live: false,
+            branch: None,
         })
     }
 

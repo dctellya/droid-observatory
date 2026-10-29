@@ -98,6 +98,10 @@ pub struct OpenedMission {
     pub sessions: Vec<SessionInfo>,
     /// True while one of the mission's session files is being tailed.
     pub live: bool,
+    /// The branch the Gate placeholder names; the shell fills it from `missions.branch` or the
+    /// configured pattern, so a store opened without a config leaves it unset.
+    #[serde(default)]
+    pub branch: Option<String>,
 }
 
 /// Adds the events of `incoming` whose id `held` does not hold and puts `held` back in replay

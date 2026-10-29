@@ -7,6 +7,7 @@ use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
+use observatory_core::store::Store;
 use observatory_core::view::{
     ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
     LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
@@ -28,17 +29,47 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// The branch the Gate placeholder and the gate log name for a mission: the one the git poll
+/// recorded in `missions.branch`, else the configured pattern resolved for the mission's name.
+pub(crate) fn resolve_branch(
+    store: &Store,
+    config: &MissionConfig,
+    mission: &MissionId,
+    name: &str,
+) -> String {
+    store
+        .mission_branch(mission)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| branch_of(config, name))
+}
+
+/// The branch of a mission just opened, see `resolve_branch`.
+fn branch_in(store: &Store, shell: &Shell, opened: &OpenedMission) -> String {
+    resolve_branch(
+        store,
+        &shell.cfg.mission,
+        &opened.summary.mission_id,
+        &opened.summary.name,
+    )
+}
+
 /// Replays the capture at `path` (the root `.jsonl` or its `.capture.json`) through the store
 /// and answers with the mission as the store now holds it.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
-    let mut opened = lock(&shell.store)
-        .replay_file_with(
-            &PathBuf::from(path),
-            &shell.cfg.ingest,
-            shell.template.clone(),
-        )
-        .map_err(text)?;
+    let mut opened = {
+        let mut store = lock(&shell.store);
+        let mut opened = store
+            .replay_file_with(
+                &PathBuf::from(path),
+                &shell.cfg.ingest,
+                shell.template.clone(),
+            )
+            .map_err(text)?;
+        opened.branch = Some(branch_in(&store, &shell, &opened));
+        opened
+    };
     opened.live = is_live(&shell, &opened.summary.mission_id);
     Ok(opened)
 }
@@ -53,7 +84,12 @@ pub async fn open_mission(
     shell: State<'_, Shell>,
     mission_id: MissionId,
 ) -> Result<OpenedMission, String> {
-    let mut opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    let mut opened = {
+        let store = lock(&shell.store);
+        let mut opened = store.open_mission(&mission_id).map_err(text)?;
+        opened.branch = Some(branch_in(&store, &shell, &opened));
+        opened
+    };
     opened.live = is_live(&shell, &mission_id);
     Ok(opened)
 }
@@ -85,6 +121,7 @@ pub async fn attach(
         .map_err(text)?
         .ok_or_else(|| format!("session {session_id} is not known to the store"))?;
     let mut opened = store.open_mission(&mission).map_err(text)?;
+    opened.branch = Some(branch_in(&store, &shell, &opened));
     drop(store);
     opened.live = is_live(&shell, &mission);
     Ok(opened)
@@ -99,7 +136,12 @@ pub async fn board(
     grouping: Option<WorkerGrouping>,
     at: Option<Timestamp>,
 ) -> Result<BoardDigest, String> {
-    let opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    let (opened, branch) = {
+        let store = lock(&shell.store);
+        let opened = store.open_mission(&mission_id).map_err(text)?;
+        let branch = branch_in(&store, &shell, &opened);
+        (opened, branch)
+    };
     let mission = MissionConfig::default();
     let cfg = ViewConfig {
         filter: filter.unwrap_or_default(),
@@ -110,7 +152,7 @@ pub async fn board(
         &opened.events,
         &cfg,
         &DeclaredModels::from_config(&mission),
-        &branch_of(&mission, &opened.summary.name),
+        &branch,
         &shell.template,
     );
     Ok(board.digest())

@@ -1,6 +1,7 @@
 import { expect } from '@wdio/globals';
 import { browser } from '@wdio/globals';
 import { startForgeProxy, type ForgeStub } from '../lib/forge.js';
+import { appLog } from '../lib/attach.js';
 import { byId } from '../lib/hosted.js';
 import { gh, openAttached, keepLog, png, savedPr, WALK } from '../lib/walk.js';
 
@@ -22,8 +23,12 @@ describe('live walk 2: the same green pull request under merge_policy = "policy"
       timeoutMsg: 'the badge never read CI green',
     });
     await expect(byId('merge')).not.toBeExisting();
-    const lines = keepLog(['gate_changed']);
-    expect(lines.some((line) => line.includes('merge_offered=false'))).toBe(true);
+    // The badge can read CI green before the poll that announces the header has written its log line.
+    await browser.waitUntil(() => appLog().some((line) => line.includes('gate_changed') && line.includes('merge_offered=false')), {
+      timeout: 45_000,
+      timeoutMsg: 'the app log has no gate_changed line with merge_offered=false',
+    });
+    keepLog(['gate_changed']);
     await png('live-policy-no-merge', byId('gate-group'));
   });
 });

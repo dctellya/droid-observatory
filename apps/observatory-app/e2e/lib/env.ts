@@ -25,6 +25,9 @@ export const HOSTED_MISSION_FILE = join(RUN_DIR, 'mission.md');
 /** Port of the loopback forge the gate spec starts (lib/forge.ts); 3142-3149 are the mission's scratch ports. */
 export const FORGE_STUB_PORT = 3147;
 
+/** `[mission].branch_pattern` of the generated config: no `<name>`, so every mission resolves to it. */
+export const E2E_BRANCH = 'mission/observatory-v1';
+
 /** How long a scenario waits for something the app does on its own. */
 export const WAIT_MS = 30_000;
 
@@ -40,6 +43,8 @@ export function prepareRunDir(): void {
   writeFileSync(HOSTED_MISSION_FILE, '# E2E mission\n\nNothing to build.\n');
   const toml = [
     '[mission]',
+    // A literal, so the placeholder and the gate log of every mission name the same branch (specs/placeholder.e2e.ts).
+    `branch_pattern = "${E2E_BRANCH}"`,
     `droid_bin = "${join(E2E_DIR, 'fixtures/fake-droid.mjs')}"`,
     `spool_base = "${join(RUN_DIR, 'spool')}"`,
     'reap_grace_ms = 500',

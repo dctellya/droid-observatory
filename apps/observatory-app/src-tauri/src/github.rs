@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 /// One mission's source and the header the window was last told about.
 struct Tracked {
     source: GitHubSource<GitHubClient<UreqTransport>>,
+    branch: String,
     shown: Option<GateGroup>,
 }
 
@@ -176,6 +177,7 @@ fn poll_mission<R: Runtime>(
                     &cfg.github,
                     template.clone(),
                 ),
+                branch,
                 shown: None,
             },
         );
@@ -187,7 +189,14 @@ fn poll_mission<R: Runtime>(
         .source
         .set_affected_milestone(store.affected_milestone(&mission).ok().flatten());
     match tracked.source.poll(Timestamp::now()) {
-        Ok(poll) => apply_poll(app, store, &mission, poll, &mut tracked.shown),
+        Ok(poll) => apply_poll(
+            app,
+            store,
+            &mission,
+            &tracked.branch,
+            poll,
+            &mut tracked.shown,
+        ),
         Err(error) => tracing::warn!(mission_id = %mission, %error, "github_poll_failed"),
     }
 }
@@ -198,6 +207,7 @@ pub(crate) fn apply_poll<R: Runtime>(
     app: &AppHandle<R>,
     store: &mut Store,
     mission: &MissionId,
+    branch: &str,
     poll: Poll,
     shown: &mut Option<GateGroup>,
 ) {
@@ -226,7 +236,7 @@ pub(crate) fn apply_poll<R: Runtime>(
         crate::ingest::log_batch(&batch);
         let _ = app.emit("events_appended", &batch);
     }
-    announce_gate(app, store, mission, poll.gate.as_ref(), shown);
+    announce_gate(app, store, mission, branch, poll.gate.as_ref(), shown);
 }
 
 /// The Gate header of each mission as the last poll read it, for a board opened after the
@@ -256,6 +266,7 @@ fn announce_gate<R: Runtime>(
     app: &AppHandle<R>,
     store: &Store,
     mission: &MissionId,
+    branch: &str,
     facts: Option<&GateFacts>,
     shown: &mut Option<GateGroup>,
 ) {
@@ -275,6 +286,7 @@ fn announce_gate<R: Runtime>(
     tracing::info!(
         mission_id = %mission,
         badge = gate.badge.as_str(),
+        branch = %branch,
         pr = gate.pr_number,
         decided_by = ?gate.decided_by,
         ruleset = ruleset_name(&gate),

@@ -1,10 +1,7 @@
 import { $, browser, expect } from '@wdio/globals';
-import { WAIT_MS } from '../lib/env.js';
+import { E2E_BRANCH as BRANCH, WAIT_MS } from '../lib/env.js';
 import { appLog } from '../lib/attach.js';
 import { openAttached } from '../lib/walk.js';
-
-/** `[mission].branch_pattern` of the generated e2e config (lib/env.ts): a literal, so every mission names this branch. */
-const BRANCH = 'mission/observatory-v1';
 
 describe('the pre-gate placeholder of an attached mission', () => {
   before(async () => {

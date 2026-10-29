@@ -5,12 +5,13 @@
 use std::sync::Arc;
 
 use leptos::prelude::*;
+use observatory_core::config::MissionConfig;
 use observatory_core::ingest::{
     EventBatch, MemoryReplay, OpenedMission, SessionInfo, drop_events, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
 use observatory_core::view::{
-    GateGroup, MilestoneWorktree, MissionSummary, RawLineView, raw_line_view,
+    GateGroup, MilestoneWorktree, MissionSummary, RawLineView, branch_of, raw_line_view,
 };
 use serde_json::json;
 
@@ -26,6 +27,9 @@ enum RawSource {
 pub struct Capture {
     /// As the capture was opened; the live counts are derived from `events`.
     pub summary: MissionSummary,
+    /// The branch the Gate placeholder names: the shell's (recorded or configured), else the
+    /// default pattern in the browser host, which has no config.
+    pub branch: String,
     pub events: ArcRwSignal<Vec<Event>>,
     pub sessions: ArcRwSignal<Vec<SessionInfo>>,
     /// True while a session of the mission is being tailed.
@@ -40,6 +44,7 @@ pub struct Capture {
 impl Capture {
     pub fn of_memory(replay: Arc<MemoryReplay>) -> Self {
         Self {
+            branch: branch_of(&MissionConfig::default(), &replay.summary.name),
             summary: replay.summary.clone(),
             events: ArcRwSignal::new(replay.events.clone()),
             sessions: ArcRwSignal::new(replay.sessions.clone()),
@@ -52,6 +57,9 @@ impl Capture {
 
     pub fn of_shell(opened: OpenedMission) -> Self {
         Self {
+            branch: opened
+                .branch
+                .unwrap_or_else(|| branch_of(&MissionConfig::default(), &opened.summary.name)),
             summary: opened.summary,
             events: ArcRwSignal::new(opened.events),
             sessions: ArcRwSignal::new(opened.sessions),
