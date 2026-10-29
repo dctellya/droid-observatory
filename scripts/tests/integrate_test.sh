@@ -3,7 +3,7 @@
 # templated message and a parsed trailer, the gate as a cache hit or a real run, red gate abort, staging files merged
 # into SPEC section 9, BACKLOG and decision addenda and removed, a refusal on a dirty tree.
 set -u
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID DROID_SESSION_ID
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID DROID_SESSION_ID INTEGRATE_LONG INTEGRATE_LONG_JOBS
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -299,6 +299,64 @@ code=$?
 check "dirty: exit non-zero" [ "$code" -ne 0 ]
 check "dirty: names the unclean tree" grep -q 'not clean' "$tmp/dirty.out"
 check "dirty: nothing merged" [ "$(git rev-parse HEAD)" = "$before" ]
+
+echo "== long work: the result file of integrate-long is part of the boundary =="
+tab=$(printf '\t')
+long_jobs="$tmp/long-jobs.tsv"
+printf 'cargo%slongjob%ssh -c '"'"'echo long >> "$COUNTER"; echo "long output"'"'"'\n' "$tab" "$tab" > "$long_jobs"
+mkrepo longnone
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/longnone.out" 2>&1
+code=$?
+check "long none: exit 0" [ "$code" -eq 0 ]
+check "long none: the summary says the long work was not run and names the target" sh -c "grep -q 'long work: not run' $tmp/longnone.out && grep -q 'make integrate-long M=m9' $tmp/longnone.out"
+check "long none: the report has a Long work section saying pending" sh -c "grep -q '^## Long work' reports/readiness/2026-10-25-m9.md && grep -q 'pending' reports/readiness/2026-10-25-m9.md"
+
+mkrepo longrun
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+: > "$COUNTER"
+INTEGRATE_LONG=1 INTEGRATE_LONG_JOBS="$long_jobs" sh scripts/integrate.sh m9 wt/m9 > "$tmp/longrun.out" 2>&1
+code=$?
+check "long run: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/longrun.out"
+check "long run: the job ran once" [ "$(grep -c '^long$' "$COUNTER" | tr -d ' ')" = 1 ]
+long_tree=$(sh scripts/gate.sh --key | sed -n 1p)
+check "long run: the result file is committed with the boundary" git cat-file -e "HEAD:reports/integrate-long/$long_tree.json"
+check "long run: the summary reports the worst exit code" grep -q 'long work: OK (worst exit code 0)' "$tmp/longrun.out"
+check "long run: the report lists the job" sh -c "grep -q '^## Long work' reports/readiness/2026-10-25-m9.md && grep -q 'longjob' reports/readiness/2026-10-25-m9.md"
+
+echo "== long work: a result written by a separate run is read on the next integrate run =="
+mkrepo longlater
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > /dev/null 2>&1
+: > "$COUNTER"
+INTEGRATE_LONG_JOBS="$long_jobs" sh scripts/integrate-long.sh m9 > "$tmp/longlater-a.out" 2>&1
+check "long later: integrate-long exit 0" [ $? -eq 0 ]
+check "long later: the untracked result does not make the tree unclean for integrate" sh -c "sh scripts/integrate.sh m9 wt/m9 > $tmp/longlater-b.out 2>&1"
+check "long later: the gate was a hit on the rerun" grep -q 'gate: HIT' "$tmp/longlater-b.out"
+check "long later: the summary reads the record" grep -q 'long work: OK' "$tmp/longlater-b.out"
+check "long later: the report lists the job after the refresh" grep -q 'longjob' reports/readiness/2026-10-25-m9.md
+check "long later: the refresh commits the result file" sh -c "git ls-tree -r --name-only HEAD reports/integrate-long | grep -q '.json'"
+check "long later: the rerun left a clean tree" [ -z "$(git status --porcelain -- . ':(exclude)build-log')" ]
+
+echo "== long work: a red job is reported and fails the target after the boundary is written =="
+mkrepo longred
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+printf 'cargo%sbadjob%ssh -c '"'"'echo "cov too low"; exit 4'"'"'\n' "$tab" "$tab" > "$tmp/long-red.tsv"
+INTEGRATE_LONG=1 INTEGRATE_LONG_JOBS="$tmp/long-red.tsv" sh scripts/integrate.sh m9 wt/m9 > "$tmp/longred.out" 2>&1
+code=$?
+check "long red: the target exits non-zero" [ "$code" -ne 0 ]
+check "long red: the summary says RED with the worst exit code" grep -q 'long work: RED (worst exit code 4)' "$tmp/longred.out"
+check "long red: the boundary commit was still written" [ "$(git log -1 --format=%s)" = "chore(integration): m9 boundary reports and shared files" ]
+check "long red: the report names the red job" grep -q 'badjob' reports/readiness/2026-10-25-m9.md
 
 echo "== arguments: unknown branch and missing milestone =="
 git checkout -q -- SPEC.md
