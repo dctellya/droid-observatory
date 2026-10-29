@@ -24,29 +24,47 @@ fn golden_turns() -> Vec<Event> {
         .collect()
 }
 
+type Counts = (u64, u64, u64, Option<String>, String);
 type Shape = (
     String,
-    EventKind,
+    Counts,
     String,
     String,
     Option<String>,
     Option<String>,
 );
 
-/// What a turn is, without the path its pointer names (the host's own copy of the extract).
+/// What a turn is, without the path its pointer names (the host's own copy of the extract) and
+/// without `reasoning` and `total_input`, which the store does not keep.
 fn shapes(events: &[Event]) -> Vec<Shape> {
     let mut found: Vec<Shape> = events
         .iter()
-        .filter(|event| matches!(event.kind, EventKind::TurnUsage { .. }))
-        .map(|event| {
-            (
+        .filter_map(|event| {
+            let EventKind::TurnUsage {
+                input,
+                output,
+                cache_read,
+                model,
+                log_ts,
+                ..
+            } = &event.kind
+            else {
+                return None;
+            };
+            Some((
                 event.id.0.clone(),
-                event.kind.clone(),
+                (
+                    *input,
+                    *output,
+                    *cache_read,
+                    model.as_ref().map(ToString::to_string),
+                    log_ts.to_rfc3339_millis(),
+                ),
                 event.at.to_rfc3339_millis(),
                 event.lane.to_string(),
                 event.feature_id.as_ref().map(ToString::to_string),
                 event.milestone_id.as_ref().map(ToString::to_string),
-            )
+            ))
         })
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
@@ -92,7 +110,7 @@ fn app_replay_loads_the_usage_log_named_in_the_capture_header() {
     let reopened = store
         .open_mission(&opened.summary.mission_id)
         .expect("the mission reopens from its rows");
-    assert_eq!(shapes(&reopened.events), expected, "the store keeps them");
+    assert!(shapes(&reopened.events) == expected, "the store keeps them");
 }
 
 /// The files of the M0 capture as a picker hands them over, with or without the extract.
@@ -120,7 +138,7 @@ fn picked(with_usage_log: bool) -> BTreeMap<PathBuf, Vec<u8>> {
 fn browser_replay_loads_the_usage_log_named_in_the_capture_header() {
     let replay = replay_files(picked(true)).expect("the capture opens");
 
-    assert_eq!(shapes(&replay.events), shapes(&golden_turns()));
+    assert!(shapes(&replay.events) == shapes(&golden_turns()));
     assert_eq!(
         replay.summary.event_count, 1279,
         "the turns are not board events"
