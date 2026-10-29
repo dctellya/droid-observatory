@@ -8,6 +8,7 @@ use crate::mapping::MappingVersion;
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("migrations/0001_init.sql")),
     (2, include_str!("migrations/0002_lane_text.sql")),
+    (3, include_str!("migrations/0003_gate_windows.sql")),
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
