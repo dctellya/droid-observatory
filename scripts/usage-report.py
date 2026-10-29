@@ -19,6 +19,8 @@ import sys
 import tomllib
 from datetime import datetime, timedelta, timezone
 
+import usage_classes
+
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
 
@@ -731,6 +733,27 @@ def build(args):
         emit(r)
     emit("")
     emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); a model that ran in the window with no price row, or a zero input or output price, stops the run (exit 2, naming the model), so `Unpriced turns` is 0 here; it only counts turns before the window (Mission to date by role). A price row with `plan_*_per_m` keys is the plan price and wins over the list price (see Models that ran).")
+    emit("")
+
+    # Cost by token class
+    emit("### Cost by token class")
+    emit("")
+    scopes = collections.OrderedDict((role, usage_classes.new_totals()) for role in ROLES)
+    milestone_totals = usage_classes.new_totals()
+    for (sid, model), a in win.items():
+        _, r = rates(model, prices[model])
+        usage_classes.add_totals(scopes[role_of(sid)], a, r)
+        usage_classes.add_totals(milestone_totals, a, r)
+    crows = []
+    for scope, totals in list(scopes.items()) + [("milestone", milestone_totals)]:
+        if any(t for t, _ in totals.values()):
+            crows += usage_classes.class_rows(scope, totals)
+    for r in md_table(["Scope", "Class", "Tokens", "Share of tokens %", "USD-eq", "Share of cost %"], crows):
+        emit(r)
+    emit("")
+    emit("Cost by token class: each role's and the milestone's tokens and USD-eq split by class, priced per model as in Tokens per role; "
+         "share of tokens and share of cost are the class's part of that scope's total (cost follows the class, not the token count). "
+         "Reasoning tokens are not a class: they are billed inside output.")
     emit("")
 
     # Models that ran

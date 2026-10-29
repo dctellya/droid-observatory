@@ -546,9 +546,11 @@ class UsageReportFile(unittest.TestCase):
         self.assertIn("Sidecar readings can move while a session is live", flat)
 
     def test_the_script_imports_only_the_standard_library(self):
-        src = read(SCRIPT)
-        mods = set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", src, re.M))
-        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect"}
+        mods = set()
+        for path in (SCRIPT, os.path.join(HERE, "..", "usage_classes.py")):
+            mods |= set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", read(path), re.M))
+        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect",
+                   "usage_classes"}
         self.assertLessEqual(mods, allowed, mods - allowed)
 
 
