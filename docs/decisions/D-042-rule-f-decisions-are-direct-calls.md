@@ -67,6 +67,6 @@ directive; c is a background Script with `tools.LS` and `tools.Read` only; e is 
   match, not a parse.
 - Open question for the owner's delegate: variant accepted, or the literal clause with its consequence.
 - A commit cannot name its own sha: the commit that adds this clause is named here by short sha in the docs-only commit that follows
-  it (as D-041 did for 060698a), written at the follow-up of `m5-integrate-m4`; `g6-hooks-config` matches hook-file commits against
-  `docs/decisions`.
+  it (as D-041 did for 060698a). That commit is 7fef46e (`chore(hooks): rule F, decisions are direct calls, D-042`), named at the
+  boundary integration `m5-integrate-m4`; `g6-hooks-config` matches hook-file commits against `docs/decisions`.
 - The decision files the integrator numbers from the inbox are numbered from D-043 on (D-042 is this file).
