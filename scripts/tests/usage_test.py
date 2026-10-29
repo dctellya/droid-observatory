@@ -705,5 +705,56 @@ class UsageReportTokenClasses(unittest.TestCase):
         self.assertIn("share of tokens", line)
 
 
+class UsageReportFeatureBudgets(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+        cls.header, rows = table(cls.text, "Feature size")
+        cls.rows = {r["Feature"]: r for r in rows}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_every_feature_row_carries_its_turn_budget_and_whether_it_went_over(self):
+        for col in ("Turns", "Turn budget", "Over budget", "USD-eq"):
+            self.assertIn(col, self.header)
+        a = self.rows["m9-alpha"]
+        self.assertEqual((a["Turns"], a["Turn budget"], a["Over budget"]), ("2", "1", "yes"))
+        self.assertEqual(a["Over 120 turns"], "no")
+
+    def test_a_feature_of_the_milestone_that_never_ran_is_listed_with_zero_turns(self):
+        b = self.rows["m9-beta"]
+        self.assertEqual((b["Rounds"], b["Turns"], b["Turn budget"], b["Over budget"], b["USD-eq"]), ("0", "0", "40", "no", "0.00"))
+        self.assertEqual(b["Skill"], "core-worker")
+
+    def test_a_feature_of_another_milestone_is_not_listed_and_a_missing_budget_is_a_dash(self):
+        self.assertNotIn("m8-old", self.rows)
+        v = self.rows["scrutiny-validator-m9"]
+        self.assertEqual((v["Turn budget"], v["Over budget"]), ("-", "-"))
+
+    def test_the_feature_cost_includes_the_subagents_its_sessions_started(self):
+        self.assertEqual(self.rows["m9-alpha"]["USD-eq"], "18.00")
+        self.assertEqual(self.rows["scrutiny-validator-m9"]["USD-eq"], "8.80")
+
+    def test_a_null_budget_in_features_json_is_a_dash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = os.path.join(tmp, "mission")
+            shutil.copytree(os.path.join(FIX, "mission"), mission)
+            path = os.path.join(mission, "features.json")
+            data = json.loads(read(path))
+            data["features"][0]["turnBudget"] = None
+            with open(path, "w") as f:
+                json.dump(data, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            _, rows = table(read(out), "Feature size")
+            a = next(r for r in rows if r["Feature"] == "m9-alpha")
+            self.assertEqual((a["Turn budget"], a["Over budget"]), ("-", "-"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
