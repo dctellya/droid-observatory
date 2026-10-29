@@ -408,6 +408,148 @@ for c in g2-gate-tests g2-metric-tests g2-telemetry-tests; do
   expect_ok "$c" '' "$c on the real tree"
 done
 
+# --- G7: gh API fields, against a stub gh ------------------------------------------------------------------------
+
+gs="$tmp/ghstub"
+mkdir -p "$gs/bin" "$gs/rules"
+cat > "$gs/bin/gh" <<'STUB'
+#!/bin/sh
+# Stub gh: the first rule file (sorted) whose first line is a substring of the arguments prints its remaining lines.
+args="$*"
+for r in "$GH_STUB"/*.rule; do
+  [ -f "$r" ] || continue
+  pat=$(sed -n 1p "$r")
+  case "$args" in *"$pat"*) sed 1d "$r"; exit 0 ;; esac
+done
+echo "stub gh: no rule for: $args" >&2
+exit 1
+STUB
+chmod +x "$gs/bin/gh"
+gh_clear() { rm -rf "$gs/rules" && mkdir -p "$gs/rules"; }
+gh_rule() { # gh_rule <rank> <pattern> <output>
+  printf '%s\n%s\n' "$2" "$3" > "$gs/rules/$1.rule"
+}
+# gh_check <check> <ok|FAIL|skip> <label> [root]: with the stub on PATH and a token set
+gh_check() {
+  out=$(PATH="$gs/bin:$PATH" GH_STUB="$gs/rules" GH_TOKEN=stub-token CONTRACT_REPO=o/r CONTRACT_ROOT="${4:-$root}" sh "$checks/$1.sh" 2> "$tmp/err")
+  rc=$?
+  case "$out" in
+    "$1 $2"*) if [ "$2" = FAIL ]; then [ "$rc" -eq 1 ] || fail "$3: exit $rc"; else [ "$rc" -eq 0 ] || fail "$3: exit $rc"; fi ;;
+    *) fail "$3: wanted '$1 $2', got '$out' ($(cat "$tmp/err"))" ;;
+  esac
+}
+
+for c in g7-demo-base g7-demo-ruleset g7-demo-branches g7-main-untouched g7-no-force-push g7-no-backlog-issues g7-ci-run g7-mission-pr g7-demo-red-pr; do
+  out=$(env -u GH_TOKEN -u GITHUB_TOKEN sh "$checks/$c.sh" 2> /dev/null)
+  rc=$?
+  case "$out" in "$c skip (no network) "*) [ "$rc" -eq 0 ] || fail "$c without a token: exit $rc" ;; *) fail "$c without a token must skip (no network): '$out'" ;; esac
+done
+
+gh_clear
+gh_rule 1 'branches/demo/base' 'demo/base'
+gh_rule 2 'compare/' 'ahead'
+gh_check g7-demo-base ok "demo/base exists and descends from the baseline"
+gh_rule 2 'compare/' 'diverged'
+gh_check g7-demo-base FAIL "demo/base diverged from the baseline"
+gh_clear
+gh_rule 1 'branches/demo/base' ''
+gh_check g7-demo-base FAIL "demo/base answers nothing"
+
+gh_clear
+gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["refs/heads/demo/base"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"}]}},{"type":"non_fast_forward"}]}'
+gh_rule 2 'rulesets --jq' '42'
+gh_check g7-demo-ruleset ok "demo-gate ruleset fields"
+gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"}]}},{"type":"non_fast_forward"}]}'
+gh_check g7-demo-ruleset FAIL "ruleset bound to the default branch"
+gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["refs/heads/demo/base"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"},{"context":"gate"}]}},{"type":"non_fast_forward"}]}'
+gh_check g7-demo-ruleset FAIL "two required contexts"
+gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["refs/heads/demo/base"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"}]}}]}'
+gh_check g7-demo-ruleset FAIL "non_fast_forward rule missing"
+gh_clear
+gh_rule 2 'rulesets --jq' ''
+gh_check g7-demo-ruleset FAIL "no demo-gate ruleset"
+
+gh_clear
+gh_rule 1 'branches --paginate' 'demo/base
+mission/observatory-v1
+main'
+gh_check g7-demo-branches ok "only demo/base among the demo branches" "$(fresh readme_ok)"
+gh_rule 1 'branches --paginate' 'demo/base
+demo/red-1'
+gh_check g7-demo-branches FAIL "a leftover demo/red-1 branch"
+
+gh_clear
+gh_rule 1 'rulesets/25636994' '{"id":25636994,"name":"main-gate"}'
+gh_rule 2 'commits?sha=main' '0'
+gh_rule 3 'git/ref/heads/main' 'c8524c2641c00376340640859bb5381763c59ba6'
+d=$(fresh mu1)
+put "$d" scripts/contract-checks/main-gate.json '{"id":25636994,"name":"main-gate"}'
+gh_check g7-main-untouched ok "main and the main-gate ruleset unchanged" "$d"
+gh_rule 2 'commits?sha=main' '1'
+gh_check g7-main-untouched FAIL "a commit on main since the start" "$d"
+gh_rule 2 'commits?sha=main' '0'
+gh_rule 1 'rulesets/25636994' '{"id":25636994,"name":"main-gate","edited":true}'
+gh_check g7-main-untouched FAIL "main-gate ruleset bytes changed" "$d"
+
+gh_clear
+gh_rule 1 'branches --paginate' 'mission/observatory-v1
+wt/m4
+main'
+gh_rule 2 'activity?ref=' 'push
+branch_creation
+merge'
+gh_check g7-no-force-push ok "only push, branch_creation and merge"
+gh_rule 2 'activity?ref=' 'push
+force_push'
+gh_check g7-no-force-push FAIL "a force_push activity"
+
+gh_clear
+gh_rule 1 'issue list' '0'
+gh_rule 2 'label list' '0'
+d=$(fresh bl1)
+gh_check g7-no-backlog-issues ok "no backlog issues or label" "$d"
+gh_rule 1 'issue list' '3'
+gh_check g7-no-backlog-issues FAIL "three backlog issues" "$d"
+gh_rule 1 'issue list' '0'
+put "$d" scripts/gen-backlog.sh 'echo gen'
+(cd "$d" && git init -q . && git add -A)
+gh_check g7-no-backlog-issues FAIL "gen-backlog.sh tracked" "$d"
+
+gh_clear
+gh_rule 1 'run list' '{"databaseId":7,"conclusion":"success","status":"completed"}'
+gh_rule 2 'run view' 'machete success
+coverage success
+rust success'
+gh_check g7-ci-run ok "run succeeded with machete and coverage"
+gh_rule 2 'run view' 'machete success
+coverage failure'
+gh_check g7-ci-run FAIL "coverage job failed"
+gh_rule 1 'run list' '{"databaseId":7,"conclusion":"failure","status":"completed"}'
+gh_check g7-ci-run FAIL "run failed"
+gh_rule 1 'run list' 'null'
+gh_check g7-ci-run skip "no run for the commit"
+
+gh_clear
+gh_rule 1 'pr list' '0'
+gh_check g7-mission-pr skip "no PR yet"
+gh_rule 1 'pr list' '1'
+gh_rule 2 'pr view' '{"state":"OPEN","mergeStateStatus":"CLEAN","mergedBy":null,"isDraft":false}'
+gh_rule 3 'pr checks' 'gate	pass	1m	https://example.invalid'
+gh_check g7-mission-pr ok "open clean PR with gate passing"
+gh_rule 2 'pr view' '{"state":"MERGED","mergeStateStatus":"CLEAN","mergedBy":{"login":"x"},"isDraft":false}'
+gh_check g7-mission-pr FAIL "PR already merged"
+gh_rule 2 'pr view' '{"state":"OPEN","mergeStateStatus":"CLEAN","mergedBy":null,"isDraft":false}'
+gh_rule 3 'pr checks' 'gate	fail	1m	https://example.invalid'
+gh_check g7-mission-pr FAIL "gate check failing"
+
+gh_clear
+gh_rule 1 'pr list' '0'
+gh_check g7-demo-red-pr skip "no demo/red-1 PR"
+gh_rule 1 'pr list' '1'
+gh_check g7-demo-red-pr ok "exactly one PR for demo/red-1"
+gh_rule 1 'pr list' '2'
+gh_check g7-demo-red-pr FAIL "two PRs for demo/red-1"
+
 # --- the runner --------------------------------------------------------------------------------------------------
 
 out=$(CONTRACT_SKIP="g5-fixture-secrets" sh "$checks/run-all.sh" 2> /dev/null)
