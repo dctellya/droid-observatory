@@ -9,8 +9,10 @@
 //! read-only and keeps no raw text: a merge event points at its commit (`SourcePtr::Git`).
 
 mod cmd;
+#[cfg(feature = "store")]
 mod sync;
 
+#[cfg(feature = "store")]
 pub use sync::{GitSync, GitSyncError, git_sync};
 
 use std::collections::HashMap;
