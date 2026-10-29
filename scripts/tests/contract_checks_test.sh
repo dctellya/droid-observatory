@@ -569,13 +569,42 @@ gh_rule 2 'pr view' '{"state":"OPEN","mergeStateStatus":"CLEAN","mergedBy":null,
 gh_rule 3 'pr checks' 'gate	fail	1m	https://example.invalid'
 gh_check g7-mission-pr FAIL "gate check failing"
 
+# The head demo/red-1 is reused by every walk: only PRs created at or after the run's start count (`pr list` prints one
+# createdAt per line). The window start is CONTRACT_RUN_START or the walk store's earliest pr.opened row.
 gh_clear
-gh_rule 1 'pr list' '0'
-gh_check g7-demo-red-pr skip "no demo/red-1 PR"
-gh_rule 1 'pr list' '1'
-gh_check g7-demo-red-pr ok "exactly one PR for demo/red-1"
-gh_rule 1 'pr list' '2'
-gh_check g7-demo-red-pr FAIL "two PRs for demo/red-1"
+export CONTRACT_RUN_START=2026-10-29T19:00:00Z
+gh_rule 1 'pr list' ''
+gh_check g7-demo-red-pr skip "no demo/red-1 PR at all"
+gh_rule 1 'pr list' '2026-10-29T19:23:30Z'
+gh_check g7-demo-red-pr ok "exactly one PR for demo/red-1 inside the run window"
+gh_rule 1 'pr list' '2026-10-29T19:23:30Z
+2026-10-29T16:01:25Z
+2026-10-29T15:57:12Z'
+gh_check g7-demo-red-pr ok "one in-window PR and two older PRs for the reused head"
+gh_rule 1 'pr list' '2026-10-29T19:23:30Z
+2026-10-29T19:10:00Z
+2026-10-29T16:01:25Z'
+gh_check g7-demo-red-pr FAIL "two PRs for demo/red-1 inside the run window"
+gh_rule 1 'pr list' '2026-10-29T16:01:25Z
+2026-10-29T15:57:12Z'
+gh_check g7-demo-red-pr skip "only PRs older than the run window"
+gh_rule 1 'pr list' '2026-10-29T19:00:00Z'
+gh_check g7-demo-red-pr ok "a PR created at the very start of the window counts"
+unset CONTRACT_RUN_START
+gh_rule 1 'pr list' '2026-10-29T19:23:30Z
+2026-10-29T16:01:25Z
+2026-10-29T15:57:12Z'
+export CONTRACT_WALK_STORE="$tmp/walk-store.sqlite"
+rm -f "$CONTRACT_WALK_STORE"
+sqlite3 "$CONTRACT_WALK_STORE" "CREATE TABLE events (id TEXT PRIMARY KEY, kind TEXT NOT NULL, at TEXT NOT NULL);
+INSERT INTO events VALUES ('github:pr:33:opened', 'pr.opened', '2026-10-29T19:23:30.000Z');
+INSERT INTO events VALUES ('github:check:33:1:failed', 'check.failed', '2026-10-29T19:23:41.000Z');"
+gh_check g7-demo-red-pr ok "window start taken from the walk store's pr.opened row"
+sqlite3 "$CONTRACT_WALK_STORE" "UPDATE events SET at = '2026-10-29T16:01:20.000Z' WHERE kind = 'pr.opened'"
+gh_check g7-demo-red-pr FAIL "a store that starts the window before the second PR counts two"
+export CONTRACT_WALK_STORE="$tmp/no-such-store.sqlite"
+gh_check g7-demo-red-pr skip "no run window: no CONTRACT_RUN_START and no walk store"
+unset CONTRACT_WALK_STORE
 
 # --- G3: CLI output rules over the metrics CSV and JSON ------------------------------------------------------------
 
