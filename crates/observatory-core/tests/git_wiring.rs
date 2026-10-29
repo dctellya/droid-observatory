@@ -425,3 +425,30 @@ fn the_branch_pattern_decides_which_branches_are_mission_branches() {
     );
     assert_eq!(GitOptions::default(), mission);
 }
+
+#[test]
+fn a_card_names_the_worktree_git_lists_for_its_milestone() {
+    let repo = Repo::new();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, _conn) = store_with_mission(dir.path());
+    let sync = git_sync(&mut store, &repo.source(), &[]).unwrap();
+
+    let porcelain = repo.git(&["worktree", "list", "--porcelain"]);
+    let mut listed: Vec<(String, String)> = Vec::new();
+    let mut path = String::new();
+    for line in porcelain.lines() {
+        if let Some(found) = line.strip_prefix("worktree ") {
+            path = found.to_owned();
+        } else if let Some(branch) = line.strip_prefix("branch refs/heads/wt/") {
+            let name = Path::new(&path).file_name().unwrap().to_str().unwrap();
+            listed.push((branch.to_owned(), name.to_owned()));
+        }
+    }
+    assert_eq!(listed.len(), 2, "{porcelain}");
+
+    let named: Vec<(String, String)> = observatory_core::view::milestone_worktrees(&sync.snapshot)
+        .into_iter()
+        .map(|worktree| (worktree.milestone.0, worktree.name))
+        .collect();
+    assert_eq!(named, listed);
+}

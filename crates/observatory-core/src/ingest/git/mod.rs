@@ -444,6 +444,13 @@ impl GitSource {
     }
 }
 
+/// The top of the working tree `dir` is in, as `git rev-parse --show-toplevel` prints it.
+pub fn toplevel(dir: &Path) -> Result<PathBuf, IngestError> {
+    Ok(PathBuf::from(
+        git(dir, &["rev-parse", "--show-toplevel"])?.trim(),
+    ))
+}
+
 fn branches_under(repo: &Path, prefix: &str) -> Result<Vec<String>, IngestError> {
     let pattern = format!("refs/heads/{prefix}");
     let listed = git(repo, &["for-each-ref", "--format=%(refname)", &pattern])?;
