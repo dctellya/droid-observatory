@@ -836,5 +836,94 @@ class UsageReportCostPerAssertion(unittest.TestCase):
         self.assertIn("status `passed`", line)
 
 
+class UsageReportSubagentClasses(unittest.TestCase):
+    HEADING = "Subagent classes"
+    HEADER = ["Class", "Sessions", "Turns", "USD-eq", "Declared model", "Purpose", "No declared model", "Off declared model", "Source"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def classes(self, text):
+        header, rows = table(text, self.HEADING)
+        self.assertEqual(header, self.HEADER)
+        return {r["Class"]: r for r in rows}
+
+    def mission_with(self, tmp, files):
+        mission = os.path.join(tmp, "mission")
+        shutil.copytree(os.path.join(FIX, "mission"), mission)
+        for rel, body in files.items():
+            path = os.path.join(mission, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(body if isinstance(body, str) else json.dumps(body))
+        return mission
+
+    def test_there_is_a_row_per_subagent_class_even_when_a_class_started_none(self):
+        got = self.classes(self.text)
+        self.assertEqual(list(got), ["orchestrator subagents", "validator subagents", "worker subagents"])
+        w = got["worker subagents"]
+        self.assertEqual((w["Sessions"], w["Turns"], w["USD-eq"], w["No declared model"]), ("0", "0", "0.00", "0"))
+
+    def test_a_declared_subagent_shows_its_model_and_purpose_from_the_synthesis_file(self):
+        v = self.classes(self.text)["validator subagents"]
+        self.assertEqual((v["Sessions"], v["Turns"], v["USD-eq"]), ("1", "2", "1.00"))
+        self.assertEqual((v["Declared model"], v["Purpose"]), ("claude-opus-5-5", "scrutiny review of m9-alpha"))
+        self.assertEqual((v["No declared model"], v["Off declared model"]), ("0", "1"))
+        self.assertIn("validation/m9/scrutiny/synthesis.json", v["Source"])
+
+    def test_a_subagent_with_no_declaration_is_counted_as_no_declared_model(self):
+        o = self.classes(self.text)["orchestrator subagents"]
+        self.assertEqual((o["Sessions"], o["Turns"], o["USD-eq"], o["Declared model"], o["Purpose"]), ("1", "1", "2.01", "-", "-"))
+        self.assertEqual((o["No declared model"], o["Off declared model"]), ("1", "0"))
+        self.assertIn("- no declared model: 1 of 2 subagent sessions", self.text.splitlines())
+
+    def test_a_declaration_line_in_a_handoff_is_read_by_the_session_id_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            line = "Started one subagent.\nsubagent 22222222: model = claude-sonnet-5-5; purpose = triage of handoffs\n"
+            mission = self.mission_with(tmp, {"handoffs/2026-10-25T10-05-00-000Z__m9-beta__x.json":
+                                              {"handoff": {"salientSummary": line}}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            text = read(out)
+            o = self.classes(text)["orchestrator subagents"]
+            self.assertEqual((o["Declared model"], o["Purpose"], o["No declared model"], o["Off declared model"]),
+                             ("claude-sonnet-5-5", "triage of handoffs", "0", "1"))
+            self.assertIn("- no declared model: 0 of 2 subagent sessions", text.splitlines())
+            self.assertIn("handoffs/2026-10-25T10-05-00-000Z__m9-beta__x.json", o["Source"])
+
+    def test_subagent_sessions_keyed_by_id_in_a_user_testing_synthesis_are_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = self.mission_with(tmp, {"validation/m9/user-testing/synthesis.json": {"subagentSessions": {
+                "22222222-2222-4222-8222-222222222222": {"model": "claude-fable-5.1", "purpose": "verdict"}}}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            o = self.classes(read(out))["orchestrator subagents"]
+            self.assertEqual((o["Declared model"], o["Purpose"], o["No declared model"], o["Off declared model"]),
+                             ("claude-fable-5.1", "verdict", "0", "0"))
+
+    def test_a_declaration_for_a_session_outside_the_window_and_a_broken_file_change_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = self.mission_with(tmp, {
+                "handoffs/broken.json": "{not json",
+                "validation/m9/user-testing/synthesis.json": {"subagents": [
+                    {"sessionId": "deadbeef-0000-4000-8000-000000000000", "model": "claude-fable-5.1", "purpose": "other"}]}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            self.assertEqual(self.classes(read(out))["orchestrator subagents"]["No declared model"], "1")
+
+    def test_the_existing_subagents_table_keeps_its_rows(self):
+        header, rows = table(self.text, "Subagents")
+        self.assertEqual(header[0], "Caller role")
+        self.assertEqual({r["Caller role"] for r in rows}, {"orchestrator", "validator"})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
