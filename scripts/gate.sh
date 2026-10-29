@@ -8,6 +8,7 @@
 # that non-code paths moved. Records live in reports/gate/<code_tree>/<name>.json. FORCE=1 is the same as --force.
 # Each hit appends a tab-separated line to reports/gate/hits.log (time, name, code tree, stored seconds, session,
 # session_source); misses and forced runs append nothing.
+# shellcheck disable=SC2329,SC2012,SC2100 # trap-only functions; ls -t picks the newest file; SC2100 misreads a plain word
 set -u
 
 # The excluded set, in one place (config/observatory.example.toml lists it with the reason). These paths prove nothing
@@ -82,7 +83,8 @@ trap 'interrupted 143' TERM
 # `git rm --cached` drops the committed copies of the excluded paths: the exclude pathspec only stops
 # the working tree's changes, and HEAD's copy would otherwise make a commit of the records change the key.
 # Prints two lines: the tree (build-log/ and reports/gate/ out) and the code tree (the excluded set out as well).
-# With a revision the index starts from that commit and the working tree is not read.
+# With a revision the index starts from that commit and the working tree is not read; the removals are forced because
+# git refuses a path whose index copy differs from both the file and HEAD, which a revision's docs often do.
 compute_trees() { # compute_trees [<rev>]
   idx=$(mktemp "${TMPDIR:-/tmp}/gateidx.XXXXXX")
   rm -f "$idx"
@@ -94,11 +96,11 @@ compute_trees() { # compute_trees [<rev>]
       git rm -r -q --cached --ignore-unmatch -- build-log reports/gate &&
       { [ -n "${1:-}" ] || git add -A -- . ":(exclude)build-log" ":(exclude)reports/gate"; } &&
       git write-tree &&
-      git rm -r -q --cached --ignore-unmatch -- $GATE_EXCLUDE_DIRS &&
+      git rm -r -q -f --cached --ignore-unmatch -- $GATE_EXCLUDE_DIRS &&
       md=$(git ls-files -- '*.md' | awk -v roots="$GATE_CODE_ROOTS" '
         BEGIN { n = split(roots, r, " ") }
         { keep = 0; for (i = 1; i <= n; i++) if (index($0, r[i] "/") == 1) keep = 1; if (!keep) print }') &&
-      { [ -z "$md" ] || printf '%s\n' "$md" | GIT_LITERAL_PATHSPECS=1 git rm -q --cached --ignore-unmatch --pathspec-from-file=-; } &&
+      { [ -z "$md" ] || printf '%s\n' "$md" | GIT_LITERAL_PATHSPECS=1 git rm -q -f --cached --ignore-unmatch --pathspec-from-file=-; } &&
       git write-tree
   )
   rc=$?

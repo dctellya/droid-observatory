@@ -3,6 +3,7 @@
 # its schema, lanes in parallel and jobs in a lane in order, the worst exit code, a HIT that waits zero on an unchanged
 # code tree (a docs commit keeps it, a code commit loses it), the rerun of only the failed jobs, FORCE, and the CI job
 # (`--ci-wait`) against a stub `gh`.
+# shellcheck disable=SC2016,SC2012 # the job commands are single-quoted on purpose; ls output is counted, not parsed
 set -u
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID DROID_SESSION_ID INTEGRATE_LONG_JOBS
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -19,7 +20,9 @@ check() { # check <description> <command...>
   shift
   if "$@"; then ok "$d"; else fail "$d"; fi
 }
-now() { LC_ALL=C perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
+LC_ALL=C
+export LC_ALL
+now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
 
 mkdir -p "$tmp/bin"
 printf '#!/bin/sh\necho "rustc 1.99.0"\n' > "$tmp/bin/rustc"
@@ -53,13 +56,15 @@ jobs_file="$tmp/jobs.tsv"
 fake_jobs() { # fake_jobs: lane x runs a1 then a2 (a2 needs a1's marker), lane y runs b1, each sleeping
   {
     printf '#fake job set\n'
-    printf 'x%sa1%ssh -c '"'"'echo a1 >> "$COUNTER"; touch "$TMPDIR_JOB/a1.done"; sleep 1; echo a1 out'"'"'\n' "$tab" "$tab"
+    printf 'x%sa1%ssh -c '"'"'echo a1 >> "$COUNTER"; touch "$TMPDIR_JOB/a1.done"; sh "$NOWSH" > "$TMPDIR_JOB/a1.s"; sleep 1; sh "$NOWSH" > "$TMPDIR_JOB/a1.e"; echo a1 out'"'"'\n' "$tab" "$tab"
     printf 'x%sa2%ssh -c '"'"'test -f "$TMPDIR_JOB/a1.done" && echo a2 >> "$COUNTER"; echo a2 out'"'"'\n' "$tab" "$tab"
-    printf 'y%sb1%ssh -c '"'"'echo b1 >> "$COUNTER"; sleep 1; echo b1 out'"'"'\n' "$tab" "$tab"
+    printf 'y%sb1%ssh -c '"'"'echo b1 >> "$COUNTER"; sh "$NOWSH" > "$TMPDIR_JOB/b1.s"; sleep 1; sh "$NOWSH" > "$TMPDIR_JOB/b1.e"; echo b1 out'"'"'\n' "$tab" "$tab"
   } > "$jobs_file"
 }
 TMPDIR_JOB="$tmp/job"
-export TMPDIR_JOB
+NOWSH="$tmp/now.sh"
+printf '#!/bin/sh\nperl -MTime::HiRes=time -e '"'"'printf "%%.3f\\n", time'"'"'\n' > "$NOWSH"
+export TMPDIR_JOB NOWSH
 INTEGRATE_LONG_JOBS="$jobs_file"
 export INTEGRATE_LONG_JOBS
 
@@ -90,12 +95,13 @@ check "miss: code_tree in the file is the gate key" [ "$(jq -r .code_tree "$res"
 check "miss: every log path exists and holds the job output" sh -c "
   for l in \$(jq -r '.jobs[].log' $res); do [ -s \"\$l\" ] || exit 1; done
   grep -q 'a1 out' \$(jq -r '.jobs[] | select(.name==\"a1\") | .log' $res)"
-check "miss: the two lanes overlapped (wall $wall s under the 2 s a serial run needs)" \
-  awk -v w="$wall" 'BEGIN { exit !(w < 1.9) }'
+overlap=$(awk -v as="$(cat "$TMPDIR_JOB/a1.s")" -v ae="$(cat "$TMPDIR_JOB/a1.e")" -v bs="$(cat "$TMPDIR_JOB/b1.s")" -v be="$(cat "$TMPDIR_JOB/b1.e")" \
+  'BEGIN { print (as < be && bs < ae) ? "yes" : "no" }')
+check "miss: the two lanes overlapped (a1 and b1 ran at the same time, wall $wall s)" [ "$overlap" = yes ]
 check "miss: the record seconds is the wall time, not the sum" jq -e '.seconds < ([.jobs[].seconds] | add)' "$res"
 check "miss: jobs of a lane ran in order (a2 saw a1's marker)" [ "$(count_of a2)" = 1 ]
 check "miss: every job ran once" sh -c "[ \"$(count_of a1)\" = 1 ] && [ \"$(count_of b1)\" = 1 ]"
-check "miss: the output lists each job with its log" sh -c "grep -c 'exit 0' $tmp/miss.out | grep -q 3"
+check "miss: the output lists each job with its log" sh -c "grep -c '^  .* exit 0 ' $tmp/miss.out | grep -q 3"
 check "miss: the output names the result file" grep -qF "$res" "$tmp/miss.out"
 
 echo "== hit: the same code tree waits zero =="
@@ -157,7 +163,7 @@ check "red: the record's exit_code is the worst" [ "$(jq -r .exit_code "$res")" 
 check "red: each job keeps its own exit code" sh -c "[ \"\$(jq -r '[.jobs[] | .exit_code] | join(\",\")' $res)\" = '0,3,1,0' ]"
 check "red: a job after a failed job in the same lane still ran" [ "$(count_of ok2)" = 1 ]
 check "red: the message carries the tail of a failed job's log" grep -q 'boom line' "$tmp/red.out"
-check "red: the message names the worst exit" grep -q 'worst exit 3' "$tmp/red.out"
+check "red: the message names the worst exit" grep -q 'worst exit code 3' "$tmp/red.out"
 : > "$COUNTER"
 touch "$TMPDIR_JOB/fixed"
 sh scripts/integrate-long.sh m9 > "$tmp/red2.out" 2>&1
@@ -183,8 +189,8 @@ mkdir -p "$TMPDIR_JOB"
 printf 'x%sslow%ssh -c '"'"'sleep 30'"'"'\n' "$tab" "$tab" > "$jobs_file"
 sh scripts/integrate-long.sh m9 > "$tmp/intr.out" 2>&1 &
 pid=$!
-t0=$(now)
-while [ ! -d reports/integrate-long ] && [ "$(echo "$(now) - $t0 > 5" | bc)" = 0 ]; do :; done
+i=0
+while [ ! -d reports/integrate-long ] && [ "$i" -lt 20000 ]; do i=$((i + 1)); done
 kill -TERM "$pid" 2> /dev/null
 wait "$pid"
 code=$?
