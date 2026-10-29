@@ -570,8 +570,10 @@ gh_rule 3 'pr checks' 'gate	fail	1m	https://example.invalid'
 gh_check g7-mission-pr FAIL "gate check failing"
 
 # The head demo/red-1 is reused by every walk: only PRs created at or after the run's start count (`pr list` prints one
-# createdAt per line). The window start is CONTRACT_RUN_START or the walk store's earliest pr.opened row.
+# createdAt per line). The window start is CONTRACT_RUN_START, else the walk store's earliest pr.opened row, else the
+# creation time of the PR the walk recorded in its PR file.
 gh_clear
+export CONTRACT_WALK_PR_FILE="$tmp/no-such-walk-pr.txt"
 export CONTRACT_RUN_START=2026-10-29T19:00:00Z
 gh_rule 1 'pr list' ''
 gh_check g7-demo-red-pr skip "no demo/red-1 PR at all"
@@ -603,8 +605,14 @@ gh_check g7-demo-red-pr ok "window start taken from the walk store's pr.opened r
 sqlite3 "$CONTRACT_WALK_STORE" "UPDATE events SET at = '2026-10-29T16:01:20.000Z' WHERE kind = 'pr.opened'"
 gh_check g7-demo-red-pr FAIL "a store that starts the window before the second PR counts two"
 export CONTRACT_WALK_STORE="$tmp/no-such-store.sqlite"
-gh_check g7-demo-red-pr skip "no run window: no CONTRACT_RUN_START and no walk store"
-unset CONTRACT_WALK_STORE
+gh_check g7-demo-red-pr skip "no run window: no CONTRACT_RUN_START, no walk store, no walk PR file"
+printf '33' > "$tmp/walk-pr.txt"
+export CONTRACT_WALK_PR_FILE="$tmp/walk-pr.txt"
+gh_rule 2 'pr view' '2026-10-29T19:23:30Z'
+gh_check g7-demo-red-pr ok "window start taken from the creation time of the PR the walk recorded"
+gh_rule 2 'pr view' '2026-10-29T15:57:12Z'
+gh_check g7-demo-red-pr FAIL "a recorded PR older than the others starts a window with three PRs"
+unset CONTRACT_WALK_STORE CONTRACT_WALK_PR_FILE
 
 # --- G3: CLI output rules over the metrics CSV and JSON ------------------------------------------------------------
 
