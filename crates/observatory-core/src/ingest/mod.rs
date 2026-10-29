@@ -1,6 +1,7 @@
 //! Readers that turn files into raw records (architecture §4). Blocking IO only.
 
 mod capture;
+pub mod git;
 mod jsonl;
 mod live;
 mod memory;
