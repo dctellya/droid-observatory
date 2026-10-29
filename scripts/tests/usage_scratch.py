@@ -68,7 +68,7 @@ class Scratch:
         path = os.path.join(self.sessions, sid + ".jsonl")
         with open(path, "a") as f:
             for r in records:
-                f.write(json.dumps(dict(type="message", **r)) + "\n")
+                f.write(json.dumps(dict(type="message", **r), separators=(",", ":")) + "\n")
 
     def features(self, features):
         path = os.path.join(self.mission, "features.json")

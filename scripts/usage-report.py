@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import usage_classes
 import usage_idle
+import usage_testing
 
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
@@ -1015,6 +1016,10 @@ def build(args):
     events = list(facts.turns) + [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
     idle_min = usage_idle.idle_lines(emit, md_table, events, facts, pause_rows(progress, pl_label), interventions)
     usage_idle.host_lines(emit, md_table, facts, usage_idle.parse_boottime(args.boottime), now, end if "T" in end else end, idle_min["host"])
+
+    # User testing
+    usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
+                                     lambda model, a: price(prices, model, a) or 0.0, usd)
 
     # Gates
     emit("### Gates")
