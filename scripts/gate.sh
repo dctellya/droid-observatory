@@ -6,6 +6,7 @@
 # The key is the CODE tree: the worktree content including uncommitted and untracked files, minus the excluded set
 # below. The record also carries `tree`, the same content minus build-log/ and reports/gate/ only, so a HIT can say
 # that non-code paths moved. Records live in reports/gate/<code_tree>/<name>.json. FORCE=1 is the same as --force.
+# Only a green record (exit_code 0) is a hit; a red one is a miss that reruns the command and replaces the record.
 # Each hit appends a tab-separated line to reports/gate/hits.log (time, name, code tree, stored seconds, session,
 # session_source); misses and forced runs append nothing.
 # shellcheck disable=SC2329,SC2012,SC2100 # trap-only functions; ls -t picks the newest file; SC2100 misreads a plain word
@@ -178,7 +179,15 @@ if [ -z "$session" ]; then
   fi
 fi
 
-if [ "$force" -eq 0 ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
+red_code=
+if [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
+  stored=$(jq -r '.exit_code // empty' "$file" 2> /dev/null)
+  [ "$stored" = 0 ] || red_code=${stored:-unreadable}
+fi
+
+# A red record is evidence of a failure, not of a proof: replaying it made a flaky run a permanent verdict for the tree
+# (B-182), so only a green record is a hit and the run that follows a red one replaces it.
+if [ "$force" -eq 0 ] && [ -z "$red_code" ] && [ -f "$file" ] && [ "$(jq -r '.fingerprint // empty' "$file" 2> /dev/null)" = "$key" ]; then
   # One line per served hit, for the usage report: the stored seconds are the run the hit saved, the session is
   # the one that was served (the record keeps the one that proved it).
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(stamp)" "$name" "$code_tree" "$(jq -r .seconds "$file")" "$session" "$session_source" \
@@ -196,6 +205,8 @@ fi
 
 if [ "$force" -eq 1 ]; then
   echo "gate $name: forced $code_tree, running"
+elif [ -n "$red_code" ]; then
+  echo "gate $name: miss $code_tree, running; the earlier record for this tree exited $red_code and a red record is never replayed"
 else
   echo "gate $name: miss $code_tree, running"
   miss_files "$name" "$code_tree"
