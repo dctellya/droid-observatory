@@ -1,7 +1,8 @@
 #!/bin/sh
 # Factory PreToolUse hook: rule C, the officer's tools are an allow-list (owner inbox 1845 and 2049, 2026-10-29;
 # D-041). For the sessions listed in officer-sessions.txt (the mission orchestrator) only the tools of the officer's
-# activities pass; Read and LS are limited to the mission directory, the owner inbox and reports/staging of the worktree.
+# activities pass; Read and LS are limited to the mission directory, the owner inbox and reports/staging of any
+# milestone worktree under observatory-wt/<name>/.
 # Rule F (owner inbox 2247, D-042): a Script with startInBackground that calls StartMissionRun, DismissHandoffItems,
 # EndFeatureRun or Task is denied; the rule E heartbeat (a background Script) passes.
 # Every other session is untouched. Exit 2 = block.
@@ -21,9 +22,20 @@ in_scope() {
   # A `..` segment would walk out of a prefix that matched, so it never passes.
   case "$1" in */../* | */..) return 1 ;; esac
   case "$1" in
-    /Users/dct/.factory/missions/e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c/* | \
-      /Users/dct/code/EllyaOrg/projects/dalimaray/observatory-wt/m4/docs/owner-feedback/inbox* | \
-      /Users/dct/code/EllyaOrg/projects/dalimaray/observatory-wt/m4/reports/staging*) return 0 ;;
+    /Users/dct/.factory/missions/e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c/*) return 0 ;;
+  esac
+  # The integrator replaces the milestone worktree at every boundary (m4 to m5), so the worktree is a pattern: one
+  # path segment under observatory-wt, never a `/` inside the name.
+  wt=/Users/dct/code/EllyaOrg/projects/dalimaray/observatory-wt/
+  case "$1" in
+    "$wt"*)
+      rest=${1#"$wt"}
+      name=${rest%%/*}
+      [ -n "$name" ] && [ "$name" != "$rest" ] || return 1
+      case "${rest#*/}" in
+        docs/owner-feedback/inbox* | reports/staging*) return 0 ;;
+      esac
+      ;;
   esac
   return 1
 }

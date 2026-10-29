@@ -56,3 +56,4 @@ commit that touches a hook file.
 - The harness still has no per-role tool set (feedback item 21); the hook is the workaround, one `jq` call per tool call in every
   session because the matcher is `*`.
 - A change to the hook files is a commit that a decision file names by short sha, written in a docs-only commit after it.
+- 2026-10-29 amendment: the worktree read scope is a pattern over observatory-wt/<name>/ (inbox and reports/staging), because the integrator replaces the worktree at every boundary; commit <sha named by the follow-up>.
