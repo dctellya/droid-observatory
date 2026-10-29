@@ -4,9 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use observatory_core::mapping::MappingVersion;
+use observatory_core::metrics::PriceTable;
 use observatory_core::model::{
-    CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, MissionId, Role, SessionId,
-    SourcePtr, Timestamp,
+    CycleTemplate, Event, EventId, EventKind, FeatureId, LaneId, MilestoneId, MissionId, ModelId,
+    Role, SessionId, SourcePtr, Timestamp, TokenUsage,
 };
 use time::{Duration as Offset, OffsetDateTime};
 
@@ -79,6 +80,57 @@ impl EventExt for Event {
         self.duration = Some(std::time::Duration::from_secs(seconds));
         self
     }
+}
+
+/// The model a usage report or turn was made with, and the lane an event sits in.
+pub trait UsageExt: Sized {
+    fn model(self, model: &str) -> Self;
+    fn in_lane(self, lane: &str) -> Self;
+    fn reporting(self, usage: TokenUsage) -> Self;
+}
+
+impl UsageExt for Event {
+    fn model(mut self, model: &str) -> Self {
+        self.model = Some(ModelId(model.to_owned()));
+        self
+    }
+
+    fn in_lane(mut self, lane: &str) -> Self {
+        self.lane = LaneId::from(lane);
+        self
+    }
+
+    fn reporting(mut self, usage: TokenUsage) -> Self {
+        self.usage = Some(usage);
+        self
+    }
+}
+
+/// One `turn.usage` event of `role` at `seconds`, in lane `lane`, with `[input, output, cache_read]`.
+pub fn turn(
+    id: &str,
+    seconds: i64,
+    role: Role,
+    model: &str,
+    lane: &str,
+    counts: [u64; 3],
+) -> Event {
+    let kind = EventKind::TurnUsage {
+        input: counts[0],
+        output: counts[1],
+        cache_read: counts[2],
+        reasoning: 0,
+        total_input: counts[0] + counts[2],
+        model: Some(ModelId(model.to_owned())),
+        log_ts: t(seconds),
+    };
+    ev(id, kind, seconds).by(role).model(model).in_lane(lane)
+}
+
+pub fn prices() -> PriceTable {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/prices/2026-10-22.toml");
+    let text = std::fs::read_to_string(path).expect("the price table exists");
+    PriceTable::parse(&text).expect("the price table parses")
 }
 
 pub fn m0_events() -> Vec<Event> {
