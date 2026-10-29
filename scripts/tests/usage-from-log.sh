@@ -85,4 +85,16 @@ check "sessions on priced models are summed as before with a price table" "$want
 got=$(sh "$script" "$tmp/sample.log" --prices "$tmp/prices.toml" --from 2026-10-23T10:00:00Z --to 2026-10-23T10:00:10Z --session "$A" | rows)
 check "a model outside the selected sessions and window is not checked" "$A 2026-10-23T10:00:00.200Z 2026-10-23T10:00:09.900Z 2 6 60 1500 320" "$got"
 
+repo_prices="$here/../../config/prices"
+D=dddddddd-0000-4000-8000-000000000004
+: >"$tmp/plan.log"
+for m in kimi-k3 gpt-6.1-sol gpt-6-sol claude-opus-5-5-fast; do
+  printf '[2026-10-23T11:00:00.000Z] INFO: [Agent] Streaming result | Context: {"inputTokens":1,"outputTokens":1,"cacheReadInputTokens":1,"cachedTokensWritten":1,"tags":{"sessionId":"%s","modelId":"%s"}}\n' "$D" "$m" >>"$tmp/plan.log"
+done
+
+if sh "$script" "$tmp/plan.log" --embedded --prices "$repo_prices/2026-10-29.toml" --session "$D" >"$tmp/out" 2>"$tmp/err"; then rc=0; else rc=$?; fi
+check "the 29-oct price table prices the four plan models" "0" "$rc"
+if sh "$script" "$tmp/plan.log" --embedded --prices "$repo_prices/2026-10-22.toml" --session "$D" >"$tmp/out" 2>"$tmp/err"; then rc=0; else rc=$?; fi
+check "the 22-oct price table still has no row for them" "2" "$rc"
+
 exit "$fail"

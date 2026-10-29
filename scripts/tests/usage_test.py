@@ -618,7 +618,7 @@ class UsageReportPricing(unittest.TestCase):
     def test_every_model_that_ran_is_listed_with_its_price_basis_and_cost(self):
         header, rows = table(self.text, "Models that ran")
         self.assertEqual(header, ["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output",
-                                  "Input per M", "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles"])
+                                  "Input per M", "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles", "Note"])
         got = {r["Model"]: r for r in rows}
         self.assertEqual(set(got), {"claude-fable-5.1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "kimi-k3"})
         s = got["claude-sonnet-5-5"]
@@ -768,6 +768,37 @@ class UsageReportFeatureBudgets(unittest.TestCase):
             _, rows = table(read(out), "Feature size")
             a = next(r for r in rows if r["Feature"] == "m9-alpha")
             self.assertEqual((a["Turn budget"], a["Over budget"]), ("-", "-"))
+
+    def features_with(self, tmp, feature):
+        mission = os.path.join(tmp, "mission")
+        shutil.copytree(os.path.join(FIX, "mission"), mission)
+        path = os.path.join(mission, "features.json")
+        data = json.loads(read(path))
+        data["features"] = [feature]
+        with open(path, "w") as f:
+            json.dump(data, f)
+        out = os.path.join(tmp, "m9.md")
+        run(["--mission-dir", mission], out=out)
+        _, rows = table(read(out), "Feature size")
+        return next(r for r in rows if r["Feature"] == feature["id"])
+
+    def test_a_budget_only_in_the_description_text_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "description": "Do the thing. M4 RULES: rule 29 turnBudget 1; no polling."})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("1", "yes"))
+
+    def test_the_turn_budget_key_wins_over_the_description_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "turnBudget": 40, "description": "turnBudget 1"})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("40", "no"))
+
+    def test_a_description_without_a_budget_text_is_a_dash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "description": "no budget here, turnBudget is mentioned without a number"})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("-", "-"))
 
 
 class UsageReportCostPerAssertion(unittest.TestCase):
@@ -937,6 +968,147 @@ class UsageReportSubagentClasses(unittest.TestCase):
         header, rows = table(self.text, "Subagents")
         self.assertEqual(header[0], "Caller role")
         self.assertEqual({r["Caller role"] for r in rows}, {"orchestrator", "validator"})
+
+
+PROVENANCE = "the observer's price table of 25-oct-2026 (fixture), secondary public sources; list prices at the date named, not estimates"
+NOTE = "assumed = opus-5-5 until the owner confirms"
+
+
+def plan_only_prices(tmp, name="2026-10-29.toml", note=True):
+    """Fixture price table whose kimi-k3 row has only the four plan keys (and a note), under a dated name with a provenance line."""
+    text = read(os.path.join(FIX, "prices.toml"))
+    head, _ = text.split('[models."kimi-k3"]')
+    row = ('provenance = "%s"\n\n[models."kimi-k3"]\nplan_input_per_m = 3.0\nplan_output_per_m = 15.0\n'
+           'plan_cache_read_per_m = 0.30\nplan_cache_write_per_m = 3.0\n' % PROVENANCE)
+    if note:
+        row += 'note = "%s"\n' % NOTE
+    path = os.path.join(tmp, name)
+    with open(path, "w") as f:
+        f.write(head + row)
+    return path
+
+
+class UsageReportPriceFiles(unittest.TestCase):
+    def run_in(self, tmp, extra=()):
+        out = os.path.join(tmp, "m9.md")
+        proc = subprocess.run([
+            sys.executable, SCRIPT, "--milestone", "m9", "--mission-dir", os.path.join(FIX, "mission"), "--mission-id", MISSION,
+            "--logs-dir", os.path.join(FIX, "logs"), "--sessions-dir", os.path.join(FIX, "sessions"),
+            "--gate-dir", os.path.join(FIX, "gate"), "--from", FROM, "--now", NOW, "--out", out] + list(extra),
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise AssertionError("usage-report.py exit %d\nstderr: %s" % (proc.returncode, proc.stderr))
+        return read(out)
+
+    def test_the_newest_dated_price_file_is_read_when_none_is_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prices = os.path.join(tmp, "prices")
+            os.mkdir(prices)
+            shutil.copy(os.path.join(FIX, "prices.toml"), os.path.join(prices, "2026-10-22.toml"))
+            plan_only_prices(prices)
+            text = self.run_in(tmp, ["--prices-dir", prices])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-29.toml"), text)
+            _, rows = table(text, "Models that ran")
+            self.assertEqual({r["Model"]: r["Price basis"] for r in rows}["kimi-k3"], "plan")
+
+    def test_a_price_table_name_picks_the_dated_file_it_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prices = os.path.join(tmp, "prices")
+            os.mkdir(prices)
+            shutil.copy(os.path.join(FIX, "prices.toml"), os.path.join(prices, "2026-10-22.toml"))
+            plan_only_prices(prices)
+            text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "2026-10-22"])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+            self.assertNotIn("2026-10-29", text)
+            text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "config/prices/2026-10-22.toml"])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+
+    def test_a_row_with_only_plan_keys_is_priced_at_the_plan_price(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            _, rows = table(text, "Models that ran")
+            k = {r["Model"]: r for r in rows}["kimi-k3"]
+            self.assertEqual((k["Price basis"], k["Input per M"], k["Cache write per M"], k["Cache read per M"], k["Output per M"]),
+                             ("plan", "3.0", "3.0", "0.3", "15.0"))
+
+    def test_a_note_key_prints_as_the_mark_of_its_row_and_other_rows_have_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            _, rows = table(text, "Models that ran")
+            got = {r["Model"]: r["Note"] for r in rows}
+            self.assertEqual(got["kimi-k3"], NOTE)
+            self.assertEqual(got["claude-sonnet-5-5"], "-")
+            line = next(l for l in text.splitlines() if l.startswith("Price notes:"))
+            self.assertIn("kimi-k3", line)
+            self.assertIn(NOTE, line)
+
+    def test_the_provenance_line_prints_under_models_that_ran_and_mission_to_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            lines = text.splitlines()
+            for heading in ("Models that ran", "Mission to date by role"):
+                i = lines.index("### " + heading)
+                j = next((k for k in range(i + 1, len(lines)) if lines[k].startswith("### ")), len(lines))
+                self.assertIn("Price provenance: " + PROVENANCE, lines[i:j], heading)
+
+    def test_a_table_without_a_provenance_or_note_prints_neither_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", os.path.join(FIX, "prices.toml")])
+            self.assertNotIn("Price provenance:", text)
+            self.assertNotIn("Price notes:", text)
+
+    def test_a_note_names_the_turns_to_date_on_the_noted_model_in_mission_to_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            line = next(l for l in text.splitlines() if l.startswith("Price notes:"))
+            self.assertRegex(line, r"kimi-k3 \(\d+ turns to date\)")
+
+
+class RepoPriceTables(unittest.TestCase):
+    REPO = os.path.join(HERE, "..", "..")
+    OLD = os.path.join(REPO, "config", "prices", "2026-10-22.toml")
+    NEW = os.path.join(REPO, "config", "prices", "2026-10-29.toml")
+    PLAN = {
+        "kimi-k3": (3.0, 15.0, 0.30, 3.0),
+        "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.0),
+        "gpt-6-sol": (2.0, 10.0, 0.20, 2.5),
+        "claude-opus-5-5-fast": (4.0, 20.0, 0.20, 5.0),
+    }
+
+    def load(self, path):
+        import tomllib
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+
+    def test_the_29_oct_table_keeps_every_row_of_the_22_oct_table_unchanged(self):
+        old, new = self.load(self.OLD), self.load(self.NEW)
+        self.assertEqual(len(old["models"]), 4)
+        for model, row in old["models"].items():
+            self.assertEqual(new["models"][model], row, model)
+
+    def test_the_29_oct_table_adds_the_four_plan_prices_as_plan_keys(self):
+        new = self.load(self.NEW)["models"]
+        keys = ("plan_input_per_m", "plan_output_per_m", "plan_cache_read_per_m", "plan_cache_write_per_m")
+        for model, rates in self.PLAN.items():
+            row = new[model]
+            self.assertEqual(tuple(row[k] for k in keys), rates, model)
+            self.assertFalse([k for k in row if k.endswith("_per_m") and not k.startswith("plan_")], model)
+        self.assertEqual(new["claude-opus-5-5-fast"]["note"], NOTE)
+        self.assertEqual(set(new), set(self.load(self.OLD)["models"]) | set(self.PLAN))
+
+    def test_the_29_oct_header_names_the_inbox_file_and_carries_the_provenance_line(self):
+        text = read(self.NEW)
+        data = self.load(self.NEW)
+        self.assertEqual(data["effective"], "2026-10-29")
+        self.assertIn("2026-10-29-1127-plan-prices.md", text.split("[models.", 1)[0])
+        for part in ("observer's price table of 25-oct-2026", "resume/roci/tools/milestones.py", "secondary public sources",
+                     "list prices at the date named", "Not estimates"):
+            self.assertIn(part, data["provenance"])
+
+    def test_the_22_oct_table_has_no_plan_keys_and_no_provenance(self):
+        text = read(self.OLD)
+        self.assertNotIn("plan_", text)
+        self.assertNotIn("provenance", text)
 
 
 if __name__ == "__main__":
