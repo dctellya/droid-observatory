@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::ingest::{
-    EventBatch, MemoryReplay, OpenedMission, SessionInfo, merge_ordered, retract_stale,
+    EventBatch, MemoryReplay, OpenedMission, SessionInfo, drop_events, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
 use observatory_core::view::{MissionSummary, RawLineView, raw_line_view};
@@ -70,6 +70,7 @@ impl Capture {
         let mut changed = 0;
         self.events.update(|held| {
             changed = retract_stale(held, &batch.retracted);
+            changed += drop_events(held, &batch.retracted_events);
             changed += merge_ordered(held, batch.events);
         });
         if changed > 0 {

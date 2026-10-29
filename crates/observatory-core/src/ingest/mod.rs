@@ -19,8 +19,8 @@ pub use capture::{
 };
 pub use jsonl::JsonlSource;
 pub use live::{
-    AttachStatus, EventBatch, EventBatcher, OpenedMission, Retraction, SessionRow, merge_ordered,
-    retract_stale,
+    AttachStatus, EventBatch, EventBatcher, OpenedMission, Retraction, SessionRow, drop_events,
+    merge_ordered, retract_stale,
 };
 pub use memory::{
     MemoryReplay, SessionInfo, order_key, replay_files, replay_files_with, session_infos,

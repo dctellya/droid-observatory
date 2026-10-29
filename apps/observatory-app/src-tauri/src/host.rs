@@ -18,7 +18,9 @@ use observatory_core::ingest::rpc::{
 use observatory_core::ingest::rpc::{Resolution, resolution_of};
 use observatory_core::ingest::{EventBatch, RawRecord, Source};
 use observatory_core::mapping::MappingVersion;
-use observatory_core::model::{CycleTemplate, Event, LaneId, MissionId, SessionId, Timestamp};
+use observatory_core::model::{
+    CycleTemplate, Event, EventId, EventKind, LaneId, MissionId, SessionId, Timestamp,
+};
 use observatory_core::store::HostedRun;
 use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
@@ -286,6 +288,7 @@ pub async fn launch<R: Runtime>(
         config,
         mission: None,
         pending: Vec::new(),
+        retracted_events: Vec::new(),
         unknown_total: 0,
         output: Vec::new(),
         output_before: 0,
@@ -350,6 +353,8 @@ struct Pump<R: Runtime> {
     last_lane: Option<LaneId>,
     mission: Option<MissionId>,
     pending: Vec<Event>,
+    /// Ack rows the store deleted since the last flush: the UI may hold them already.
+    retracted_events: Vec<EventId>,
     unknown_total: u64,
     output: Vec<Vec<u8>>,
     output_before: u64,
@@ -632,6 +637,18 @@ impl<R: Runtime> Pump<R> {
         if let Err(err) = store.insert_events(&events) {
             tracing::error!(%err, launch_id = %self.launch_id, "store");
         }
+        let echoes_a_pause = events
+            .iter()
+            .any(|event| event.kind == EventKind::MissionPaused && !control::is_ack(&event.id));
+        if echoes_a_pause {
+            match store.retract_echoed_pauses(&mission) {
+                Ok(removed) => {
+                    self.pending.retain(|event| !removed.contains(&event.id));
+                    self.retracted_events.extend(removed);
+                }
+                Err(err) => tracing::error!(%err, launch_id = %self.launch_id, "store"),
+            }
+        }
         self.unknown_total = store.unknown_count(&mission).unwrap_or(0);
         drop(store);
         self.pending.extend(events);
@@ -641,12 +658,14 @@ impl<R: Runtime> Pump<R> {
 
     fn flush(&mut self) {
         self.flush_at = None;
-        if let (Some(mission), false) = (&self.mission, self.pending.is_empty()) {
+        let nothing = self.pending.is_empty() && self.retracted_events.is_empty();
+        if let (Some(mission), false) = (&self.mission, nothing) {
             let batch = EventBatch {
                 mission_id: mission.clone(),
                 events: std::mem::take(&mut self.pending),
                 unknown_total: self.unknown_total,
                 retracted: Vec::new(),
+                retracted_events: std::mem::take(&mut self.retracted_events),
             };
             tracing::info!(
                 launch_id = %self.launch_id,
