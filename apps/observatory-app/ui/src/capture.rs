@@ -5,11 +5,14 @@
 use std::sync::Arc;
 
 use leptos::prelude::*;
+use observatory_core::config::MissionConfig;
 use observatory_core::ingest::{
-    EventBatch, MemoryReplay, OpenedMission, SessionInfo, merge_ordered, retract_stale,
+    EventBatch, MemoryReplay, OpenedMission, SessionInfo, drop_events, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
-use observatory_core::view::{MissionSummary, RawLineView, raw_line_view};
+use observatory_core::view::{
+    GateGroup, MilestoneWorktree, MissionSummary, RawLineView, branch_of, raw_line_view,
+};
 use serde_json::json;
 
 use crate::shell;
@@ -24,30 +27,45 @@ enum RawSource {
 pub struct Capture {
     /// As the capture was opened; the live counts are derived from `events`.
     pub summary: MissionSummary,
+    /// The branch the Gate placeholder names: the shell's (recorded or configured), else the
+    /// default pattern in the browser host, which has no config.
+    pub branch: String,
     pub events: ArcRwSignal<Vec<Event>>,
     pub sessions: ArcRwSignal<Vec<SessionInfo>>,
     /// True while a session of the mission is being tailed.
     pub live: ArcRwSignal<bool>,
+    /// The Gate header as the last poll read it; none before the first poll or in the browser host.
+    pub gate: ArcRwSignal<Option<GateGroup>>,
+    /// The worktrees git listed for the milestones at the last poll; empty in the browser host.
+    pub worktrees: ArcRwSignal<Vec<MilestoneWorktree>>,
     raw: RawSource,
 }
 
 impl Capture {
     pub fn of_memory(replay: Arc<MemoryReplay>) -> Self {
         Self {
+            branch: branch_of(&MissionConfig::default(), &replay.summary.name),
             summary: replay.summary.clone(),
             events: ArcRwSignal::new(replay.events.clone()),
             sessions: ArcRwSignal::new(replay.sessions.clone()),
             live: ArcRwSignal::new(false),
+            gate: ArcRwSignal::new(None),
+            worktrees: ArcRwSignal::new(Vec::new()),
             raw: RawSource::Memory(replay),
         }
     }
 
     pub fn of_shell(opened: OpenedMission) -> Self {
         Self {
+            branch: opened
+                .branch
+                .unwrap_or_else(|| branch_of(&MissionConfig::default(), &opened.summary.name)),
             summary: opened.summary,
             events: ArcRwSignal::new(opened.events),
             sessions: ArcRwSignal::new(opened.sessions),
             live: ArcRwSignal::new(opened.live),
+            gate: ArcRwSignal::new(None),
+            worktrees: ArcRwSignal::new(Vec::new()),
             raw: RawSource::Shell,
         }
     }
@@ -70,6 +88,7 @@ impl Capture {
         let mut changed = 0;
         self.events.update(|held| {
             changed = retract_stale(held, &batch.retracted);
+            changed += drop_events(held, &batch.retracted_events);
             changed += merge_ordered(held, batch.events);
         });
         if changed > 0 {
@@ -84,6 +103,24 @@ impl Capture {
         if let Ok(sessions) = shell::invoke::<_, Vec<SessionInfo>>("mission_sessions", &args).await
         {
             self.sessions.set(sessions);
+        }
+    }
+
+    /// Asks the shell for the Gate header the last poll read.
+    pub async fn refresh_gate(&self) {
+        let args = json!({ "mission_id": self.mission_id() });
+        if let Ok(Some(gate)) = shell::invoke::<_, Option<GateGroup>>("gate_group", &args).await {
+            self.gate.set(Some(gate));
+        }
+    }
+
+    /// Asks the shell for the worktrees the last poll listed for the milestones.
+    pub async fn refresh_worktrees(&self) {
+        let args = json!({ "mission_id": self.mission_id() });
+        if let Ok(worktrees) =
+            shell::invoke::<_, Vec<MilestoneWorktree>>("milestone_worktrees", &args).await
+        {
+            self.worktrees.set(worktrees);
         }
     }
 

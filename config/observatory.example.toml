@@ -101,6 +101,12 @@ merge_policy = "auto"
 target_branch = "main"
 # owner/repo the forge client reads. The default is this repository.
 repo = "dctellya/droid-observatory"
+# One GitHub request gives up after this long. Half the poll interval: a stuck request ends before the next poll is due,
+# so polls never queue behind it.
+request_timeout_s = 15
+# Where the API lives. GitHub's host; the window suite points it at a loopback server that answers the
+# Merge request with the 403 a read-only token gets, because a real 403 needs the owner's read-only token.
+api_base = "https://api.github.com"
 
 [intervention]
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
@@ -199,3 +205,14 @@ min_samples = 3
 # any other value is the path of a template file (a leading ~/ is your home). A file that is
 # missing or invalid falls back to "engineering" and the app shows why.
 template = "engineering"
+
+# Gate cache key (scripts/gate.sh, rule 27; read by the script, not by the app, so there is no table). The key is the hash of
+# the CODE paths: the tracked tree minus the excluded set below, so a commit that only adds a report, a log line or a doc
+# keeps the proof of the code (a hit) instead of rebuilding it. Edit GATE_EXCLUDE_DIRS and GATE_CODE_ROOTS in scripts/gate.sh
+# and the paths-ignore list of .github/workflows/mission-branch.yml together with this block.
+#   Excluded directories: build-log/ (the tool-call log: written by every hook call, proves nothing about the code),
+#     reports/ (usage, readiness, gate records and CI numbers, pasted from tools after the code is proven), docs/ (decision
+#     files, runbooks and the generated index: prose).
+#   Excluded Markdown: every *.md outside crates/, apps/, scripts/, config/ and .github/ (SPEC.md, BACKLOG.md, README.md,
+#     AGENTS.md, ai/, .factory/). Markdown inside the code roots stays in the key: crates, apps and scripts carry
+#     include_str! and test fixtures that read it.

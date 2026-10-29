@@ -1,5 +1,6 @@
 import { $, $$, browser, expect } from '@wdio/globals';
 import { FIXTURE_ROOT, WAIT_MS } from '../lib/env.js';
+import { induceFailure } from '../lib/induce.js';
 import { cliReplay, type ReplayCounts } from '../lib/replay.js';
 import { describe as describeSummary, summarize } from '../lib/stats.js';
 import { readThresholds } from '../lib/thresholds.js';
@@ -31,6 +32,7 @@ describe('panel render for a replayed fixture', () => {
   });
 
   it('draws every lane with the count the CLI replay prints', async () => {
+    induceFailure('panel');
     const drawn: number[] = [];
     for (const lane of await $$('[data-testid^="lane-count-"]')) {
       const id = await lane.getAttribute('data-testid');

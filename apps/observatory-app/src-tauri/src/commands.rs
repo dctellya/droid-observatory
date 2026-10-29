@@ -7,6 +7,7 @@ use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
+use observatory_core::store::Store;
 use observatory_core::view::{
     ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
     LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
@@ -28,17 +29,47 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// The branch the Gate placeholder and the gate log name for a mission: the one the git poll
+/// recorded in `missions.branch`, else the configured pattern resolved for the mission's name.
+pub(crate) fn resolve_branch(
+    store: &Store,
+    config: &MissionConfig,
+    mission: &MissionId,
+    name: &str,
+) -> String {
+    store
+        .mission_branch(mission)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| branch_of(config, name))
+}
+
+/// The branch of a mission just opened, see `resolve_branch`.
+fn branch_in(store: &Store, shell: &Shell, opened: &OpenedMission) -> String {
+    resolve_branch(
+        store,
+        &shell.cfg.mission,
+        &opened.summary.mission_id,
+        &opened.summary.name,
+    )
+}
+
 /// Replays the capture at `path` (the root `.jsonl` or its `.capture.json`) through the store
 /// and answers with the mission as the store now holds it.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
-    let mut opened = lock(&shell.store)
-        .replay_file_with(
-            &PathBuf::from(path),
-            &shell.cfg.ingest,
-            shell.template.clone(),
-        )
-        .map_err(text)?;
+    let mut opened = {
+        let mut store = lock(&shell.store);
+        let mut opened = store
+            .replay_file_with(
+                &PathBuf::from(path),
+                &shell.cfg.ingest,
+                shell.template.clone(),
+            )
+            .map_err(text)?;
+        opened.branch = Some(branch_in(&store, &shell, &opened));
+        opened
+    };
     opened.live = is_live(&shell, &opened.summary.mission_id);
     Ok(opened)
 }
@@ -53,7 +84,12 @@ pub async fn open_mission(
     shell: State<'_, Shell>,
     mission_id: MissionId,
 ) -> Result<OpenedMission, String> {
-    let mut opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    let mut opened = {
+        let store = lock(&shell.store);
+        let mut opened = store.open_mission(&mission_id).map_err(text)?;
+        opened.branch = Some(branch_in(&store, &shell, &opened));
+        opened
+    };
     opened.live = is_live(&shell, &mission_id);
     Ok(opened)
 }
@@ -85,6 +121,7 @@ pub async fn attach(
         .map_err(text)?
         .ok_or_else(|| format!("session {session_id} is not known to the store"))?;
     let mut opened = store.open_mission(&mission).map_err(text)?;
+    opened.branch = Some(branch_in(&store, &shell, &opened));
     drop(store);
     opened.live = is_live(&shell, &mission);
     Ok(opened)
@@ -99,7 +136,12 @@ pub async fn board(
     grouping: Option<WorkerGrouping>,
     at: Option<Timestamp>,
 ) -> Result<BoardDigest, String> {
-    let opened = lock(&shell.store).open_mission(&mission_id).map_err(text)?;
+    let (opened, branch) = {
+        let store = lock(&shell.store);
+        let opened = store.open_mission(&mission_id).map_err(text)?;
+        let branch = branch_in(&store, &shell, &opened);
+        (opened, branch)
+    };
     let mission = MissionConfig::default();
     let cfg = ViewConfig {
         filter: filter.unwrap_or_default(),
@@ -110,7 +152,7 @@ pub async fn board(
         &opened.events,
         &cfg,
         &DeclaredModels::from_config(&mission),
-        &branch_of(&mission, &opened.summary.name),
+        &branch,
         &shell.template,
     );
     Ok(board.digest())
@@ -209,6 +251,25 @@ pub async fn cycle_template(shell: State<'_, Shell>) -> Result<CycleTemplate, St
     Ok(shell.template.as_ref().clone())
 }
 
+/// The Gate header of a mission as the last poll read it, for a board opened after the
+/// `gate_changed` that announced it.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gate_group(
+    cache: State<'_, crate::github::GateCache>,
+    mission_id: MissionId,
+) -> Result<Option<observatory_core::view::GateGroup>, String> {
+    Ok(cache.get(&mission_id))
+}
+
+/// The worktrees git listed for the milestones of a mission at the last poll, for the cards.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn milestone_worktrees(
+    cache: State<'_, crate::git::GitCache>,
+    mission_id: MissionId,
+) -> Result<Vec<observatory_core::view::MilestoneWorktree>, String> {
+    Ok(cache.get(&mission_id))
+}
+
 fn is_live(shell: &Shell, mission: &MissionId) -> bool {
     let watched = lock(&shell.status).watched.clone();
     let store = lock(&shell.store);
@@ -250,6 +311,70 @@ mod tests {
         println!("cycle_template lanes: {names:?}");
         assert_eq!(loaded, CycleTemplate::engineering());
         assert_eq!(names.len(), 7, "the default template has seven lanes");
+        let _ = std::fs::remove_file(path);
+    }
+
+    const LITERAL_BRANCH: &str = "mission/observatory-v1";
+
+    fn app_with_branch_pattern(
+        pattern: &str,
+        tag: &str,
+    ) -> (tauri::App<tauri::test::MockRuntime>, PathBuf) {
+        let mut cfg = Config::default();
+        cfg.mission.branch_pattern = pattern.to_owned();
+        let path = std::env::temp_dir().join(format!(
+            "observatory-branch-{tag}-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let app = tauri::test::mock_app();
+        app.manage(Shell {
+            template: Arc::new(cfg.cycle.load_template().template),
+            store: Mutex::new(Store::open(&path).expect("the store opens")),
+            status: Arc::new(Mutex::new(AttachStatus::default())),
+            cfg,
+        });
+        (app, path)
+    }
+
+    fn s_fixture() -> String {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../fixtures/streams/2026-10-22-observatory-v1-s.jsonl"
+        )
+        .to_owned()
+    }
+
+    #[test]
+    fn an_opened_mission_names_the_branch_of_the_configured_pattern() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "pattern");
+        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
+            .expect("the capture replays");
+        println!("opened branch: {:?}", opened.branch);
+        assert_eq!(opened.branch.as_deref(), Some(LITERAL_BRANCH));
+        let again = tauri::async_runtime::block_on(open_mission(
+            app.state::<Shell>(),
+            opened.summary.mission_id.clone(),
+        ))
+        .expect("the mission opens from the store");
+        assert_eq!(again.branch.as_deref(), Some(LITERAL_BRANCH));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_opened_mission_prefers_the_branch_the_store_recorded() {
+        let (app, path) = app_with_branch_pattern("mission/<name>", "recorded");
+        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
+            .expect("the capture replays");
+        let mission = opened.summary.mission_id.clone();
+        assert!(
+            lock(&app.state::<Shell>().store)
+                .set_mission_branch(&mission, "mission/recorded")
+                .expect("the branch is recorded")
+        );
+        let again = tauri::async_runtime::block_on(open_mission(app.state::<Shell>(), mission))
+            .expect("the mission opens from the store");
+        assert_eq!(again.branch.as_deref(), Some("mission/recorded"));
         let _ = std::fs::remove_file(path);
     }
 }

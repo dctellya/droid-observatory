@@ -19,6 +19,11 @@ import sys
 import tomllib
 from datetime import datetime, timedelta, timezone
 
+import usage_classes
+import usage_idle
+import usage_rewrites
+import usage_testing
+
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
 
@@ -40,6 +45,7 @@ MATCH_TOLERANCE_S = 3.0
 LOG_REORDER_MARGIN_S = 600
 # Owner item 4 (M2 boundary): a wait that returns before this is reported as short.
 SHORT_WAIT_S = 60.0
+RATE_KEYS = ("input", "output", "cache_read", "cache_write")
 # Owner item 8: a feature finishes in one round under this many worker turns.
 FEATURE_TURN_CAP = 120
 # AGENTS.md "Mission setup": self-check missions run on the cheapest explicit model.
@@ -152,18 +158,65 @@ def read_jsonl(path):
     return out
 
 
+def fail(message):
+    print("usage-report.py: " + message, file=sys.stderr)
+    sys.exit(2)
+
+
 def load_prices(path):
+    return load_price_table(path)[0]
+
+
+def load_price_table(path):
+    """(model rows, provenance line or None) of a dated price file."""
     with open(path, "rb") as f:
         data = tomllib.load(f)
-    return data.get("models", {})
+    return data.get("models", {}), data.get("provenance")
+
+
+def pick_price_table(prices_dir, named=None):
+    """The file `named` (a date, a file name or a path such as the `price_table` of the config), else the newest dated file of the directory."""
+    if named:
+        for cand in ([named] if os.path.isabs(named) else []) + [os.path.join(prices_dir, named), os.path.join(prices_dir, named + ".toml"),
+                                                                  os.path.join(prices_dir, os.path.basename(named))]:
+            if os.path.isfile(cand):
+                return cand
+        sys.exit("usage-report.py: no price table %s in %s" % (named, prices_dir))
+    dated = sorted(glob.glob(os.path.join(prices_dir, "*.toml")))
+    return dated[-1] if dated else None
+
+
+def rates(model, p):
+    """(basis, per-million rates by token class): the plan price when the row carries one, else the list price."""
+    plan = ["plan_%s_per_m" % k for k in RATE_KEYS]
+    if any(k in p for k in plan):
+        if not all(k in p for k in plan):
+            fail("the price row of %s has some plan_*_per_m keys but not all four" % model)
+        return "plan", {k: p["plan_%s_per_m" % k] for k in RATE_KEYS}
+    missing = [k + "_per_m" for k in RATE_KEYS if k + "_per_m" not in p]
+    if missing:
+        fail("the price row of %s lacks %s" % (model, ", ".join(missing)))
+    return "list", {k: p[k + "_per_m"] for k in RATE_KEYS}
+
+
+def check_priced(prices, models, path):
+    """A model that ran in the window is priced, and not at zero: its turns never show at zero cost."""
+    for model, turns in sorted(models.items()):
+        p = prices.get(model)
+        if p is None:
+            fail("no price for model %s (%d turns in the window) in %s; add a [models.\"%s\"] row (plan or list price)"
+                 % (model, turns, path, model))
+        _, r = rates(model, p)
+        if r["input"] <= 0 or r["output"] <= 0:
+            fail("the price of model %s has a zero input or output rate in %s; its turns would show at zero cost" % (model, path))
 
 
 def price(prices, model, a):
     p = prices.get(model)
     if p is None:
         return None
-    return (a.i * p["input_per_m"] + a.o * p["output_per_m"] + a.cr * p["cache_read_per_m"]
-            + a.cw * p["cache_write_per_m"]) / 1e6
+    _, r = rates(model, p)
+    return (a.i * r["input"] + a.o * r["output"] + a.cr * r["cache_read"] + a.cw * r["cache_write"]) / 1e6
 
 
 def scan_logs(files, start, end):
@@ -172,6 +225,7 @@ def scan_logs(files, start, end):
     router = []
     info = []
     orch_turns = []
+    facts = usage_idle.LogFacts()
     unparsed = unjoined = 0
     stop = (parse_ts(sec(end) + "+00:00") + timedelta(seconds=LOG_REORDER_MARGIN_S)).strftime("%Y-%m-%dT%H:%M:%S")
     for path in files:
@@ -198,6 +252,11 @@ def scan_logs(files, start, end):
                     first = ts
                 last = ts
                 is_turn = "[Agent] Streaming result" in line
+                if start is None or sec(ts) >= sec(start):
+                    if is_turn:
+                        facts.turns.append(ts)
+                    else:
+                        facts.note(ts, line)
                 if not is_turn and "[Model-Router] Model transition" not in line:
                     continue
                 s = sec(ts)
@@ -225,7 +284,7 @@ def scan_logs(files, start, end):
                         orch_turns.append((ts, model, d))
         unparsed += n_unparsed
         info.append({"path": path, "lines": lines, "first": first, "last": last, "unparsed": n_unparsed})
-    return win, upto, router, info, orch_turns, unparsed, unjoined
+    return win, upto, router, info, orch_turns, unparsed, unjoined, facts
 
 
 scan_logs.orch_id = None
@@ -301,6 +360,10 @@ def usd(x):
     return "%.2f" % x
 
 
+def usd_nonzero(x):
+    return "<0.01" if 0 < x < 0.005 else usd(x)
+
+
 def ts_or_dash(x):
     return x if x else "-"
 
@@ -332,8 +395,16 @@ def tool_names(content):
     return names, "\n".join(text), bg
 
 
+def text_of_result(content):
+    if isinstance(content, str):
+        return content
+    return " ".join(b.get("text", "") for b in content or () if isinstance(b, dict) and b.get("type") == "text")
+
+
 def load_transcript(path):
+    """(assistant records, tool_result times, WaitForScript calls, owner-facing calls: asks, answers, messages)."""
     recs, results, waits = [], {}, []
+    owner = {"asks": {}, "answers": {}, "messages": {}}
     with open(path, errors="replace") as f:
         for line in f:
             if '"message"' not in line:
@@ -353,7 +424,15 @@ def load_transcript(path):
                 for b in content:
                     if b.get("type") == "tool_result":
                         results[b.get("tool_use_id")] = ts
+                        owner["answers"][b.get("tool_use_id")] = (ts, text_of_result(b.get("content")))
                 continue
+            if m.get("role") == "assistant":
+                for b in content:
+                    inp = b.get("input") or {}
+                    if b.get("type") == "tool_use" and b.get("name") == "AskUser":
+                        owner["asks"][b.get("id")] = (ts, json.dumps(inp))
+                    elif b.get("type") == "tool_use" and b.get("name") == "StartMissionRun" and inp.get("messageToWorker"):
+                        owner["messages"][b.get("id")] = (ts, inp.get("resumeWorkerSessionId"), str(inp["messageToWorker"]))
             if m.get("role") != "assistant" or str(r.get("id", "")).startswith("repl-tool-call"):
                 continue
             kinds = {b.get("type") for b in content}
@@ -363,9 +442,10 @@ def load_transcript(path):
             recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg})
             for b in content:
                 if b.get("type") == "tool_use" and b.get("name") == "WaitForScript":
-                    waits.append((ts, b.get("id")))
+                    inp = b.get("input") or {}
+                    waits.append((ts, b.get("id"), inp.get("toolCallId"), inp.get("action")))
     recs.sort(key=lambda r: r["t"])
-    return recs, results, waits
+    return recs, results, waits, owner
 
 
 def classify_turn(rec, prev):
@@ -409,7 +489,8 @@ def orchestrator_split(orch_turns, recs, prices):
     return result, matched
 
 
-def throttled_rows(progress, label, start, end):
+def pause_rows(progress, label):
+    """Every pause of progress_log.jsonl paired with the entry that ended it; `until` is that entry's time (None while open)."""
     rows, open_ = [], None
 
     def close(next_entry, resumed):
@@ -419,7 +500,8 @@ def throttled_rows(progress, label, start, end):
         reason = r.get("pauseReason") or "-"
         resume = next_entry[1]["timestamp"] if resumed else "none (next: %s %s)" % (next_entry[1]["type"], next_entry[1]["timestamp"])
         rows.append({"pause": r["timestamp"], "resume": resume, "seconds": (t1 - t0).total_seconds(), "reason": reason,
-                     "throttled": reason in THROTTLE_REASONS, "source": "%s:%d, :%d" % (label, ln, next_entry[0])})
+                     "throttled": reason in THROTTLE_REASONS, "source": "%s:%d, :%d" % (label, ln, next_entry[0]),
+                     "until": next_entry[1]["timestamp"]})
 
     for ln, r in progress:
         t = r.get("type")
@@ -435,8 +517,13 @@ def throttled_rows(progress, label, start, end):
             open_ = None
     if open_:
         rows.append({"pause": open_[1]["timestamp"], "resume": "open (no later entry)", "seconds": None,
-                     "reason": open_[1].get("pauseReason") or "-", "throttled": False, "source": "%s:%d" % (label, open_[0])})
-    return [r for r in rows if sec(start) <= sec(r["pause"]) <= sec(end)]
+                     "reason": open_[1].get("pauseReason") or "-", "throttled": False, "source": "%s:%d" % (label, open_[0]),
+                     "until": None})
+    return rows
+
+
+def throttled_rows(progress, label, start, end):
+    return [r for r in pause_rows(progress, label) if sec(start) <= sec(r["pause"]) <= sec(end)]
 
 
 def gate_rows(gate_dir, repo_root, start, end):
@@ -447,8 +534,13 @@ def gate_rows(gate_dir, repo_root, start, end):
                 r = json.load(f)
         except (ValueError, OSError):
             continue
-        st = r.get("started_at")
-        if not st or not (sec(start) <= sec(st) <= sec(end)):
+        st, fin = r.get("started_at"), r.get("finished_at")
+        if not (st or fin):
+            continue
+        if not st:
+            r["started_at"] = st = fin
+        fin = fin or st
+        if not ((sec(st) < sec(end) or sec(fin) <= sec(end)) and sec(fin) >= sec(start)):
             continue
         r["_path"] = os.path.relpath(path, repo_root) if path.startswith(repo_root) else os.path.join(
             os.path.basename(gate_dir), os.path.relpath(path, gate_dir))
@@ -522,12 +614,12 @@ def minutes(a, b):
     return "%.2f" % ((parse_ts(b) - parse_ts(a)).total_seconds() / 60)
 
 
-def cross_check(script_dir, files, start, end, per_session):
+def cross_check(script_dir, files, start, end, per_session, prices_path):
     sh = os.path.join(script_dir, "usage-from-log.sh")
     if not os.path.exists(sh):
         return ["cross-check: unavailable (scripts/usage-from-log.sh not found)"]
     ids = sorted(per_session)
-    cmd = ["sh", sh] + list(files) + ["--embedded", "--from", start, "--to", end, "--session"] + ids
+    cmd = ["sh", sh] + list(files) + ["--embedded", "--prices", prices_path, "--from", start, "--to", end, "--session"] + ids
     proc = subprocess.run(cmd, capture_output=True, text=True)
     got = {}
     for line in proc.stdout.splitlines():
@@ -542,7 +634,7 @@ def cross_check(script_dir, files, start, end, per_session):
         if have != want:
             diffs.append("  %s: usage-report.py %s, usage-from-log.sh %s" % (sid, want, have))
     if proc.returncode == 0 and not diffs:
-        return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read against scripts/usage-from-log.sh --embedded)" % len(ids)]
+        return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read, cache write and the price of every model against scripts/usage-from-log.sh --embedded)" % len(ids)]
     return ["cross-check: DIFFERENT (exit %d)" % proc.returncode] + diffs[:50]
 
 
@@ -559,10 +651,12 @@ def build(args):
     pl_label = os.path.basename(mission_dir.rstrip("/")) + "/progress_log.jsonl"
     ft_path = os.path.join(mission_dir, "features.json")
     ft_label = os.path.basename(mission_dir.rstrip("/")) + "/features.json"
-    skills = {}
+    skills, budgets, features = {}, {}, []
     if os.path.exists(ft_path):
         with open(ft_path) as f:
-            skills = {x["id"]: x.get("skillName") or "-" for x in json.load(f).get("features", []) if "id" in x}
+            features = [x for x in json.load(f).get("features", []) if "id" in x]
+        skills = {x["id"]: x.get("skillName") or "-" for x in features}
+        budgets = {x["id"]: usage_classes.turn_budget(x) for x in features}
     start = args.start
     if not start:
         firsts = [r["timestamp"] for _, r in progress
@@ -575,11 +669,15 @@ def build(args):
     if not files:
         sys.exit("usage-report.py: no droid-log-single.log* in %s" % args.logs_dir)
 
-    prices = load_prices(args.prices)
+    prices, provenance = load_price_table(args.prices)
     sidecars = load_sidecars(args.sessions_dir)
     clf = Classifier(sidecars, progress, mission_id)
     scan_logs.orch_id = mission_id
-    win, upto, router, loginfo, orch_turns, unparsed, unjoined = scan_logs(files, start, end)
+    win, upto, router, loginfo, orch_turns, unparsed, unjoined, facts = scan_logs(files, start, end)
+    ran = collections.Counter()
+    for (_, model), a in win.items():
+        ran[model] += a.turns
+    check_priced(prices, ran, os.path.relpath(args.prices, repo_root) if args.prices.startswith(repo_root) else args.prices)
 
     ms_path = os.path.join(mission_dir, "model-settings.json")
     ms = {}
@@ -626,8 +724,9 @@ def build(args):
         src_rows.append(["`%s`" % pl_label, len(tss), min(tss) if tss else "-", max(tss) if tss else "-", "records up to the window end"])
     tpath = next(iter(glob.glob(os.path.join(args.sessions_dir, "*", mission_id + ".jsonl"))), None)
     recs = results = waits = None
+    owner_calls = {}
     if tpath:
-        recs, results, waits = load_transcript(tpath)
+        recs, results, waits, owner_calls = load_transcript(tpath)
         bounded = [r["ts"] for r in recs if sec(r["ts"]) <= sec(end)]
         src_rows.append(["`sessions/%s/%s.jsonl`" % (os.path.basename(os.path.dirname(tpath)), mission_id), len(bounded),
                          ts_or_dash(bounded[0] if bounded else None), ts_or_dash(bounded[-1] if bounded else None),
@@ -647,15 +746,16 @@ def build(args):
         for (sid, model), a in win.items():
             c = per.get(sid)
             if c is None:
-                per[sid] = [a.first, a.last, a.turns, a.i, a.o, a.cr]
+                per[sid] = [a.first, a.last, a.turns, a.i, a.o, a.cr, a.cw]
             else:
                 c[0], c[1] = min(c[0], a.first), max(c[1], a.last)
                 c[2] += a.turns
                 c[3] += a.i
                 c[4] += a.o
                 c[5] += a.cr
+                c[6] += a.cw
         for r in cross_check(os.path.dirname(os.path.abspath(__file__)), files, start, end,
-                             {k: tuple(str(x) for x in v) for k, v in per.items()}):
+                             {k: tuple(str(x) for x in v) for k, v in per.items()}, args.prices):
             emit(r)
         emit("")
 
@@ -685,7 +785,56 @@ def build(args):
     for r in md_table(hdr, rows):
         emit(r)
     emit("")
-    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); turns on a model with no price row are counted in `Unpriced turns` and add nothing to USD-eq.")
+    emit("USD-eq is priced per model from the price table (input, output, cache read, cache write per million tokens); a model that ran in the window with no price row, or a zero input or output price, stops the run (exit 2, naming the model), so `Unpriced turns` is 0 here; it only counts turns before the window (Mission to date by role). A price row with `plan_*_per_m` keys is the plan price and wins over the list price (see Models that ran).")
+    emit("")
+
+    # Cost by token class
+    emit("### Cost by token class")
+    emit("")
+    scopes = collections.OrderedDict((role, usage_classes.new_totals()) for role in ROLES)
+    milestone_totals = usage_classes.new_totals()
+    for (sid, model), a in win.items():
+        _, r = rates(model, prices[model])
+        usage_classes.add_totals(scopes[role_of(sid)], a, r)
+        usage_classes.add_totals(milestone_totals, a, r)
+    crows = []
+    for scope, totals in list(scopes.items()) + [("milestone", milestone_totals)]:
+        if any(t for t, _ in totals.values()):
+            crows += usage_classes.class_rows(scope, totals)
+    for r in md_table(["Scope", "Class", "Tokens", "Share of tokens %", "USD-eq", "Share of cost %"], crows):
+        emit(r)
+    emit("")
+    emit("Cost by token class: each role's and the milestone's tokens and USD-eq split by class, priced per model as in Tokens per role; "
+         "share of tokens and share of cost are the class's part of that scope's total (cost follows the class, not the token count). "
+         "Reasoning tokens are not a class: they are billed inside output.")
+    emit("")
+
+    # Models that ran
+    emit("### Models that ran")
+    emit("")
+    mrows = []
+    per_model = collections.OrderedDict()
+    for (sid, model), a in sorted(win.items(), key=lambda kv: (kv[1].first, kv[0])):
+        m = per_model.setdefault(model, [Acc(), 0.0, []])
+        for k in ("turns", "i", "o", "cr", "cw", "rs"):
+            setattr(m[0], k, getattr(m[0], k) + getattr(a, k))
+        m[1] += price(prices, model, a)
+        if role_of(sid) not in m[2]:
+            m[2].append(role_of(sid))
+    for model, (a, cost, roles) in per_model.items():
+        basis, r = rates(model, prices[model])
+        mrows.append([model, basis, a.turns, a.i, a.cw, a.cr, a.o, r["input"], r["cache_write"], r["cache_read"], r["output"],
+                      usd_nonzero(cost), ", ".join(sorted(roles, key=ROLES.index)), prices[model].get("note") or "-"])
+    for r in md_table(["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output", "Input per M",
+                       "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles", "Note"], mrows):
+        emit(r)
+    emit("")
+    if provenance:
+        emit("Price provenance: %s" % provenance)
+        emit("")
+    emit("Every model with a log turn in the window is listed, declared or routed. Price basis is `plan` when the model's row in `%s` "
+         "carries the four `plan_*_per_m` keys (the plan's price) and `list` otherwise (the list price); per-million rates are USD."
+         % os.path.basename(args.prices))
     emit("")
 
     # Tokens per session
@@ -720,15 +869,25 @@ def build(args):
                        "First ts", "Last ts"], srows):
         emit(r)
     emit("")
-    n_waits = sum(a.turns for (c, _), a in split.items() if c == "waits")
-    short = in_win = 0
-    for ts, tid in (waits or []):
-        if not (sec(start) <= sec(ts) <= sec(end)):
+    short = in_win = reissued = kills = 0
+    seen = set()
+    for ts, tid, call_id, action in sorted(waits or [], key=lambda w: parse_ts(w[0])):
+        inside = sec(start) <= sec(ts) <= sec(end)
+        in_win += inside
+        if action == "kill":
+            kills += inside
             continue
-        in_win += 1
+        repeat = call_id in seen
+        seen.add(call_id)
+        if not inside:
+            continue
+        reissued += repeat
         if tid in results and (parse_ts(results[tid]) - parse_ts(ts)).total_seconds() < SHORT_WAIT_S:
             short += 1
-    emit("- re-issued waits: %d (orchestrator turns whose only tool call is `WaitForScript`, or a `StartMissionRun` repeated straight after a wait)" % n_waits)
+    emit("- re-issued waits: %d (WaitForScript calls, any `action` but `kill`, on the same `toolCallId` as an earlier wait; "
+         "the first wait on each id and every kill are not counted)" % reissued)
+    emit("- worker pauses (kills): %d (WaitForScript calls whose `action` is `kill`: a worker or script stopped on purpose, "
+         "not a wait)" % kills)
     emit("- waits returning in under %d s: %d" % (SHORT_WAIT_S, short))
     emit("- WaitForScript calls in the window: %d" % in_win)
     emit("- orchestrator turns matched to the transcript: %d of %d (tolerance %.0f s)" % (matched, len(orch_turns), MATCH_TOLERANCE_S))
@@ -749,6 +908,46 @@ def build(args):
     for r in md_table(["Caller role", "Sessions", "Turns", "Input", "Output", "Cache read", "Cache write", "USD-eq", "Unpriced turns",
                        "First ts", "Last ts", "Source"], rows):
         emit(r)
+    emit("")
+
+    # Subagent classes
+    emit("### Subagent classes")
+    emit("")
+    declarations = usage_classes.read_declarations(mission_dir, args.milestone)
+    sub_models = collections.defaultdict(set)
+    for (sid, model), a in win.items():
+        if clf.of(sid)["kind"] != "root":
+            sub_models[sid].add(model)
+    srows, undeclared, subagent_sessions = [], 0, 0
+    for cls, caller in (("orchestrator subagents", "orchestrator"), ("validator subagents", "validator"), ("worker subagents", "worker")):
+        agg = Agg()
+        for (sid, model), a in win.items():
+            if clf.of(sid)["kind"] != "root" and clf.of(sid)["caller_role"] == caller:
+                agg.add(sid, model, a, price(prices, model, a))
+        models, purposes, sources, none, off = set(), set(), set(), 0, 0
+        for sid in sorted(agg.sessions):
+            d = usage_classes.declaration_of(declarations, sid)
+            if d is None:
+                none += 1
+                continue
+            models.add(d[0])
+            purposes.add(d[1])
+            sources.add(d[2])
+            off += bool(sub_models[sid] - {d[0]})
+        undeclared += none
+        subagent_sessions += len(agg.sessions)
+        srows.append([cls, len(agg.sessions), agg.turns, usd(agg.usd), ", ".join(sorted(models)) or "-", "; ".join(sorted(purposes)) or "-",
+                      none, off, ", ".join("`%s`" % x for x in sorted(sources)) or "-"])
+    for r in md_table(["Class", "Sessions", "Turns", "USD-eq", "Declared model", "Purpose", "No declared model", "Off declared model",
+                       "Source"], srows):
+        emit(r)
+    emit("")
+    emit("- no declared model: %d of %d subagent sessions" % (undeclared, subagent_sessions))
+    emit("")
+    emit("A subagent's class is the role of the session that started it. Declared model and purpose are read from `handoffs/*.json` and "
+         "`validation/%s/**/synthesis*.json` in the mission directory (a `subagents` list or `subagentSessions` object, or a line "
+         "`subagent <session id or 8-hex prefix>: model = <id>; purpose = <text>` in any string); a session with none counts under `No declared "
+         "model`, and `Off declared model` counts the sessions with a turn in the window on a model other than the declared one." % args.milestone)
     emit("")
 
     # Self-check
@@ -809,6 +1008,32 @@ def build(args):
     emit("throttled: %.3f s = %.2f min" % (secs, secs / 60))
     emit("")
 
+    # Owner interventions, idle time and host health
+    feature_of = {sid: f for sid, f in clf.feature.items()}
+    interventions = usage_idle.intervention_rows(
+        progress, pl_label, owner_calls, "sessions/%s/%s.jsonl" % (os.path.basename(os.path.dirname(tpath)), mission_id) if tpath else "transcript not found",
+        feature_of, start, end)
+    usage_idle.intervention_lines(emit, md_table, interventions)
+    events = list(facts.turns) + [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
+    idle_min = usage_idle.idle_lines(emit, md_table, events, facts, pause_rows(progress, pl_label), interventions)
+    usage_idle.host_lines(emit, md_table, facts, usage_idle.parse_boottime(args.boottime), now, end if "T" in end else end, idle_min["host"])
+
+    lead_turns = []
+    for ts, model, d in sorted(orch_turns, key=lambda x: x[0]):
+        a = Acc()
+        a.add(ts, d, "")
+        lead_turns.append({"ts": ts, "cr": a.cr, "cw": a.cw, "usd": price(prices, model, a) or 0.0})
+    in_window = [(r.get("type"), r["timestamp"]) for _, r in progress
+                 if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
+    usage_rewrites.rewrite_lines(emit, md_table, args.milestone, lead_turns, usd,
+                                 boundaries=[ts for t, ts in in_window if t == "worker_completed"],
+                                 resumes=[ts for t, ts in in_window if t == "mission_resumed"])
+
+    # User testing
+    usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
+                                     lambda model, a: price(prices, model, a) or 0.0, usd)
+    usage_testing.e2e_lines(emit, md_table, args.e2e_dir, repo_root, start, end)
+
     # Gates
     emit("### Gates")
     emit("")
@@ -823,7 +1048,11 @@ def build(args):
     emit("gate seconds run: %.3f" % sum(g.get("seconds", 0) for g in gr))
     emit("gates served from cache: %d, minutes saved: %.2f" % (len(hits), sum(h["seconds"] for h in hits) / 60))
     emit("")
-    emit("Gates run are the records `%s/*/*.json` by `started_at`; gates served from cache are the lines of `%s/hits.log` "
+    emit("Gate window rule: a gate run is in the table when it overlaps the window: `started_at` < `--to` or `finished_at` <= `--to`, "
+         "and it did not finish before the window start; a run that started before `--to` and finished after it is in, one that "
+         "started at or after `--to` is not (pass a later `--to` to include the integration's own gate runs).")
+    emit("")
+    emit("Gates run are the records `%s/*/*.json`; gates served from cache are the lines of `%s/hits.log` "
          "by time, and the minutes saved are their stored seconds, the run each hit did not repeat." % (label, label))
     emit("")
     emit("### Gate runs")
@@ -880,17 +1109,61 @@ def build(args):
             f[2] = a.first if f[2] is None else min(f[2], a.first)
             f[3] = a.last if f[3] is None else max(f[3], a.last)
             f[4] |= a.files
-    rows = [[f, skills.get(f, "-"), rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])), v[1],
-             "yes" if v[1] > FEATURE_TURN_CAP else "no", v[2], v[3],
-             "`%s`; %s%s" % (", ".join(sorted(v[4])), pl_label, "; " + ft_label if f in skills else "")]
+    feat_usd = collections.Counter()
+    for sid, a in by_sess.items():
+        c = clf.of(sid)
+        if c["role"] in ("worker", "validator") and c["feature"]:
+            feat_usd[c["feature"]] += a.usd
+    for x in features:
+        if x.get("milestone") == args.milestone:
+            feats.setdefault(x["id"], [[], 0, None, None, set()])
+    budget_of = lambda f: budgets.get(f)  # noqa: E731
+    rows = [[f, skills.get(f, "-"), rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])) or "-", v[1],
+             "yes" if v[1] > FEATURE_TURN_CAP else "no",
+             "-" if budget_of(f) is None else budget_of(f),
+             "-" if budget_of(f) is None else ("yes" if v[1] > budget_of(f) else "no"),
+             usd(feat_usd[f]), ts_or_dash(v[2]), ts_or_dash(v[3]),
+             "`%s`; %s%s" % (", ".join(sorted(v[4])) or "-", pl_label, "; " + ft_label if f in skills else "")]
             for f, v in sorted(feats.items())]
-    for r in md_table(["Feature", "Skill", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP, "First ts", "Last ts",
-                       "Source"], rows):
+    for r in md_table(["Feature", "Skill", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP, "Turn budget",
+                       "Over budget", "USD-eq", "First ts", "Last ts", "Source"], rows):
         emit(r)
     emit("")
     emit("Rounds are the `worker_started` entries for the feature in `%s`; turns and the first and last timestamps are those of its root "
-         "sessions' log turns in the window; the skill is the feature's `skillName` in `%s`." % (pl_label, ft_label))
+         "sessions' log turns in the window; the skill and the `turnBudget` are the feature's `skillName` and `turnBudget` in `%s` "
+         "(`-` when it has none; the features of the milestone that never ran are listed with 0 turns); USD-eq is the cost of the "
+         "feature's sessions and of the subagents they started." % (pl_label, ft_label))
     emit("")
+
+    # Cost per assertion and per feature
+    emit("### Cost per assertion and per feature")
+    emit("")
+    vs_path = args.validation_state or os.path.join(mission_dir, "validation-state.json")
+    vs_label = os.path.basename(mission_dir.rstrip("/")) + "/validation-state.json" if not args.validation_state else args.validation_state
+    state = None
+    if os.path.exists(vs_path):
+        with open(vs_path) as f:
+            state = json.load(f)
+    elif args.validation_state:
+        fail("validation state %s not found" % args.validation_state)
+    fulfilled = usage_classes.fulfilled_assertions(state, args.milestone) if state else []
+    done = [x["id"] for x in features if x.get("milestone") == args.milestone and x.get("status") == "completed"]
+    cost_per = lambda n: usd(window_total.usd / n) if n else "-"  # noqa: E731
+    for r in md_table(["Unit", "Count", "Window USD-eq", "USD-eq per unit", "Source"], [
+            ["assertion fulfilled", len(fulfilled), usd(window_total.usd), cost_per(len(fulfilled)),
+             "`%s`%s" % (vs_label, "" if state else " not found")],
+            ["feature completed", len(done), usd(window_total.usd), cost_per(len(done)),
+             "`%s`%s" % (ft_label, "" if features else " not found")]]):
+        emit(r)
+    emit("")
+    emit("assertions fulfilled in the window: %s" % (", ".join(fulfilled) or "none"))
+    emit("")
+    emit("Cost per assertion: the window total of Tokens per role divided by the assertions with status `passed` and `validatedAtMilestone` "
+         "equal to the milestone (the state file carries no timestamps, so the milestone is its window); cost per feature divides the same "
+         "total by the milestone's features with status `completed` in `features.json`. Fix rounds and re-tests are inside the window total.")
+    emit("")
+
+    usage_rewrites.allowance_line(emit, args.milestone, window_total.usd, fulfilled, features, args.next_milestone)
 
     # Mission to date
     emit("### Mission to date by role")
@@ -916,6 +1189,27 @@ def build(args):
     emit("Role rows and `total` are every log line up to the end of the window, no start bound. `milestone window total` is the "
          "total row of Tokens per role (the window only). Caps are those passed with `--cap role=USD`, `--cap total=USD` and "
          "`--cap milestone=USD`.")
+    history = collections.Counter()
+    for (_, model), a in upto.items():
+        if model not in prices:
+            history[model] += a.turns
+    if provenance:
+        emit("")
+        emit("Price provenance: %s" % provenance)
+    noted = {}
+    for (_, model), a in upto.items():
+        if prices.get(model, {}).get("note"):
+            n = noted.setdefault(model, [0, 0.0])
+            n[0] += a.turns
+            n[1] += price(prices, model, a)
+    if noted:
+        emit("")
+        emit("Price notes: %s." % "; ".join("%s (%d turns to date, %s USD-eq): %s" % (m, n[0], usd(n[1]), prices[m]["note"])
+                                            for m, n in sorted(noted.items())))
+    emit("")
+    emit("Models with no price before the window: %s." % (
+        "none" if not history else "; ".join("%s (%d turns)" % kv for kv in sorted(history.items())) +
+        "; these turns are not in the window, so the run does not stop for them, and they add nothing to USD-eq (counted in `Unpriced turns`)"))
     # Sidecars: lifetime totals of sessions that may still be running, so the one section that can change between runs.
     emit("")
     emit("### Sidecar readings")
@@ -979,16 +1273,26 @@ def main(argv=None):
     ap.add_argument("--mission-id", help="orchestrator session id; default the mission directory's name")
     ap.add_argument("--logs-dir", default=os.path.expanduser("~/.factory/logs"))
     ap.add_argument("--sessions-dir", default=os.path.expanduser("~/.factory/sessions"))
-    prices = sorted(glob.glob(os.path.join(repo_root, "config", "prices", "*.toml")))
-    ap.add_argument("--prices", default=prices[-1] if prices else None)
+    ap.add_argument("--prices", help="price table file; default the newest dated file of --prices-dir, or the one --price-table names")
+    ap.add_argument("--prices-dir", default=os.path.join(repo_root, "config", "prices"))
+    ap.add_argument("--price-table", help="a dated price file to read instead of the newest: a date (2026-10-22), a file name or a "
+                    "path such as the `price_table` of the config")
+    ap.add_argument("--validation-state", help="validation-state.json for the cost per assertion; default <mission-dir>/validation-state.json")
+    ap.add_argument("--e2e-dir", default=os.path.join(repo_root, "reports", "e2e"),
+                    help="reports/e2e: the record.json of each `make e2e` run, listed in the testing section")
     ap.add_argument("--gate-dir", default=os.path.join(repo_root, "reports", "gate"))
     ap.add_argument("--from", dest="start", help="window start (RFC 3339); default the milestone's first worker_started")
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")
     ap.add_argument("--now", help="generation time (tests)")
+    ap.add_argument("--boottime", help="the output of `sysctl kern.boottime`, or `unavailable`; default runs the command")
+    ap.add_argument("--next-milestone", help="the milestone whose claimed assertions price the weekly allowance share; "
+                                             "default the milestone after --milestone in features.json")
     ap.add_argument("--out", help="default reports/usage/<milestone>.md")
     ap.add_argument("--cap", action="append", default=[], metavar="ROLE=USD", help="cap to compare mission-to-date with")
     ap.add_argument("--cross-check", action="store_true", help="compare the session rows with scripts/usage-from-log.sh")
     args = ap.parse_args(argv)
+    if not args.prices:
+        args.prices = pick_price_table(args.prices_dir, args.price_table)
     if not args.prices:
         sys.exit("usage-report.py: no price table found; pass --prices")
     out = args.out or os.path.join(repo_root, "reports", "usage", args.milestone + ".md")

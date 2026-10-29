@@ -198,6 +198,7 @@ pub fn record<R: Runtime>(
             events: vec![recorded.event.clone()],
             unknown_total,
             retracted: Vec::new(),
+            retracted_events: Vec::new(),
         },
     );
     Ok(ActionRecorded {

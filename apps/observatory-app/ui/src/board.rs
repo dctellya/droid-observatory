@@ -5,7 +5,7 @@ use observatory_core::config::MissionConfig;
 use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
     BoardView, ControlBar, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber,
-    ViewConfig, WorkerGrouping, branch_of, tray_count,
+    ViewConfig, WorkerGrouping, tray_count,
 };
 
 use crate::agents::AgentPanel;
@@ -16,6 +16,7 @@ use crate::ctx::BoardCtx;
 use crate::details::DetailsView;
 use crate::lanes::Lanes;
 use crate::launch::HostedCtx;
+use crate::pagehead::PageHead;
 use crate::panel::{OverlayList, Panel};
 use crate::tray::Tray;
 
@@ -28,7 +29,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let mission = MissionConfig::default();
     let declared = DeclaredModels::from_config(&mission);
     let agent_declared = declared.clone();
-    let branch = branch_of(&mission, &capture.summary.name);
+    let branch = capture.branch.clone();
     let events = capture.events.clone();
     let options = Memo::new({
         let events = events.clone();
@@ -47,11 +48,6 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let at = RwSignal::new(None::<Timestamp>);
     let selected = RwSignal::new(None::<EventId>);
     let details = RwSignal::new(None::<MilestoneId>);
-    provide_context(BoardCtx {
-        open_details: Callback::new(move |milestone| details.set(Some(milestone))),
-        sessions: capture.sessions.clone(),
-    });
-
     let board = Memo::new({
         let events = events.clone();
         move |_| {
@@ -65,6 +61,23 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
             })
         }
     });
+    let polled = capture.gate.clone();
+    let gate = Signal::derive(move || {
+        let group = board.with(|board| board.gate.clone());
+        let group = polled.with(|polled| match polled {
+            Some(polled) => group.with_polled(polled),
+            None => group,
+        });
+        template.with(|template| group.view(template))
+    });
+    provide_context(BoardCtx {
+        open_details: Callback::new(move |milestone| details.set(Some(milestone))),
+        sessions: capture.sessions.clone(),
+        gate,
+        worktrees: capture.worktrees.clone(),
+    });
+
+    provide_context(crate::gate::MergeState::new());
 
     let tauri = crate::shell::is_tauri();
     let hosted = expect_context::<HostedCtx>();
@@ -113,10 +126,23 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let event_total = events.clone();
     let unknown_total = events.clone();
     let session_total = capture.sessions.clone();
+    let eyebrow = format!(
+        "Observatory › mission {}",
+        summary
+            .mission_id
+            .0
+            .get(..8)
+            .unwrap_or(&summary.mission_id.0)
+    );
+    let subtitle = Signal::derive(move || {
+        template.with(|template| format!("cycle template {}", template.name))
+    });
     view! {
         <div class="board" aria-label="board" data-testid="board">
-            <header class="top">
+            <PageHead eyebrow=eyebrow subtitle=subtitle>
                 <h1 aria-label="mission-name" data-testid="mission-name">{summary.name.clone()}</h1>
+            </PageHead>
+            <header class="top">
                 <span class="mode mono" aria-label="mode">
                     {move || if mode_live.get() { "Live" } else { "Replay" }}
                 </span>
@@ -155,7 +181,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
             <Panel board=board />
             <AgentPanel board=board capture=capture.clone() declared=agent_declared at=at />
             <DetailsView capture=capture.clone() milestone=details />
-            <Lanes board=board grouping=grouping />
+            <Lanes board=board grouping=grouping gate=gate />
             <div class="bottom">
                 <OverlayList board=board />
                 <Tray board=board capture=capture.clone() selected=selected />

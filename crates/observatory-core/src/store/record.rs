@@ -144,6 +144,33 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Records the branch a mission integrates on (`missions.branch`). False when the store has
+    /// no row for the mission.
+    pub fn set_mission_branch(
+        &mut self,
+        mission: &MissionId,
+        branch: &str,
+    ) -> Result<bool, StoreError> {
+        let changed = self.conn.execute(
+            "UPDATE missions SET branch = ?2 WHERE id = ?1",
+            params![mission.to_string(), branch],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// The branch recorded for a mission, if any.
+    pub fn mission_branch(&self, mission: &MissionId) -> Result<Option<String>, StoreError> {
+        let branch: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT branch FROM missions WHERE id = ?1",
+                params![mission.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(branch.flatten())
+    }
+
     /// Marks every session file of `mission` as read to the size it had when it was recorded.
     pub fn mark_tailed(&mut self, mission: &MissionId) -> Result<(), StoreError> {
         self.conn.execute(

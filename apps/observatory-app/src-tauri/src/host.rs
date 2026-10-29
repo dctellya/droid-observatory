@@ -18,8 +18,10 @@ use observatory_core::ingest::rpc::{
 use observatory_core::ingest::rpc::{Resolution, resolution_of};
 use observatory_core::ingest::{EventBatch, RawRecord, Source};
 use observatory_core::mapping::MappingVersion;
-use observatory_core::model::{CycleTemplate, Event, LaneId, MissionId, SessionId, Timestamp};
-use observatory_core::store::HostedRun;
+use observatory_core::model::{
+    CycleTemplate, Event, EventId, EventKind, LaneId, MissionId, SessionId, Timestamp,
+};
+use observatory_core::store::{HostedRun, Store};
 use observatory_core::view::{
     AckRow, ControlSent, HostedStatus, LaunchConfig, Launched, OutputLines, PermissionRow,
     QuestionRow, session_uuid,
@@ -49,6 +51,8 @@ pub struct Hosts {
 
 pub(crate) struct Run {
     group: ProcessGroup,
+    /// The repository the mission was launched in.
+    repo: std::path::PathBuf,
     pub(crate) inner: Mutex<Inner>,
     status: Mutex<HostedStatus>,
     /// Controls written and not yet acknowledged, by what acknowledges them: the id of the
@@ -146,6 +150,11 @@ impl Hosts {
     /// The ids of the hosted runs, which are also their mission ids.
     pub fn launch_ids(&self) -> Vec<String> {
         lock(&self.runs).keys().cloned().collect()
+    }
+
+    /// The repository a hosted mission was launched in; none for a mission this app did not host.
+    pub fn repo_of(&self, launch_id: &str) -> Option<std::path::PathBuf> {
+        lock(&self.runs).get(launch_id).map(|run| run.repo.clone())
     }
 
     pub fn status(&self, launch_id: &str) -> Result<HostedStatus, String> {
@@ -257,6 +266,7 @@ pub async fn launch<R: Runtime>(
 
     let run = Arc::new(Run {
         group: spawned.group,
+        repo: std::path::PathBuf::from(&config.repo),
         inner: Mutex::new(Inner {
             channel,
             mapper: RpcMapper::with_template(&launch_id, MappingVersion::V1, template.clone())
@@ -286,6 +296,7 @@ pub async fn launch<R: Runtime>(
         config,
         mission: None,
         pending: Vec::new(),
+        retracted_events: Vec::new(),
         unknown_total: 0,
         output: Vec::new(),
         output_before: 0,
@@ -350,6 +361,8 @@ struct Pump<R: Runtime> {
     last_lane: Option<LaneId>,
     mission: Option<MissionId>,
     pending: Vec<Event>,
+    /// Ack rows the store deleted since the last flush: the UI may hold them already.
+    retracted_events: Vec<EventId>,
     unknown_total: u64,
     output: Vec<Vec<u8>>,
     output_before: u64,
@@ -632,6 +645,9 @@ impl<R: Runtime> Pump<R> {
         if let Err(err) = store.insert_events(&events) {
             tracing::error!(%err, launch_id = %self.launch_id, "store");
         }
+        let removed = Self::retract_echoed_pauses(&mut store, &mission, &events, &self.launch_id);
+        self.pending.retain(|event| !removed.contains(&event.id));
+        self.retracted_events.extend(removed);
         self.unknown_total = store.unknown_count(&mission).unwrap_or(0);
         drop(store);
         self.pending.extend(events);
@@ -639,14 +655,35 @@ impl<R: Runtime> Pump<R> {
         self.schedule_flush();
     }
 
+    /// The ids of the stored stream pauses that echo the host's own ack pause, retracted from the store so the UI can drop their rows.
+    fn retract_echoed_pauses(
+        store: &mut Store,
+        mission: &MissionId,
+        events: &[Event],
+        launch_id: &str,
+    ) -> Vec<EventId> {
+        let echoes_a_pause = events
+            .iter()
+            .any(|event| event.kind == EventKind::MissionPaused && !control::is_ack(&event.id));
+        if !echoes_a_pause {
+            return Vec::new();
+        }
+        store.retract_echoed_pauses(mission).unwrap_or_else(|err| {
+            tracing::error!(%err, launch_id, "store");
+            Vec::new()
+        })
+    }
+
     fn flush(&mut self) {
         self.flush_at = None;
-        if let (Some(mission), false) = (&self.mission, self.pending.is_empty()) {
+        let nothing = self.pending.is_empty() && self.retracted_events.is_empty();
+        if let (Some(mission), false) = (&self.mission, nothing) {
             let batch = EventBatch {
                 mission_id: mission.clone(),
                 events: std::mem::take(&mut self.pending),
                 unknown_total: self.unknown_total,
                 retracted: Vec::new(),
+                retracted_events: std::mem::take(&mut self.retracted_events),
             };
             tracing::info!(
                 launch_id = %self.launch_id,

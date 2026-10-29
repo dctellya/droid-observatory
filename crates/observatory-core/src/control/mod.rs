@@ -3,6 +3,7 @@
 //! are addressed by `LaneId` through the cycle template, never by name (F-041, D-035).
 
 mod action;
+pub mod merge;
 pub mod stall;
 
 use std::collections::HashSet;
@@ -20,17 +21,24 @@ use crate::model::{
 /// spool; a `sub` no mapped line yields keeps the ids apart from the stream's own events.
 const ACK_SUB: u32 = 1 << 30;
 
+/// Whether `id` names an event [`ack_event`] made.
+pub fn is_ack(id: &EventId) -> bool {
+    id.0.rsplit(':').next() == Some(ACK_SUB.to_string().as_str())
+}
+
 /// The `sub` of the `permission.requested` event the host makes from Droid's
 /// `droid.request_permission` request: the stream maps no event for it.
 const PERMISSION_SUB: u32 = ACK_SUB + 1;
 
 /// The lane of the event an action produces: the first lane of the template for a
-/// mission-level control, the lane of the request for approve and deny.
+/// mission-level control, the lane of the request for approve and deny, the final lane
+/// (Gate) for a merge.
 fn lane_of(action: &HumanAction, template: &CycleTemplate, about: Option<&Event>) -> LaneId {
     match (action, about) {
         (HumanAction::Approve { .. } | HumanAction::Deny { .. }, Some(request)) => {
             request.lane.clone()
         }
+        (HumanAction::Merge { .. }, _) => template.final_lane().clone(),
         _ => template.first().clone(),
     }
 }
@@ -207,6 +215,7 @@ pub fn relay(action: &HumanAction, text: Option<&str>) -> Option<crate::ingest::
         HumanAction::Answer { .. }
         | HumanAction::Approve { .. }
         | HumanAction::Deny { .. }
-        | HumanAction::MarkComplete { .. } => None,
+        | HumanAction::MarkComplete { .. }
+        | HumanAction::Merge { .. } => None,
     }
 }

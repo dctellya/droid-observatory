@@ -3,7 +3,7 @@
 # templated message and a parsed trailer, the gate as a cache hit or a real run, red gate abort, staging files merged
 # into SPEC section 9, BACKLOG and decision addenda and removed, a refusal on a dirty tree.
 set -u
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID DROID_SESSION_ID
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE FORCE FACTORY_SESSION_ID DROID_SESSION_ID INTEGRATE_LONG INTEGRATE_LONG_JOBS
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -201,6 +201,43 @@ check "miss: reason shows the diff stat" grep -q 'moved.txt' "$tmp/miss.out"
 check "miss: the gate command ran once" [ "$(runs)" = "$((runs_before + 1))" ]
 check "miss: report says the gate ran" grep -q 'real run' reports/readiness/2026-10-25-m9.md
 
+echo "== code paths: docs commits on the mission branch keep the hit, the miss lists code files only =="
+mkrepo docshit
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+mkdir -p docs/notes
+echo "# a note" > docs/notes/note.md
+echo "# readme" > README.md
+git add -A
+git commit -q -m "docs: a note and a readme after validation"
+runs_before=$(runs)
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/docshit.out" 2>&1
+code=$?
+check "docs hit: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/docshit.out"
+check "docs hit: summary says gate HIT" grep -q 'gate: HIT' "$tmp/docshit.out"
+check "docs hit: the gate printed HIT with the code tree" grep -q 'gate check: HIT code tree' "$tmp/docshit.out"
+check "docs hit: the gate command did not run" [ "$(runs)" = "$((runs_before))" ]
+
+mkrepo codemiss
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+mkdir -p docs/notes
+echo "# a note" > docs/notes/note.md
+echo moved > moved.txt
+git add -A
+git commit -q -m "chore: code and docs moved after validation"
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/codemiss.out" 2>&1
+code=$?
+check "code miss: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/codemiss.out"
+check "code miss: the gate printed MISS" grep -q 'gate check: MISS' "$tmp/codemiss.out"
+summary_part=$(sed -n '/Boundary summary/,$p' "$tmp/codemiss.out")
+check "code miss: the summary reason names the code file" sh -c "printf '%s' '$summary_part' | grep -q moved.txt"
+check "code miss: the summary reason does not name the docs file" sh -c "! printf '%s' '$summary_part' | grep -q note.md"
+
 echo "== inner hit, outer miss: only the lint gate was proven =="
 mkrepo inner
 printf 'GATE := sh scripts/gate.sh\n\ncheck:\n\t@$(GATE) check -- sh -c '"'"'make --no-print-directory lint; echo run >> "$$COUNTER"; echo "test result: ok. 2 passed; 0 failed"'"'"'\n\nlint:\n\t@$(GATE) lint -- sh -c '"'"'echo "lint ran"; echo "test result: ok. 1 passed; 0 failed"'"'"'\n\nusage:\n\t@mkdir -p reports/usage && echo "usage table for $(M)" > reports/usage/$(M).md\n\ndecisions-index:\n\t@sh scripts/gen-decisions-index.sh > docs/decisions/README.md\n' > Makefile
@@ -262,6 +299,64 @@ code=$?
 check "dirty: exit non-zero" [ "$code" -ne 0 ]
 check "dirty: names the unclean tree" grep -q 'not clean' "$tmp/dirty.out"
 check "dirty: nothing merged" [ "$(git rev-parse HEAD)" = "$before" ]
+
+echo "== long work: the result file of integrate-long is part of the boundary =="
+tab=$(printf '\t')
+long_jobs="$tmp/long-jobs.tsv"
+printf 'cargo%slongjob%ssh -c '"'"'echo long >> "$COUNTER"; echo "long output"'"'"'\n' "$tab" "$tab" > "$long_jobs"
+mkrepo longnone
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/longnone.out" 2>&1
+code=$?
+check "long none: exit 0" [ "$code" -eq 0 ]
+check "long none: the summary says the long work was not run and names the target" sh -c "grep -q 'long work: not run' $tmp/longnone.out && grep -q 'make integrate-long M=m9' $tmp/longnone.out"
+check "long none: the report has a Long work section saying pending" sh -c "grep -q '^## Long work' reports/readiness/2026-10-25-m9.md && grep -q 'pending' reports/readiness/2026-10-25-m9.md"
+
+mkrepo longrun
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+: > "$COUNTER"
+INTEGRATE_LONG=1 INTEGRATE_LONG_JOBS="$long_jobs" sh scripts/integrate.sh m9 wt/m9 > "$tmp/longrun.out" 2>&1
+code=$?
+check "long run: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/longrun.out"
+check "long run: the job ran once" [ "$(grep -c '^long$' "$COUNTER" | tr -d ' ')" = 1 ]
+long_tree=$(sh scripts/gate.sh --key | sed -n 1p)
+check "long run: the result file is committed with the boundary" git cat-file -e "HEAD:reports/integrate-long/$long_tree.json"
+check "long run: the summary reports the worst exit code" grep -q 'long work: OK (worst exit code 0)' "$tmp/longrun.out"
+check "long run: the report lists the job" sh -c "grep -q '^## Long work' reports/readiness/2026-10-25-m9.md && grep -q 'longjob' reports/readiness/2026-10-25-m9.md"
+
+echo "== long work: a result written by a separate run is read on the next integrate run =="
+mkrepo longlater
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > /dev/null 2>&1
+: > "$COUNTER"
+INTEGRATE_LONG_JOBS="$long_jobs" sh scripts/integrate-long.sh m9 > "$tmp/longlater-a.out" 2>&1
+check "long later: integrate-long exit 0" [ $? -eq 0 ]
+check "long later: the untracked result does not make the tree unclean for integrate" sh -c "sh scripts/integrate.sh m9 wt/m9 > $tmp/longlater-b.out 2>&1"
+check "long later: the gate was a hit on the rerun" grep -q 'gate: HIT' "$tmp/longlater-b.out"
+check "long later: the summary reads the record" grep -q 'long work: OK' "$tmp/longlater-b.out"
+check "long later: the report lists the job after the refresh" grep -q 'longjob' reports/readiness/2026-10-25-m9.md
+check "long later: the refresh commits the result file" sh -c "git ls-tree -r --name-only HEAD reports/integrate-long | grep -q '.json'"
+check "long later: the rerun left a clean tree" [ -z "$(git status --porcelain -- . ':(exclude)build-log')" ]
+
+echo "== long work: a red job is reported and fails the target after the boundary is written =="
+mkrepo longred
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+printf 'cargo%sbadjob%ssh -c '"'"'echo "cov too low"; exit 4'"'"'\n' "$tab" "$tab" > "$tmp/long-red.tsv"
+INTEGRATE_LONG=1 INTEGRATE_LONG_JOBS="$tmp/long-red.tsv" sh scripts/integrate.sh m9 wt/m9 > "$tmp/longred.out" 2>&1
+code=$?
+check "long red: the target exits non-zero" [ "$code" -ne 0 ]
+check "long red: the summary says RED with the worst exit code" grep -q 'long work: RED (worst exit code 4)' "$tmp/longred.out"
+check "long red: the boundary commit was still written" [ "$(git log -1 --format=%s)" = "chore(integration): m9 boundary reports and shared files" ]
+check "long red: the report names the red job" grep -q 'badjob' reports/readiness/2026-10-25-m9.md
 
 echo "== arguments: unknown branch and missing milestone =="
 git checkout -q -- SPEC.md
@@ -405,8 +500,8 @@ cat > reports/staging/shape-unknown.md <<'EOF'
 EOF
 python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --out "$tmp/unknown.md" > "$tmp/unknown.out" 2>&1
 code=$?
-check "unknown section: exit 1" [ "$code" -eq 1 ]
-check "unknown section: unfiled: 1 and the bullet listed" sh -c "grep -qx 'unfiled: 1' $tmp/unknown.out && grep -qF 'A bullet in no known section.' $tmp/unknown.out"
+check "unknown section: exit 2" [ "$code" -eq 2 ]
+check "unknown section: the heading is reported with file and line" grep -qF 'reports/staging/shape-unknown.md:3: ' "$tmp/unknown.out"
 check "unknown section: nothing was written" sh -c "! grep -q '^| F-003 |' SPEC.md && [ -f reports/staging/shape-plain.md ]"
 rm reports/staging/shape-unknown.md
 
@@ -416,6 +511,72 @@ check "shapes real run: exit 0 and unfiled: 0" sh -c "[ $code -eq 0 ] && grep -q
 check "shapes real run: five SPEC rows F-003 to F-007" sh -c "grep -q '^| F-007 |' SPEC.md && ! grep -q '^| F-008 |' SPEC.md"
 check "shapes real run: D-001 and D-002 have addenda" sh -c "grep -q '^## Addendum 2026-10-25 (m9 integration, shape-bullets)' docs/decisions/D-001-decision-1.md && grep -q '^## Addendum 2026-10-25 (m9 integration, shape-plain)' docs/decisions/D-002-decision-2.md"
 check "shapes real run: staging files deleted" [ -z "$(ls reports/staging)" ]
+
+echo "== comma markers: 'Row (F-NEW),' merges like the colon form =="
+mkrepo comma
+mkdir -p reports/staging
+cat > reports/staging/comma-rows.md <<'EOF'
+# Staging: comma-rows
+
+## SPEC §9
+
+- Row (F-NEW), comma row one.
+- Row (F-NEW): colon row two.
+- (F-NEW), parenthesis row three.
+- F-NEW, bare row four.
+
+## BACKLOG
+
+- B-NEW, comma backlog item; reason: comma reason.
+- B-NEW: colon backlog item; reason: colon reason.
+EOF
+git add -A
+git commit -q -m "chore: staging file with comma markers"
+python3 scripts/integrate-staging.py --milestone m9 --date 2026-10-25 --dry-run "$tmp/comma-dry" > "$tmp/comma.out" 2>&1
+code=$?
+check "comma: dry run exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/comma.out"
+check "comma: the marker is dropped from the first row" grep -qF '| F-003 | 2026-10-25 | comma row one. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the colon form still merges" grep -qF '| F-004 | 2026-10-25 | colon row two. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the parenthesis form merges" grep -qF '| F-005 | 2026-10-25 | parenthesis row three. |' "$tmp/comma-dry/SPEC.md"
+check "comma: the bare form merges" grep -qF '| F-006 | 2026-10-25 | bare row four. |' "$tmp/comma-dry/SPEC.md"
+check "comma: no marker text is left in SPEC" sh -c "! grep -q 'F-NEW' $tmp/comma-dry/SPEC.md"
+check "comma: the B-NEW comma item is filed without the marker" grep -qF '| B-003 | comma backlog item | comma reason. (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+check "comma: the B-NEW colon item is filed" grep -qF '| B-004 | colon backlog item | colon reason. (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+
+echo "== stray headings: every staging file is validated before any merge step =="
+mkrepo stray
+mkbranch wt/m9 m9-feat
+printf '\n## Notes\n\n- A stray heading inside the feature file.\n' >> reports/staging/m9-feat.md
+printf '# Staging: m9-other\n\n## SPEC §9\n\nNone.\n\n## Extra findings\n\n- Another stray heading.\n\n## Misc\n\n- And a third.\n' > reports/staging/m9-other.md
+git add -A
+git commit -q -m "docs: staging files with stray headings"
+notes_line=$(grep -n '^## Notes$' reports/staging/m9-feat.md | cut -d: -f1)
+git checkout -q main
+before=$(git rev-parse HEAD)
+runs_before=$(runs)
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/stray.out" 2>&1
+code=$?
+check "stray: exit 2" [ "$code" -eq 2 ]
+check "stray: the first file is named with its line" grep -qF "wt/m9:reports/staging/m9-feat.md:$notes_line: " "$tmp/stray.out"
+check "stray: the second file's two headings are named in the same pass" sh -c "grep -qF 'wt/m9:reports/staging/m9-other.md:7: ' $tmp/stray.out && grep -qF 'wt/m9:reports/staging/m9-other.md:11: ' $tmp/stray.out"
+check "stray: three problems are counted" grep -q '3 problem' "$tmp/stray.out"
+check "stray: nothing merged" [ "$(git rev-parse HEAD)" = "$before" ]
+check "stray: the gate did not run" [ "$(runs)" = "$runs_before" ]
+check "stray: the tree is untouched" [ -z "$(git status --porcelain -- . ':(exclude)build-log')" ]
+
+git checkout -q wt/m9
+sed -i.bak '/^## Notes$/,$d' reports/staging/m9-feat.md
+rm -f reports/staging/m9-feat.md.bak reports/staging/m9-other.md
+git add -A
+git commit -q -m "docs: remove the stray headings"
+validate
+git checkout -q main
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/stray2.out" 2>&1
+code=$?
+check "stray: the fixed branch integrates, exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/stray2.out"
+check "stray: the fixed branch is merged" [ "$(git log --merges --format=%h | wc -l | tr -d ' ')" = 1 ]
 
 echo
 if [ "$failures" -eq 0 ]; then

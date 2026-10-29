@@ -47,4 +47,6 @@ jobs:
         if: always()
         with:
           name: e2e-reports
-          path: reports/e2e/**
+          path: |
+            reports/e2e/**
+            !reports/e2e/latest/**

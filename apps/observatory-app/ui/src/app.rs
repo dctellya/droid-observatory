@@ -4,7 +4,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use observatory_core::ingest::{AttachStatus, EventBatch, MemoryReplay, OpenedMission, SessionRow};
 use observatory_core::model::{CycleTemplate, SessionId};
-use observatory_core::view::{HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch};
+use observatory_core::view::{
+    GateChanged, HostedStatus, LiveOutput, MissionRow, OutputLines, StallBatch,
+};
 use serde_json::{Value, json};
 
 use crate::attach::AttachCtx;
@@ -114,7 +116,11 @@ pub fn App() -> impl IntoView {
                         }
                     }
                     let held = capture.clone();
-                    spawn_local(async move { held.refresh_sessions().await });
+                    spawn_local(async move {
+                        held.refresh_sessions().await;
+                        held.refresh_gate().await;
+                        held.refresh_worktrees().await;
+                    });
                     current.set(Some(capture));
                     refresh_rows(rows, rows_state);
                 }
@@ -170,6 +176,14 @@ pub fn App() -> impl IntoView {
                 all.insert(batch.mission_id, batch.flags);
             });
         });
+        shell::listen::<GateChanged>("gate_changed", move |changed| {
+            if let Some(capture) = current
+                .get_untracked()
+                .filter(|capture| *capture.mission_id() == changed.mission_id)
+            {
+                capture.gate.set(Some(changed.gate));
+            }
+        });
         shell::listen::<OutputLines>("live_output", move |lines| {
             hosted.output.update(|output| output.push(lines));
         });
@@ -195,9 +209,13 @@ pub fn App() -> impl IntoView {
             }
             match open {
                 Some(capture) => {
-                    if capture.merge(batch) {
-                        spawn_local(async move { capture.refresh_sessions().await });
-                    }
+                    let new_session = capture.merge(batch);
+                    spawn_local(async move {
+                        if new_session {
+                            capture.refresh_sessions().await;
+                        }
+                        capture.refresh_worktrees().await;
+                    });
                 }
                 None => refresh_rows(rows, rows_state),
             }

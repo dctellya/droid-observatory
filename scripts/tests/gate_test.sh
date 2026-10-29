@@ -34,12 +34,16 @@ for v in 1 2; do
 done
 
 repo="$tmp/repo"
-mkdir -p "$repo/src" "$repo/build-log/2026-10-25" "$repo/reports/gate"
+mkdir -p "$repo/src" "$repo/build-log/2026-10-25" "$repo/reports/gate" "$repo/reports/ci" "$repo/docs/decisions" "$repo/crates/core"
 cd "$repo" || exit 1
 git init -q .
 echo "fn main() {}" > src/main.rs
 echo '{"n":1}' > build-log/2026-10-25/s.jsonl
 echo '{}' > reports/gate/.keep
+echo "# ci" > reports/ci/run.md
+echo "# decision" > docs/decisions/D-001.md
+echo "# readme" > README.md
+echo "# core notes" > crates/core/NOTES.md
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
 
@@ -50,6 +54,17 @@ indep_tree() {
   idx=$(mktemp "$tmp/idx.XXXXXX")
   rm -f "$idx"
   GIT_INDEX_FILE="$idx" sh -c 'git read-tree HEAD && git rm -r -q --cached --ignore-unmatch -- build-log reports/gate && git add -A -- . ":(exclude)build-log" ":(exclude)reports/gate" && git write-tree'
+  rm -f "$idx"
+}
+# The code tree: the same index minus build-log/, reports/, docs/ and the Markdown outside the code roots, found by
+# a different route (list the index, filter with grep, remove the matches).
+indep_code_tree() {
+  idx=$(mktemp "$tmp/idx.XXXXXX")
+  rm -f "$idx"
+  GIT_INDEX_FILE="$idx" sh -c 'git read-tree HEAD && git add -A -- . &&
+    drop=$(git ls-files | grep -E "^(build-log|reports|docs)/|\.md$" | grep -Ev "^(crates|apps|scripts|config|\.github)/.*\.md$")
+    [ -z "$drop" ] || printf "%s\n" "$drop" | GIT_LITERAL_PATHSPECS=1 git rm -q --cached --pathspec-from-file=- &&
+    git write-tree'
   rm -f "$idx"
 }
 gate_key() { sh "$gate" --key | sed -n 1p; }
@@ -64,26 +79,30 @@ export DROID_SESSION_ID=sess-one
 # The hit log is committed with the records: the repository must not ignore it.
 git -C "$root" check-ignore -q reports/gate/hits.log && fail "reports/gate/hits.log is gitignored"
 
-# VAL-TOOL-004 (1): the key prints the independent tree.
-tree=$(indep_tree)
-[ -n "$tree" ] || fail "independent tree is empty"
-[ "$(gate_key)" = "$tree" ] || fail "--key differs from the independent tree: $(gate_key) vs $tree"
+# VAL-TOOL-004 (1): the key prints the independent code tree; the record also carries the whole tree.
+tree=$(indep_code_tree)
+whole=$(indep_tree)
+[ -n "$tree" ] || fail "independent code tree is empty"
+[ "$tree" != "$whole" ] || fail "the code tree equals the whole tree: nothing was excluded"
+[ "$(gate_key)" = "$tree" ] || fail "--key differs from the independent code tree: $(gate_key) vs $tree"
 
 # VAL-TOOL-001: a miss runs the command and writes every field.
 out=$(sh "$gate" unit -- sh "$tmp/ok.sh" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] || fail "miss exit $rc"
-case "$out" in *"miss $tree"*) ;; *) fail "no miss line naming the tree: $out" ;; esac
+case "$out" in *"miss $tree"*) ;; *) fail "no miss line naming the code tree: $out" ;; esac
 case "$out" in *"compiling noise"*) ;; *) fail "miss did not stream the command output: $out" ;; esac
 [ "$(runs)" -eq 1 ] || fail "miss ran the command $(runs) times"
 rec="reports/gate/$tree/unit.json"
 [ -f "$rec" ] || fail "no record at $rec"
-for f in name tree tool command exit_code summary seconds started_at finished_at session session_source; do
+for f in name tree code_tree fingerprint tool command exit_code summary seconds started_at finished_at session session_source; do
   v=$(jq -r ".$f // empty" "$rec" 2>/dev/null)
   [ -n "$v" ] || [ "$f" = exit_code ] || fail "record field $f missing or empty"
 done
 [ "$(json unit .exit_code)" = "0" ] || fail "stored exit_code: $(json unit .exit_code)"
-[ "$(json unit .tree)" = "$tree" ] || fail "stored tree"
+[ "$(json unit .code_tree)" = "$tree" ] || fail "stored code_tree: $(json unit .code_tree)"
+[ "$(json unit .tree)" = "$whole" ] || fail "stored tree: $(json unit .tree)"
+[ "$(jq 'has("key")' "$rec")" = "false" ] || fail "the record has a key field (gitleaks reads it as an API key)"
 [ "$(json unit .session)" = "sess-one" ] || fail "stored session: $(json unit .session)"
 [ "$(json unit .session_source)" = "DROID_SESSION_ID" ] || fail "session source: $(json unit .session_source)"
 case "$(json unit .summary)" in *"test result: ok. 3 passed"*) ;; *) fail "summary: $(json unit .summary)" ;; esac
@@ -190,11 +209,42 @@ before=$(runs)
 sh "$gate" unit -- sh "$tmp/ok.sh" > /dev/null 2>&1
 [ "$(runs)" -eq "$before" ] || fail "build-log write turned the hit into a miss"
 
+# Owner item 17: the key is the CODE paths. A commit that only touches build-log/, reports/, docs/ or Markdown outside
+# the code roots is a HIT that says so; a commit that touches code is a MISS that names the file.
+echo '{"n":3}' >> build-log/2026-10-25/s.jsonl
+echo "more" >> docs/decisions/D-001.md
+echo "# ci 2" > reports/ci/run2.md
+echo "more" >> README.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "docs and build-log only"
+[ "$(gate_key)" = "$tree" ] || fail "a docs, reports, README and build-log commit changed the code tree"
+[ "$(indep_tree)" != "$whole" ] || fail "the docs commit left the whole tree unchanged: the probe proves nothing"
+before=$(runs)
+out=$(sh "$gate" unit -- sh "$tmp/ok.sh" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] || fail "docs-only hit exit $rc"
+[ "$(runs)" -eq "$before" ] || fail "a docs-only commit was a miss"
+case "$out" in *"HIT"*"$tree"*) ;; *) fail "the hit does not say HIT with the code tree: $out" ;; esac
+
+echo "// code note" >> crates/core/NOTES.md
+mdkey=$(gate_key)
+[ "$mdkey" != "$tree" ] || fail "Markdown inside crates/ did not change the key"
+git checkout -q -- crates/core/NOTES.md
+
+echo "fn helper() {}" >> src/main.rs
+before=$(runs)
+out=$(sh "$gate" unit -- sh "$tmp/ok.sh" 2>&1)
+[ "$(runs)" -eq $((before + 1)) ] || fail "a code edit was not a miss"
+case "$out" in *"MISS"*) ;; *) fail "the miss does not say MISS: $out" ;; esac
+case "$out" in *"src/main.rs"*) ;; *) fail "the miss does not name the changed code file: $out" ;; esac
+case "$out" in *"README.md"* | *"D-001.md"* | *"s.jsonl"*) fail "the miss file list names a non-code path: $out" ;; esac
+git checkout -q -- src/main.rs
+
 # (3) a tracked-file edit changes the key and misses; a new untracked file does too.
 echo "// edit" >> src/main.rs
 edited=$(gate_key)
 [ "$edited" != "$tree" ] || fail "tracked edit did not change the key"
-[ "$edited" = "$(indep_tree)" ] || fail "edited key differs from the independent tree"
+[ "$edited" = "$(indep_code_tree)" ] || fail "edited key differs from the independent code tree"
 before=$(runs)
 sh "$gate" unit -- sh "$tmp/ok.sh" > "$tmp/edit.out" 2>&1
 [ "$(runs)" -eq $((before + 1)) ] || fail "tracked edit was not a miss"
@@ -289,6 +339,66 @@ timing_seconds=$(jq -r .seconds "reports/gate/$timing_tree/timing.json" 2> /dev/
 LC_ALL=C awk -v s="$timing_seconds" 'BEGIN { exit !(s >= 1.9) }' \
   || fail "seconds $timing_seconds omits the tree computation (expected >= 1.9 with a 1 s write-tree and a 1 s command)"
 [ "$(jq -r .exit_code "reports/gate/$timing_tree/timing.json")" = "0" ] || fail "timing record exit_code"
+
+# `--diff <rev>` where an excluded file differs between <rev> and HEAD: `git rm --cached` refuses a path whose index
+# copy differs from both the file and HEAD unless forced, which made the diff fail and print nothing (an empty diff reads
+# as "same code tree"). The docs-only change must give an empty diff with exit 0, the code change must be listed.
+cd "$tmp" || exit 1
+rm -rf diffrepo
+mkdir -p diffrepo/src diffrepo/docs
+cd diffrepo || exit 1
+git init -q .
+echo "fn main() {}" > src/main.rs
+echo "# decision" > docs/D-001.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m base
+base_rev=$(git rev-parse HEAD)
+echo "# decision, edited" >> docs/D-001.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "docs only"
+out=$(sh "$gate" --diff "$base_rev" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] || fail "--diff over a docs-only change exited $rc: $out"
+[ -z "$out" ] || fail "--diff over a docs-only change printed: $out"
+echo "fn later() {}" >> src/main.rs
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "code"
+echo "# decision, edited again" >> docs/D-001.md
+out=$(sh "$gate" --diff "$base_rev" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] || fail "--diff with a docs file differing exited $rc: $out"
+case "$out" in *"src/main.rs"*) ;; *) fail "--diff does not list the changed code file: $out" ;; esac
+case "$out" in *"D-001.md"*) fail "--diff lists a docs file: $out" ;; esac
+cd "$repo" || exit 1
+
+# Owner item 14b: a `test` run keeps the name and verdict of every test beside the record, so the contract checks can
+# read which named tests ran and passed (reports/gate/<code tree>/test.tests: `R <binary>` then `<status> <name>`).
+cat > "$tmp/cargo-out.sh" <<'EOF2'
+echo "     Running unittests src/lib.rs (/t/debug/deps/observatory_core-0123abcd)"
+echo "test config::tests::example_config_equals_defaults ... ok"
+echo "test store::tests::slow_one ... ignored, takes a minute"
+echo "test store::tests::broken ... FAILED"
+echo "     Running tests/mapping.rs (/t/debug/deps/mapping-fedcba98)"
+echo "test mapping_is_frozen ... ok"
+echo "   Doc-tests observatory_core"
+echo "test src/lib.rs - doc (line 3) ... ok"
+echo "test result: FAILED. 3 passed; 1 failed; 1 ignored"
+exit 101
+EOF2
+sh "$gate" test -- sh "$tmp/cargo-out.sh" > /dev/null 2>&1
+tests_file="reports/gate/$(gate_key)/test.tests"
+if [ -f "$tests_file" ]; then
+  [ "$(sed -n 1p "$tests_file")" = "R observatory_core" ] || fail "test.tests line 1 is not 'R observatory_core': $(sed -n 1p "$tests_file")"
+  grep -qx 'ok config::tests::example_config_equals_defaults' "$tests_file" || fail "test.tests lacks the ok line"
+  grep -qx 'ignored store::tests::slow_one' "$tests_file" || fail "test.tests lacks the ignored line (reason must be dropped)"
+  grep -qx 'FAILED store::tests::broken' "$tests_file" || fail "test.tests lacks the FAILED line"
+  grep -qx 'R mapping' "$tests_file" || fail "test.tests lacks the integration target line"
+  grep -qx 'R doc-observatory_core' "$tests_file" || fail "test.tests lacks the doc-tests target line"
+else
+  fail "test.tests was not written beside the test record"
+fi
+sh "$gate" unit2 -- sh "$tmp/cargo-out.sh" > /dev/null 2>&1
+[ ! -f "reports/gate/$(gate_key)/unit2.tests" ] || fail "a non-test gate wrote a .tests file"
 
 # Argument errors.
 sh "$gate" > /dev/null 2>&1 && fail "no arguments accepted"

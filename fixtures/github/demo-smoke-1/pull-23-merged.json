@@ -1,0 +1,21 @@
+{
+  "url": "https://api.github.com/repos/dctellya/droid-observatory/pulls/23",
+  "number": 23,
+  "state": "closed",
+  "created_at": "2026-10-22T14:31:16Z",
+  "merged_at": "2026-10-22T14:45:40Z",
+  "merge_commit_sha": "c8524c2641c00376340640859bb5381763c59ba6",
+  "merged": true,
+  "merged_by": {
+    "login": "dctellya"
+  },
+  "auto_merge": null,
+  "head": {
+    "ref": "docs/spec-v1",
+    "sha": "81ab3255e4f1fb5bb19c39e10c1bf2610030c3e3"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "d065cc942838fc1db5f6b09e5d5ad76bb4f384d2"
+  }
+}

@@ -17,6 +17,7 @@ mod scrub;
 mod scrubber;
 mod state;
 mod summary;
+mod worktree;
 
 pub use agent_panel::{AgentEntry, AgentStream, agent_entries, agent_stream, session_name};
 pub use agents::{AgentRow, AgentStatus, Marker, MarkerKind, agent_markers};
@@ -25,14 +26,17 @@ pub use board::{
     OverlayView, PanelRole, PanelView, RoleTokens, RowGroup, branch_of, integrate_timeline,
     pointer_text,
 };
-pub use card::{Card, CardNow, IdleReason, ValidationBadge, card_lane};
+pub use card::{Card, CardNow, IdleReason, ReturnArc, ValidationBadge, card_lane};
 pub use controls::{
     ActionRecorded, ControlBar, ControlMode, RUNBOOK_PATH, RunState, StallBanner, StallBatch,
     StallFlagView, StallRow, TERMINAL_INSTRUCTION, terminal_text,
 };
 pub use details::{Details, RawLineView, TimelineRow, details, raw_line_view};
 pub use filter::{Choice, Filter, FilterField, FilterOptions, ViewConfig, WorkerGrouping};
-pub use gate::{ClockLabel, GateBadge, GateGroup, GatePlaceholder, GateVerdict, mission_branch};
+pub use gate::{
+    ClockLabel, GateBadge, GateChanged, GateCheckRow, GateClockLine, GateGroup, GateGroupView,
+    GatePlaceholder, GateVerdict, MergeConfirmation, MergeOffer, MergePressed, mission_branch,
+};
 pub use hosted::{
     AckRow, ControlSent, HostedState, HostedStatus, Launched, PermissionRow, QuestionRow,
 };
@@ -49,3 +53,4 @@ pub use scrubber::{
 };
 pub use state::{BoardState, RoleTurns, SubLane, TrayEntry};
 pub use summary::MissionSummary;
+pub use worktree::{MilestoneWorktree, milestone_worktrees};

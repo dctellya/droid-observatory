@@ -5,9 +5,11 @@ The fixture is a hand-written excerpt shaped like the real Droid log, sidecars, 
 progress log and gate records; ids are made up (11111111-... is the mission and its orchestrator). Every
 expected number below is the arithmetic of the fixture lines and of fixtures/usage/prices.toml
 (USD per million tokens: fable 10 / 50 / 0.25 / 12.5, opus 4 / 20 / 0.2 / 5, sonnet 2 / 10 / 0.1 / 2.5,
-haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write).
+haiku 1 / 5 / 0.1 / 1.25 for input / output / cache read / cache write; kimi-k3 list 1 / 4 / 0.1 / 1 with a plan price
+0.5 / 2 / 0.05 / 0.5).
 """
 
+import json
 import os
 import re
 import shutil
@@ -135,7 +137,7 @@ class UsageReport(unittest.TestCase):
         self.assertEqual(
             (o["Sessions"], o["Turns"], o["Input"], o["Output"], o["Cache read"], o["Cache write"], o["Reasoning"]),
             ("1", "6", "3600007", "360003", "14000005", "640000", "300"))
-        self.assertEqual((o["USD-eq"], o["Unpriced turns"]), ("65.50", "1"))
+        self.assertEqual((o["USD-eq"], o["Unpriced turns"]), ("65.50", "0"))
         self.assertEqual((o["First ts"], o["Last ts"]), ("2026-10-25T10:00:01.000Z", "2026-10-25T10:09:00.000Z"))
         self.assertEqual(o["Source"], "droid-log-single.log")
 
@@ -147,7 +149,7 @@ class UsageReport(unittest.TestCase):
         v = self.role("validator")
         self.assertEqual(
             (v["Sessions"], v["Turns"], v["Input"], v["Output"], v["Cache read"], v["Cache write"], v["USD-eq"], v["Unpriced turns"]),
-            ("2", "4", "100015", "80005", "6500005", "1100000", "8.80", "1"))
+            ("2", "4", "100015", "80005", "6500005", "1100000", "8.80", "0"))
 
         sub = self.role("orchestrator subagent")
         self.assertEqual((sub["Sessions"], sub["Turns"], sub["USD-eq"]), ("1", "1", "2.01"))
@@ -214,17 +216,52 @@ class UsageReport(unittest.TestCase):
         d = got[("decisions and boundary reports", "claude-fable-5.1")]
         self.assertEqual((d["Turns"], d["USD-eq"]), ("1", "12.00"))
         k = got[("decisions and boundary reports", "kimi-k3")]
-        self.assertEqual((k["Turns"], k["Unpriced turns"]), ("1", "1"))
+        self.assertEqual((k["Turns"], k["Unpriced turns"]), ("1", "0"))
         n = got[("narration", "claude-fable-5.1")]
         self.assertEqual((n["Turns"], n["USD-eq"]), ("1", "2.50"))
         u = got[("unmatched", "claude-fable-5.1")]
         self.assertEqual(u["Turns"], "1")
 
-    def test_the_count_of_re_issued_waits_is_a_stated_number(self):
-        self.assertIn("re-issued waits: 2", self.text)
+    def bullet(self, text, label):
+        return next(l for l in text.splitlines() if l.startswith("- " + label + ":"))
+
+    def test_re_issued_waits_count_repeats_on_one_tool_call_id_and_name_their_definition(self):
+        line = self.bullet(self.text, "re-issued waits")
+        self.assertTrue(line.startswith("- re-issued waits: 1 ("), line)
+        self.assertIn("same `toolCallId`", line)
+        self.assertIn("not counted", line)
+
+    def test_worker_pauses_are_the_kills_and_have_their_own_row_with_a_definition(self):
+        line = self.bullet(self.text, "worker pauses (kills)")
+        self.assertTrue(line.startswith("- worker pauses (kills): 1 ("), line)
+        self.assertIn("`action` is `kill`", line)
+        self.assertLess(self.text.index("- re-issued waits:"), self.text.index("- worker pauses (kills):"))
+
+    def test_the_other_wait_counts_keep_their_numbers(self):
         self.assertIn("waits returning in under 60 s: 1", self.text)
-        self.assertIn("WaitForScript calls in the window: 2", self.text)
+        self.assertIn("WaitForScript calls in the window: 3", self.text)
         self.assertIn("orchestrator turns matched to the transcript: 5 of 6", self.text)
+
+    def test_waits_on_different_ids_and_a_third_wait_on_one_id_are_counted_apart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = os.path.join(tmp, "sessions")
+            shutil.copytree(os.path.join(FIX, "sessions"), sessions)
+            path = os.path.join(sessions, "-home-user-proj", MISSION + ".jsonl")
+            extra = (
+                '{"type":"message","id":"a7","timestamp":"2026-10-25T10:08:40.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_w3","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"wait"}}]}}\n'
+                '{"type":"message","id":"a8","timestamp":"2026-10-25T10:08:50.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_w4","name":"WaitForScript","input":{"toolCallId":"toolu_bg3"}}]}}\n'
+                '{"type":"message","id":"a9","timestamp":"2026-10-25T10:08:55.000Z","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","id":"toolu_k2","name":"WaitForScript","input":{"toolCallId":"toolu_bg1","action":"kill"}}]}}\n')
+            with open(path, "a") as f:
+                f.write(extra)
+            out = os.path.join(tmp, "m9.md")
+            run(["--sessions-dir", sessions], out=out)
+            text = read(out)
+            self.assertTrue(self.bullet(text, "re-issued waits").startswith("- re-issued waits: 2 ("))
+            self.assertTrue(self.bullet(text, "worker pauses (kills)").startswith("- worker pauses (kills): 2 ("))
+            self.assertIn("WaitForScript calls in the window: 6", text)
 
     def test_subagents_and_self_check_missions_have_their_own_lines(self):
         _, rows = table(self.text, "Subagents")
@@ -290,6 +327,43 @@ class UsageReport(unittest.TestCase):
         self.assertIn("gates served from cache: 3, minutes saved: 2.67", self.text)
         self.assertNotIn("not recorded", self.text)
 
+    def gate_report(self, records):
+        """Report text over a copy of the gate fixtures plus `records` ({name: json fields} under tree `tx`)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = os.path.join(tmp, "gate")
+            shutil.copytree(os.path.join(FIX, "gate"), gate)
+            os.makedirs(os.path.join(gate, "tx"))
+            for name, fields in records.items():
+                base = {"name": name, "tree": "tx", "tool": "fixture", "command": "make " + name, "exit_code": 0,
+                        "summary": "ok", "seconds": 1.0, "session": WORKER}
+                base.update(fields)
+                with open(os.path.join(gate, "tx", name + ".json"), "w") as f:
+                    json.dump({k: v for k, v in base.items() if v is not None}, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--gate-dir", gate, "--to", TO], out=out)
+            return read(out)
+
+    def test_a_gate_run_that_straddles_either_edge_of_the_window_is_in_the_table(self):
+        text = self.gate_report({
+            "ends-after": {"started_at": "2026-10-25T10:59:30Z", "finished_at": "2026-10-25T11:00:30Z"},
+            "starts-before": {"started_at": "2026-10-25T09:59:30Z", "finished_at": "2026-10-25T10:00:30Z"},
+            "no-start": {"started_at": None, "finished_at": "2026-10-25T10:30:00Z"},
+            "after": {"started_at": "2026-10-25T11:00:10Z", "finished_at": "2026-10-25T11:00:40Z"},
+            "before": {"started_at": "2026-10-25T09:58:00Z", "finished_at": "2026-10-25T09:59:50Z"},
+        })
+        _, rows = table(text, "Gate runs")
+        names = {r["Gate"] for r in rows}
+        self.assertEqual(names, {"check", "test", "ends-after", "starts-before", "no-start"})
+        _, rows = table(text, "Gates")
+        self.assertEqual({r["Gate"] for r in rows if r["Kind"] == "gates run"}, names | {"all"})
+        self.assertIn("gate runs in the window: 5", text)
+
+    def test_the_gates_caption_states_the_window_rule(self):
+        caption = next(l for l in self.text.splitlines() if l.startswith("Gate window rule:"))
+        self.assertIn("`started_at` < `--to` or `finished_at` <= `--to`", caption)
+        self.assertIn("did not finish before the window start", caption)
+        self.assertIn("started at or after `--to` is not", caption)
+
     def test_a_report_without_a_hit_log_states_zero_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
             gate = os.path.join(tmp, "gate")
@@ -350,7 +424,7 @@ class UsageReport(unittest.TestCase):
     def test_the_sources_table_lists_features_json_with_its_feature_count(self):
         _, rows = table(self.text, "Sources")
         by_name = {r["Source"].strip("`"): r for r in rows}
-        self.assertEqual(by_name["mission/features.json"]["Lines"], "2")
+        self.assertEqual(by_name["mission/features.json"]["Lines"], "3")
 
     def test_subagent_self_check_and_mission_to_date_rows_name_their_source_file(self):
         for heading in ("Subagents", "Self-check missions", "Mission to date by role"):
@@ -452,6 +526,20 @@ class UsageReportFile(unittest.TestCase):
             run(["--cross-check"], out=out)
             self.assertIn("cross-check: identical", read(out))
 
+    def test_the_cross_check_compares_cache_write_and_the_price_table_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            run(["--cross-check"], out=out)
+            line = next(l for l in read(out).splitlines() if l.startswith("cross-check:"))
+            self.assertIn("input, output, cache read, cache write", line)
+            self.assertTrue(line.startswith("cross-check: identical"), line)
+            bad = os.path.join(tmp, "prices.toml")
+            with open(bad, "w") as f:
+                f.write(read(os.path.join(FIX, "prices.toml")).replace("[models.\"kimi-k3\"]", "[models.\"kimi-k3-renamed\"]"))
+            proc = run(["--cross-check", "--prices", bad], out=os.path.join(tmp, "x.md"), check=False)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("kimi-k3", proc.stderr)
+
     def test_a_line_logged_out_of_order_at_the_window_end_is_still_counted(self):
         # The real log is not time-ordered (lines up to 48 s backwards): a line past --to is skipped, not a stop.
         with tempfile.TemporaryDirectory() as tmp:
@@ -472,10 +560,559 @@ class UsageReportFile(unittest.TestCase):
         self.assertIn("Sidecar readings can move while a session is live", flat)
 
     def test_the_script_imports_only_the_standard_library(self):
-        src = read(SCRIPT)
-        mods = set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", src, re.M))
-        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect"}
+        mods = set()
+        for path in (SCRIPT, os.path.join(HERE, "..", "usage_classes.py"), os.path.join(HERE, "..", "usage_idle.py"),
+                     os.path.join(HERE, "..", "usage_testing.py"), os.path.join(HERE, "..", "usage_rewrites.py")):
+            mods |= set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", read(path), re.M))
+        allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect",
+                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "statistics"}
         self.assertLessEqual(mods, allowed, mods - allowed)
+
+
+def prices_without(model, tmp):
+    """Copy of the fixture price table without the [models."<model>"] block."""
+    text = read(os.path.join(FIX, "prices.toml"))
+    kept, skip = [], False
+    for line in text.splitlines():
+        if line.startswith("[models."):
+            skip = line == '[models."%s"]' % model
+        if not skip:
+            kept.append(line)
+    path = os.path.join(tmp, "prices.toml")
+    with open(path, "w") as f:
+        f.write("\n".join(kept) + "\n")
+    return path
+
+
+class UsageReportPricing(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_a_model_that_ran_in_the_window_without_a_price_fails_the_run_naming_the_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "m9.md")
+            proc = run(["--prices", prices_without("kimi-k3", tmp)], out=out, check=False)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("kimi-k3", proc.stderr)
+            self.assertIn("no price", proc.stderr)
+            self.assertFalse(os.path.exists(out), "a failed run writes no report")
+
+    def test_a_price_row_that_would_show_a_model_at_zero_cost_fails_the_run_naming_the_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = read(os.path.join(FIX, "prices.toml"))
+            prices = os.path.join(tmp, "prices.toml")
+            with open(prices, "w") as f:
+                f.write(text.replace("plan_input_per_m = 0.5", "plan_input_per_m = 0.0").replace("plan_output_per_m = 2.0", "plan_output_per_m = 0"))
+            proc = run(["--prices", prices], out=os.path.join(tmp, "m9.md"), check=False)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertIn("kimi-k3", proc.stderr)
+            self.assertIn("zero", proc.stderr)
+
+    def test_every_model_that_ran_is_listed_with_its_price_basis_and_cost(self):
+        header, rows = table(self.text, "Models that ran")
+        self.assertEqual(header, ["Model", "Price basis", "Turns", "Input", "Cache write", "Cache read", "Output",
+                                  "Input per M", "Cache write per M", "Cache read per M", "Output per M", "USD-eq", "Roles", "Note"])
+        got = {r["Model"]: r for r in rows}
+        self.assertEqual(set(got), {"claude-fable-5.1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "kimi-k3"})
+        s = got["claude-sonnet-5-5"]
+        self.assertEqual((s["Price basis"], s["Input per M"], s["Cache write per M"], s["Cache read per M"], s["Output per M"]),
+                         ("list", "2.0", "2.5", "0.1", "10.0"))
+        k = got["kimi-k3"]
+        self.assertEqual((k["Price basis"], k["Turns"], k["Input"], k["Cache write"], k["Cache read"], k["Output"]),
+                         ("plan", "2", "12", "0", "10", "8"))
+        self.assertEqual((k["Input per M"], k["Cache write per M"], k["Cache read per M"], k["Output per M"]),
+                         ("0.5", "0.5", "0.05", "2.0"))
+        self.assertEqual(k["Roles"], "orchestrator, validator")
+        self.assertEqual(got["claude-fable-5.1"]["USD-eq"], "67.51")
+
+    def test_a_models_turns_never_show_at_zero_cost(self):
+        _, rows = table(self.text, "Models that ran")
+        for r in rows:
+            self.assertNotIn(r["USD-eq"], ("0.00", "0", "-"), r["Model"])
+        self.assertEqual({r["Model"]: r["USD-eq"] for r in rows}["kimi-k3"], "<0.01")
+        _, roles = table(self.text, "Tokens per role")
+        self.assertEqual({r["Unpriced turns"] for r in roles}, {"0"})
+
+    def test_a_model_without_a_price_before_the_window_is_named_not_priced_at_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = os.path.join(tmp, "logs")
+            shutil.copytree(os.path.join(FIX, "logs"), logs)
+            with open(os.path.join(logs, "droid-log-single.log.2026-10-24"), "a") as f:
+                f.write('[2026-10-24T23:45:00.000Z] INFO: [Agent] Streaming result | Context: {"inputTokens":5,"outputTokens":5,'
+                        '"cacheReadInputTokens":5,"cachedTokensWritten":0,"tags":{"sessionId":"%s","modelId":"gpt-6-sol"}}\n' % MISSION)
+            out = os.path.join(tmp, "m9.md")
+            run(["--logs-dir", logs], out=out)
+            text = read(out)
+            _, rows = table(text, "Mission to date by role")
+            self.assertEqual({r["Role"]: r["Unpriced turns"] for r in rows}["orchestrator"], "1")
+            line = next(l for l in text.splitlines() if l.startswith("Models with no price before the window:"))
+            self.assertIn("gpt-6-sol (1 turns)", line)
+            self.assertIn("not in the window", line)
+            _, models = table(text, "Models that ran")
+            self.assertNotIn("gpt-6-sol", {r["Model"] for r in models})
+
+
+class UsageReportTokenClasses(unittest.TestCase):
+    CLASSES = ["input", "cache write", "cache read", "output"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+        cls.header, cls.rows = table(cls.text, "Cost by token class")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def scope(self, name):
+        return [r for r in self.rows if r["Scope"] == name]
+
+    def test_the_table_has_a_row_per_token_class_for_each_role_and_the_milestone(self):
+        self.assertEqual(self.header, ["Scope", "Class", "Tokens", "Share of tokens %", "USD-eq", "Share of cost %"])
+        for name in ("orchestrator", "orchestrator subagent", "worker", "validator", "self-check", "other", "milestone"):
+            self.assertEqual([r["Class"] for r in self.scope(name)], self.CLASSES, name)
+
+    def test_cost_and_token_shares_of_the_worker_role_follow_the_class_arithmetic(self):
+        got = {r["Class"]: (r["Tokens"], r["Share of tokens %"], r["USD-eq"], r["Share of cost %"]) for r in self.scope("worker")}
+        self.assertEqual(got, {
+            "input": ("1500000", "3.4", "3.00", "16.7"),
+            "cache write": ("2000000", "4.5", "5.00", "27.8"),
+            "cache read": ("40000000", "90.7", "4.00", "22.2"),
+            "output": ("600000", "1.4", "6.00", "33.3"),
+        })
+
+    def test_cost_follows_the_class_not_the_token_count_for_the_orchestrator(self):
+        got = {r["Class"]: (r["Tokens"], r["Share of tokens %"], r["USD-eq"], r["Share of cost %"]) for r in self.scope("orchestrator")}
+        self.assertEqual(got, {
+            "input": ("3600007", "19.4", "36.00", "55.0"),
+            "cache write": ("640000", "3.4", "8.00", "12.2"),
+            "cache read": ("14000005", "75.3", "3.50", "5.3"),
+            "output": ("360003", "1.9", "18.00", "27.5"),
+        })
+
+    def test_the_classes_add_up_to_the_role_cost_in_tokens_per_role(self):
+        _, roles = table(self.text, "Tokens per role")
+        for r in roles:
+            name = "milestone" if r["Role"] == "total" else r["Role"]
+            rows = self.scope(name)
+            if r["Turns"] == "0":
+                self.assertEqual(rows, [], name)
+                continue
+            self.assertAlmostEqual(sum(float(x["USD-eq"]) for x in rows), float(r["USD-eq"]), delta=0.02, msg=name)
+            self.assertEqual(sum(int(x["Tokens"]) for x in rows), int(r["Input"]) + int(r["Output"]) + int(r["Cache read"]) + int(r["Cache write"]), name)
+            self.assertAlmostEqual(sum(float(x["Share of cost %"]) for x in rows), 100.0, delta=0.2, msg=name)
+            self.assertAlmostEqual(sum(float(x["Share of tokens %"]) for x in rows), 100.0, delta=0.2, msg=name)
+
+    def test_the_caption_says_what_a_share_is(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("Cost by token class:"))
+        self.assertIn("share of cost", line)
+        self.assertIn("share of tokens", line)
+
+
+class UsageReportFeatureBudgets(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+        cls.header, rows = table(cls.text, "Feature size")
+        cls.rows = {r["Feature"]: r for r in rows}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_every_feature_row_carries_its_turn_budget_and_whether_it_went_over(self):
+        for col in ("Turns", "Turn budget", "Over budget", "USD-eq"):
+            self.assertIn(col, self.header)
+        a = self.rows["m9-alpha"]
+        self.assertEqual((a["Turns"], a["Turn budget"], a["Over budget"]), ("2", "1", "yes"))
+        self.assertEqual(a["Over 120 turns"], "no")
+
+    def test_a_feature_of_the_milestone_that_never_ran_is_listed_with_zero_turns(self):
+        b = self.rows["m9-beta"]
+        self.assertEqual((b["Rounds"], b["Turns"], b["Turn budget"], b["Over budget"], b["USD-eq"]), ("0", "0", "40", "no", "0.00"))
+        self.assertEqual(b["Skill"], "core-worker")
+
+    def test_a_feature_of_another_milestone_is_not_listed_and_a_missing_budget_is_a_dash(self):
+        self.assertNotIn("m8-old", self.rows)
+        v = self.rows["scrutiny-validator-m9"]
+        self.assertEqual((v["Turn budget"], v["Over budget"]), ("-", "-"))
+
+    def test_the_feature_cost_includes_the_subagents_its_sessions_started(self):
+        self.assertEqual(self.rows["m9-alpha"]["USD-eq"], "18.00")
+        self.assertEqual(self.rows["scrutiny-validator-m9"]["USD-eq"], "8.80")
+
+    def test_a_null_budget_in_features_json_is_a_dash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = os.path.join(tmp, "mission")
+            shutil.copytree(os.path.join(FIX, "mission"), mission)
+            path = os.path.join(mission, "features.json")
+            data = json.loads(read(path))
+            data["features"][0]["turnBudget"] = None
+            with open(path, "w") as f:
+                json.dump(data, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            _, rows = table(read(out), "Feature size")
+            a = next(r for r in rows if r["Feature"] == "m9-alpha")
+            self.assertEqual((a["Turn budget"], a["Over budget"]), ("-", "-"))
+
+    def features_with(self, tmp, feature):
+        mission = os.path.join(tmp, "mission")
+        shutil.copytree(os.path.join(FIX, "mission"), mission)
+        path = os.path.join(mission, "features.json")
+        data = json.loads(read(path))
+        data["features"] = [feature]
+        with open(path, "w") as f:
+            json.dump(data, f)
+        out = os.path.join(tmp, "m9.md")
+        run(["--mission-dir", mission], out=out)
+        _, rows = table(read(out), "Feature size")
+        return next(r for r in rows if r["Feature"] == feature["id"])
+
+    def test_a_budget_only_in_the_description_text_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "description": "Do the thing. M4 RULES: rule 29 turnBudget 1; no polling."})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("1", "yes"))
+
+    def test_the_turn_budget_key_wins_over_the_description_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "turnBudget": 40, "description": "turnBudget 1"})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("40", "no"))
+
+    def test_a_description_without_a_budget_text_is_a_dash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.features_with(tmp, {"id": "m9-alpha", "milestone": "m9", "skillName": "infra-worker", "status": "completed",
+                                         "description": "no budget here, turnBudget is mentioned without a number"})
+            self.assertEqual((r["Turn budget"], r["Over budget"]), ("-", "-"))
+
+
+class UsageReportCostPerAssertion(unittest.TestCase):
+    HEADING = "Cost per assertion and per feature"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def units(self, text):
+        header, rows = table(text, self.HEADING)
+        self.assertEqual(header, ["Unit", "Count", "Window USD-eq", "USD-eq per unit", "Source"])
+        return {r["Unit"]: r for r in rows}
+
+    def window_usd(self, text):
+        _, roles = table(text, "Tokens per role")
+        return float(next(r for r in roles if r["Role"] == "total")["USD-eq"])
+
+    def test_cost_per_assertion_counts_the_assertions_passed_at_the_milestone(self):
+        got = self.units(self.text)
+        a = got["assertion fulfilled"]
+        total = self.window_usd(self.text)
+        self.assertEqual(a["Count"], "3")
+        self.assertEqual(a["Window USD-eq"], "%.2f" % total)
+        self.assertEqual(a["USD-eq per unit"], "%.2f" % (total / 3))
+        self.assertIn("validation-state.json", a["Source"])
+
+    def test_cost_per_feature_sits_beside_it_for_the_features_completed(self):
+        f = self.units(self.text)["feature completed"]
+        self.assertEqual(f["Count"], "1")
+        self.assertEqual(f["USD-eq per unit"], "%.2f" % self.window_usd(self.text))
+        self.assertIn("features.json", f["Source"])
+
+    def test_the_fulfilled_assertions_are_listed_by_id(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("assertions fulfilled in the window:"))
+        self.assertEqual(line, "assertions fulfilled in the window: VAL-A-001, VAL-A-002, VAL-A-003")
+
+    def test_a_state_file_given_by_path_replaces_the_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = os.path.join(tmp, "state.json")
+            with open(state, "w") as f:
+                json.dump({"assertions": {"X-1": {"status": "passed", "validatedAtMilestone": "m9"},
+                                          "X-2": {"status": "passed", "validatedAtMilestone": "m8"}}}, f)
+            out = os.path.join(tmp, "m9.md")
+            run(["--validation-state", state], out=out)
+            text = read(out)
+            a = self.units(text)["assertion fulfilled"]
+            self.assertEqual(a["Count"], "1")
+            self.assertEqual(a["USD-eq per unit"], "%.2f" % self.window_usd(text))
+            self.assertIn("assertions fulfilled in the window: X-1", text)
+
+    def test_without_a_state_file_the_row_says_so_and_shows_no_cost(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = os.path.join(tmp, "mission")
+            shutil.copytree(os.path.join(FIX, "mission"), mission)
+            os.remove(os.path.join(mission, "validation-state.json"))
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            text = read(out)
+            a = self.units(text)["assertion fulfilled"]
+            self.assertEqual((a["Count"], a["USD-eq per unit"]), ("0", "-"))
+            self.assertIn("not found", a["Source"])
+
+    def test_a_missing_state_file_given_by_path_fails_the_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = run(["--validation-state", os.path.join(tmp, "nope.json")], out=os.path.join(tmp, "m9.md"), check=False)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("nope.json", proc.stderr)
+
+    def test_the_caption_states_the_window_of_an_assertion(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("Cost per assertion:"))
+        self.assertIn("`validatedAtMilestone`", line)
+        self.assertIn("status `passed`", line)
+
+
+class UsageReportSubagentClasses(unittest.TestCase):
+    HEADING = "Subagent classes"
+    HEADER = ["Class", "Sessions", "Turns", "USD-eq", "Declared model", "Purpose", "No declared model", "Off declared model", "Source"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = os.path.join(cls.tmp.name, "m9.md")
+        run(out=cls.out)
+        cls.text = read(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def classes(self, text):
+        header, rows = table(text, self.HEADING)
+        self.assertEqual(header, self.HEADER)
+        return {r["Class"]: r for r in rows}
+
+    def mission_with(self, tmp, files):
+        mission = os.path.join(tmp, "mission")
+        shutil.copytree(os.path.join(FIX, "mission"), mission)
+        for rel, body in files.items():
+            path = os.path.join(mission, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(body if isinstance(body, str) else json.dumps(body))
+        return mission
+
+    def test_there_is_a_row_per_subagent_class_even_when_a_class_started_none(self):
+        got = self.classes(self.text)
+        self.assertEqual(list(got), ["orchestrator subagents", "validator subagents", "worker subagents"])
+        w = got["worker subagents"]
+        self.assertEqual((w["Sessions"], w["Turns"], w["USD-eq"], w["No declared model"]), ("0", "0", "0.00", "0"))
+
+    def test_a_declared_subagent_shows_its_model_and_purpose_from_the_synthesis_file(self):
+        v = self.classes(self.text)["validator subagents"]
+        self.assertEqual((v["Sessions"], v["Turns"], v["USD-eq"]), ("1", "2", "1.00"))
+        self.assertEqual((v["Declared model"], v["Purpose"]), ("claude-opus-5-5", "scrutiny review of m9-alpha"))
+        self.assertEqual((v["No declared model"], v["Off declared model"]), ("0", "1"))
+        self.assertIn("validation/m9/scrutiny/synthesis.json", v["Source"])
+
+    def test_a_subagent_with_no_declaration_is_counted_as_no_declared_model(self):
+        o = self.classes(self.text)["orchestrator subagents"]
+        self.assertEqual((o["Sessions"], o["Turns"], o["USD-eq"], o["Declared model"], o["Purpose"]), ("1", "1", "2.01", "-", "-"))
+        self.assertEqual((o["No declared model"], o["Off declared model"]), ("1", "0"))
+        self.assertIn("- no declared model: 1 of 2 subagent sessions", self.text.splitlines())
+
+    def test_a_declaration_line_in_a_handoff_is_read_by_the_session_id_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            line = "Started one subagent.\nsubagent 22222222: model = claude-sonnet-5-5; purpose = triage of handoffs\n"
+            mission = self.mission_with(tmp, {"handoffs/2026-10-25T10-05-00-000Z__m9-beta__x.json":
+                                              {"handoff": {"salientSummary": line}}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            text = read(out)
+            o = self.classes(text)["orchestrator subagents"]
+            self.assertEqual((o["Declared model"], o["Purpose"], o["No declared model"], o["Off declared model"]),
+                             ("claude-sonnet-5-5", "triage of handoffs", "0", "1"))
+            self.assertIn("- no declared model: 0 of 2 subagent sessions", text.splitlines())
+            self.assertIn("handoffs/2026-10-25T10-05-00-000Z__m9-beta__x.json", o["Source"])
+
+    def test_subagent_sessions_keyed_by_id_in_a_user_testing_synthesis_are_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = self.mission_with(tmp, {"validation/m9/user-testing/synthesis.json": {"subagentSessions": {
+                "22222222-2222-4222-8222-222222222222": {"model": "claude-fable-5.1", "purpose": "verdict"}}}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            o = self.classes(read(out))["orchestrator subagents"]
+            self.assertEqual((o["Declared model"], o["Purpose"], o["No declared model"], o["Off declared model"]),
+                             ("claude-fable-5.1", "verdict", "0", "0"))
+
+    def test_a_declaration_for_a_session_outside_the_window_and_a_broken_file_change_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = self.mission_with(tmp, {
+                "handoffs/broken.json": "{not json",
+                "validation/m9/user-testing/synthesis.json": {"subagents": [
+                    {"sessionId": "deadbeef-0000-4000-8000-000000000000", "model": "claude-fable-5.1", "purpose": "other"}]}})
+            out = os.path.join(tmp, "m9.md")
+            run(["--mission-dir", mission], out=out)
+            self.assertEqual(self.classes(read(out))["orchestrator subagents"]["No declared model"], "1")
+
+    def test_the_existing_subagents_table_keeps_its_rows(self):
+        header, rows = table(self.text, "Subagents")
+        self.assertEqual(header[0], "Caller role")
+        self.assertEqual({r["Caller role"] for r in rows}, {"orchestrator", "validator"})
+
+
+PROVENANCE = "the observer's price table of 25-oct-2026 (fixture), secondary public sources; list prices at the date named, not estimates"
+NOTE = "assumed = opus-5-5 until the owner confirms"
+
+
+def plan_only_prices(tmp, name="2026-10-29.toml", note=True):
+    """Fixture price table whose kimi-k3 row has only the four plan keys (and a note), under a dated name with a provenance line."""
+    text = read(os.path.join(FIX, "prices.toml"))
+    head, _ = text.split('[models."kimi-k3"]')
+    head = 'provenance = "%s"\n' % PROVENANCE + head
+    row = ('[models."kimi-k3"]\nplan_input_per_m = 3.0\nplan_output_per_m = 15.0\n'
+           'plan_cache_read_per_m = 0.30\nplan_cache_write_per_m = 3.0\n')
+    if note:
+        row += 'note = "%s"\n' % NOTE
+    path = os.path.join(tmp, name)
+    with open(path, "w") as f:
+        f.write(head + row)
+    return path
+
+
+class UsageReportPriceFiles(unittest.TestCase):
+    def run_in(self, tmp, extra=()):
+        out = os.path.join(tmp, "m9.md")
+        proc = subprocess.run([
+            sys.executable, SCRIPT, "--milestone", "m9", "--mission-dir", os.path.join(FIX, "mission"), "--mission-id", MISSION,
+            "--logs-dir", os.path.join(FIX, "logs"), "--sessions-dir", os.path.join(FIX, "sessions"),
+            "--gate-dir", os.path.join(FIX, "gate"), "--from", FROM, "--now", NOW, "--out", out] + list(extra),
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise AssertionError("usage-report.py exit %d\nstderr: %s" % (proc.returncode, proc.stderr))
+        return read(out)
+
+    def test_the_newest_dated_price_file_is_read_when_none_is_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prices = os.path.join(tmp, "prices")
+            os.mkdir(prices)
+            shutil.copy(os.path.join(FIX, "prices.toml"), os.path.join(prices, "2026-10-22.toml"))
+            plan_only_prices(prices)
+            text = self.run_in(tmp, ["--prices-dir", prices])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-29.toml"), text)
+            _, rows = table(text, "Models that ran")
+            self.assertEqual({r["Model"]: r["Price basis"] for r in rows}["kimi-k3"], "plan")
+
+    def test_a_price_table_name_picks_the_dated_file_it_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prices = os.path.join(tmp, "prices")
+            os.mkdir(prices)
+            shutil.copy(os.path.join(FIX, "prices.toml"), os.path.join(prices, "2026-10-22.toml"))
+            plan_only_prices(prices)
+            text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "2026-10-22"])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+            self.assertNotIn("2026-10-29", text)
+            text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "config/prices/2026-10-22.toml"])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+            text = self.run_in(tmp, ["--price-table", os.path.join(prices, "2026-10-22.toml")])
+            self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
+
+    def test_a_row_with_only_plan_keys_is_priced_at_the_plan_price(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            _, rows = table(text, "Models that ran")
+            k = {r["Model"]: r for r in rows}["kimi-k3"]
+            self.assertEqual((k["Price basis"], k["Input per M"], k["Cache write per M"], k["Cache read per M"], k["Output per M"]),
+                             ("plan", "3.0", "3.0", "0.3", "15.0"))
+
+    def test_a_note_key_prints_as_the_mark_of_its_row_and_other_rows_have_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            _, rows = table(text, "Models that ran")
+            got = {r["Model"]: r["Note"] for r in rows}
+            self.assertEqual(got["kimi-k3"], NOTE)
+            self.assertEqual(got["claude-sonnet-5-5"], "-")
+            line = next(l for l in text.splitlines() if l.startswith("Price notes:"))
+            self.assertIn("kimi-k3", line)
+            self.assertIn(NOTE, line)
+
+    def test_the_provenance_line_prints_under_models_that_ran_and_mission_to_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            lines = text.splitlines()
+            for heading in ("Models that ran", "Mission to date by role"):
+                i = lines.index("### " + heading)
+                j = next((k for k in range(i + 1, len(lines)) if lines[k].startswith("### ")), len(lines))
+                self.assertIn("Price provenance: " + PROVENANCE, lines[i:j], heading)
+
+    def test_a_table_without_a_provenance_or_note_prints_neither_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", os.path.join(FIX, "prices.toml")])
+            self.assertNotIn("Price provenance:", text)
+            self.assertNotIn("Price notes:", text)
+
+    def test_a_note_names_the_turns_to_date_on_the_noted_model_in_mission_to_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = self.run_in(tmp, ["--prices", plan_only_prices(tmp)])
+            line = next(l for l in text.splitlines() if l.startswith("Price notes:"))
+            self.assertRegex(line, r"kimi-k3 \(\d+ turns to date, ")
+
+
+class RepoPriceTables(unittest.TestCase):
+    REPO = os.path.join(HERE, "..", "..")
+    OLD = os.path.join(REPO, "config", "prices", "2026-10-22.toml")
+    NEW = os.path.join(REPO, "config", "prices", "2026-10-29.toml")
+    PLAN = {
+        "kimi-k3": (3.0, 15.0, 0.30, 3.0),
+        "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.0),
+        "gpt-6-sol": (2.0, 10.0, 0.20, 2.5),
+        "claude-opus-5-5-fast": (4.0, 20.0, 0.20, 5.0),
+    }
+
+    def load(self, path):
+        import tomllib
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+
+    def test_the_29_oct_table_keeps_every_row_of_the_22_oct_table_unchanged(self):
+        old, new = self.load(self.OLD), self.load(self.NEW)
+        self.assertEqual(len(old["models"]), 4)
+        for model, row in old["models"].items():
+            self.assertEqual(new["models"][model], row, model)
+
+    def test_the_29_oct_table_adds_the_four_plan_prices_as_plan_keys(self):
+        new = self.load(self.NEW)["models"]
+        keys = ("plan_input_per_m", "plan_output_per_m", "plan_cache_read_per_m", "plan_cache_write_per_m")
+        for model, rates in self.PLAN.items():
+            row = new[model]
+            self.assertEqual(tuple(row[k] for k in keys), rates, model)
+            self.assertFalse([k for k in row if k.endswith("_per_m") and not k.startswith("plan_")], model)
+        self.assertEqual(new["claude-opus-5-5-fast"]["note"], NOTE)
+        self.assertEqual(set(new), set(self.load(self.OLD)["models"]) | set(self.PLAN))
+
+    def test_the_29_oct_header_names_the_inbox_file_and_carries_the_provenance_line(self):
+        text = read(self.NEW)
+        data = self.load(self.NEW)
+        self.assertEqual(data["effective"], "2026-10-29")
+        self.assertIn("2026-10-29-1127-plan-prices.md", text.split("[models.", 1)[0])
+        for part in ("observer's price table of 25-oct-2026", "resume/roci/tools/milestones.py", "secondary public sources",
+                     "list prices at the date named", "Not estimates"):
+            self.assertIn(part, data["provenance"])
+
+    def test_the_22_oct_table_has_no_plan_keys_and_no_provenance(self):
+        text = read(self.OLD)
+        self.assertNotIn("plan_", text)
+        self.assertNotIn("provenance", text)
 
 
 if __name__ == "__main__":

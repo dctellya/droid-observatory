@@ -3,6 +3,7 @@
 //! `systemPrompt` (invariant I3): the line is re-read from its file on demand.
 
 mod error;
+mod forge;
 mod hosted;
 mod human;
 mod read;
@@ -82,6 +83,20 @@ impl Store {
         let added = insert_events_in(&tx, events)?;
         tx.commit()?;
         Ok(added)
+    }
+
+    /// Like `insert_events`, and returns the events that were not stored yet: what a poll that
+    /// re-reads the same facts every time tells the window.
+    pub fn insert_new_events(&mut self, events: &[Event]) -> Result<Vec<Event>, StoreError> {
+        let tx = self.conn.transaction()?;
+        let mut new = Vec::new();
+        for event in events {
+            if insert_events_in(&tx, std::slice::from_ref(event))? == 1 {
+                new.push(event.clone());
+            }
+        }
+        tx.commit()?;
+        Ok(new)
     }
 
     /// Deletes the events read from the lines of a session file after its first that start
@@ -177,6 +192,11 @@ fn insert_events_in(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<
         for event in events {
             let id = event.id.to_string();
             let ptr = PointerColumns::of(&event.source, &id)?;
+            // The merge commit is the one fact of a hand-over the pointer (the PR URL) cannot hold.
+            let sha = match &event.kind {
+                EventKind::HandedToCd { merge_sha, .. } => Some(merge_sha.clone()),
+                _ => ptr.sha,
+            };
             let duration_ms = event
                 .duration
                 .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX));
@@ -201,7 +221,7 @@ fn insert_events_in(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<
                 ptr.byte_len,
                 sub_of(event),
                 ptr.repo,
-                ptr.sha,
+                sha,
                 ptr.url,
                 ptr.action_id,
             ])?;

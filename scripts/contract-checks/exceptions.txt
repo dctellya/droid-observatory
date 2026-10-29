@@ -1,0 +1,11 @@
+# <check> <sha7> <reason>. Commits that predate their check and were reviewed; the list only shrinks.
+g6-hooks-config 6800f45 fix(hooks): log-tool-call tolerates non-object payloads; AGENTS.md Known Pre-Existing Issues records it (2026-10-23)
+g6-hooks-config 19c4ad1 chore(integration): m0 boundary commit that carried the hook changes of the M0 boundary
+g6-hooks-config 6697945 feat(hooks): pre-tool start and duration_ms; D-021 addendum 545485d records it
+g6-hooks-config 545485d docs(decisions): D-021 addendum for the hook change of 6697945
+g6-shared-files b4769e2 docs(usage): m3 usage regenerated on wt/m4 by an M4 tooling feature (orchestrator-directed)
+g6-shared-files fa9b855 docs(usage): m3 usage regenerated with the token class tables (m4-usage-token-classes)
+g6-shared-files 253e95a docs(ci): demo-gate smoke proof report (m4-demo-gate-workflow)
+g6-shared-files aa56596 docs(decisions): D-040 and its index row (m4-demo-branch-and-ruleset)
+g6-shared-files b82fac9 chore(wt/m4): merge of the M3 boundary docs from the mission branch
+g6-shared-files 1cd244c docs(ci): warm measurement of the B-056 trim (m4-gate-key-and-ci-paths)

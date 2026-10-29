@@ -96,7 +96,7 @@ pub fn OverlayList(board: Memo<BoardView>) -> impl IntoView {
         <section class="overlay-list" aria-label=move || board.with(|b| b.overlay_human.aria_label.clone())>
             <h2>
                 "Human overlay markers "
-                <span class="count" aria-label="overlay-human-count">
+                <span class="count mono" aria-label="overlay-human-count">
                     {move || board.with(|b| b.overlay_human.markers.len())}
                 </span>
             </h2>

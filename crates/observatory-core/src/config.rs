@@ -340,6 +340,8 @@ pub struct GithubConfig {
     pub merge_policy: MergePolicy,
     pub target_branch: String,
     pub repo: String,
+    pub request_timeout_s: u64,
+    pub api_base: String,
 }
 
 impl Default for GithubConfig {
@@ -349,6 +351,8 @@ impl Default for GithubConfig {
             merge_policy: MergePolicy::Auto,
             target_branch: "main".into(),
             repo: "dctellya/droid-observatory".into(),
+            request_timeout_s: 15,
+            api_base: "https://api.github.com".into(),
         }
     }
 }
@@ -562,6 +566,8 @@ mod tests {
         ("github", "merge_policy"),
         ("github", "target_branch"),
         ("github", "repo"),
+        ("github", "request_timeout_s"),
+        ("github", "api_base"),
         ("intervention", "stall_threshold_min"),
         ("metrics", "price_table"),
         ("metrics", "overhead_apportionment"),
