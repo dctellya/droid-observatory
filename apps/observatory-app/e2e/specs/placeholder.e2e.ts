@@ -15,14 +15,18 @@ describe('the pre-gate placeholder of an attached mission', () => {
   });
 
   it('names the same branch in the pending gate_changed line of the app log', async () => {
-    const answer = await browser.executeAsync((done: (value: string) => void) => {
+    const answer = await browser.executeAsync((mission_id: string, done: (value: string) => void) => {
       (window as any).__TAURI__.core
-        .invoke('e2e_gate_poll', { scenario_name: 'pending', mission_id: ATTACHED_ID })
+        .invoke('e2e_gate_poll', { scenario_name: 'pending', mission_id })
         .then((mission: string) => done(`ok ${mission}`), (error: unknown) => done(`error ${error}`));
-    });
+    }, ATTACHED_ID);
     expect(answer).toMatch(/^ok /);
     const line = await browser.waitUntil(
-      () => appLog().find((entry) => entry.includes('gate_changed') && entry.includes('badge="pending"')) ?? false,
+      () =>
+        appLog().find(
+          (entry) =>
+            entry.includes('gate_changed') && entry.includes(`mission_id=${ATTACHED_ID}`) && entry.includes('badge="pending"'),
+        ) ?? false,
       { timeout: WAIT_MS, timeoutMsg: 'the app log has no pending gate_changed line' },
     );
     expect(line).toContain(`branch=${BRANCH}`);
