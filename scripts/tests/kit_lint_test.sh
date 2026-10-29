@@ -150,6 +150,27 @@ scratch pend2
 : > "$d/apps/observatory-app/kit-pending.txt"
 expect_red "$d" "a known violation missing from the pending list" 'is not in the mono face'
 
+# The pending list holds comments only on the real tree: every rule 2 violation has been fixed.
+if grep -v -e '^#' -e '^[[:space:]]*$' "$root/apps/observatory-app/kit-pending.txt" | grep -q .; then
+  fail "kit-pending.txt lists a violation on the real tree"
+fi
+
+# A planted rule 2 violation is red until it is listed, tolerated once listed, and a listed line that no longer
+# violates is red again.
+scratch pend3
+edit apps/observatory-app/ui/src/panel.rs 's/<td class="n">\{row\.sessions\}/<td>{row.sessions}/'
+expect_red "$d" "an unlisted violation with a comment-only pending list" 'is not in the mono face'
+grep -q -F 'panel.rs td `row.sessions`' "$tmp/err" || fail "an unlisted violation: the reasons do not carry the pending key: $(cat "$tmp/err")"
+
+scratch pend4
+edit apps/observatory-app/ui/src/panel.rs 's/<td class="n">\{row\.sessions\}/<td>{row.sessions}/'
+printf 'panel.rs td `row.sessions`\n' >> "$d/apps/observatory-app/kit-pending.txt"
+expect_ok "$d" "a violation listed in kit-pending.txt"
+
+scratch pend5
+printf 'panel.rs td `row.sessions`\n' >> "$d/apps/observatory-app/kit-pending.txt"
+expect_red "$d" "a listed line that no longer violates" 'kit-pending.txt'
+
 # --- the wiring --------------------------------------------------------------------------------------------------
 
 grep -q '^check-kit:' "$root/Makefile" || fail "Makefile has no check-kit target"
