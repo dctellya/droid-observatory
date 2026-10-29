@@ -4,9 +4,11 @@
 
 use rusqlite::params;
 
-use super::{Store, StoreError, insert_events_in};
+use std::collections::HashSet;
+
+use super::{EventScope, Store, StoreError, TimeRange, insert_events_in};
 use crate::control::{self, HumanAction};
-use crate::model::{CycleTemplate, Event, MissionId, Timestamp};
+use crate::model::{CycleTemplate, Event, EventId, EventKind, MissionId, Timestamp};
 
 /// What `Store::record_human_action` wrote.
 #[derive(Clone, Debug, PartialEq)]
@@ -56,6 +58,46 @@ impl Store {
         insert_events_in(&tx, std::slice::from_ref(&event))?;
         tx.commit()?;
         Ok(RecordedAction { action_id, event })
+    }
+
+    /// Deletes the ack-derived `mission.paused` rows of `mission` that the stream reports too
+    /// (`control::dedupe_paused`), so one hosted Pause stays one row. The ack is stored before
+    /// the stream's own line arrives, so this runs after a stream `mission.paused` is stored.
+    /// Returns the ids deleted; the `human_actions` rows and the action's own event stay.
+    pub fn retract_echoed_pauses(
+        &mut self,
+        mission: &MissionId,
+    ) -> Result<Vec<EventId>, StoreError> {
+        let events: Vec<Event> = self
+            .events(&EventScope::Mission(mission.clone()), TimeRange::ALL)?
+            .into_iter()
+            .filter(|event| {
+                matches!(
+                    event.kind,
+                    EventKind::MissionPaused | EventKind::MissionResumed
+                )
+            })
+            .collect();
+        let ack_ids: HashSet<EventId> = events
+            .iter()
+            .filter(|event| control::is_ack(&event.id))
+            .map(|event| event.id.clone())
+            .collect();
+        let kept: HashSet<EventId> = control::dedupe_paused(events, &ack_ids)
+            .into_iter()
+            .map(|event| event.id)
+            .collect();
+        let dropped: Vec<EventId> = ack_ids.difference(&kept).cloned().collect();
+        let tx = self.conn.transaction()?;
+        for id in &dropped {
+            tx.execute(
+                "DELETE FROM usage WHERE event_id = ?1",
+                params![id.to_string()],
+            )?;
+            tx.execute("DELETE FROM events WHERE id = ?1", params![id.to_string()])?;
+        }
+        tx.commit()?;
+        Ok(dropped)
     }
 
     /// The controls of `mission`, oldest first.
