@@ -513,3 +513,33 @@ mod live {
         );
     }
 }
+
+#[test]
+fn a_batch_retracts_events_by_id_and_old_payloads_still_read() {
+    use observatory_core::ingest::{EventBatch, drop_events};
+
+    let mut held = golden();
+    let gone = vec![held[3].id.clone(), held[7].id.clone()];
+    let before = held.len();
+
+    assert_eq!(drop_events(&mut held, &gone), 2);
+    assert_eq!(held.len(), before - 2);
+    assert!(held.iter().all(|event| !gone.contains(&event.id)));
+    assert_eq!(drop_events(&mut held, &gone), 0, "nothing left to drop");
+
+    let batch = EventBatch {
+        mission_id: MissionId("m".to_owned()),
+        events: Vec::new(),
+        unknown_total: 0,
+        retracted: Vec::new(),
+        retracted_events: gone.clone(),
+    };
+    let wire = serde_json::to_value(&batch).unwrap();
+    assert_eq!(serde_json::from_value::<EventBatch>(wire).unwrap(), batch);
+    let old = serde_json::json!({ "mission_id": "m", "events": [], "unknown_total": 0 });
+    let read: EventBatch = serde_json::from_value(old).unwrap();
+    assert!(
+        read.retracted_events.is_empty(),
+        "a payload without the field reads"
+    );
+}
