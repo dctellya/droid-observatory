@@ -182,6 +182,7 @@ repo() {
     git config user.name t
     git config user.email t@example.invalid
     git config commit.gpgsign false
+    git config advice.ignoredHook false
     printf 'base\n' > base.txt
     git add base.txt
     git commit -q -m 'base commit'
@@ -192,7 +193,9 @@ repo() {
 commit() {
   (
     cd "$1" || exit 1
-    printf '%s\n' "$2" > "${3:-f-$(printf '%s' "$2" | cksum | cut -d' ' -f1).txt}"
+    f=${3:-f-$(printf '%s' "$2" | cksum | cut -d' ' -f1).txt}
+    mkdir -p "$(dirname "$f")"
+    printf '%s\n' "$2" > "$f"
     git add -A
     printf '%s\n\n%s\n' "$2" "$TRAILER" > "$tmp/msg"
     git commit -q -F "$tmp/msg"

@@ -53,3 +53,20 @@ need_network() { # need_network <assertion ids>
   export GH_TOKEN
   REPO=${CONTRACT_REPO:-dctellya/droid-observatory}
 }
+# exceptions.txt: `<check> <sha7> <reason>`, a commit that predates its check and was reviewed; the list only shrinks.
+excepted() { # excepted <sha7>
+  grep -q "^$CHECK $1 " "$(dirname "$0")/exceptions.txt" 2> /dev/null
+}
+# The commits a branch adds: from the merge base with the mission branch, or from the pinned baseline when HEAD is the
+# mission branch itself.
+range_base() {
+  m=$(mission_ref) || return 1
+  b=$(git merge-base "$m" HEAD 2> /dev/null) || return 1
+  if [ "$b" = "$(git rev-parse HEAD)" ]; then
+    pin=$(cat "$(dirname "$0")/git-baseline.txt" 2> /dev/null)
+    if [ -n "$pin" ] && git merge-base --is-ancestor "$pin" HEAD 2> /dev/null; then
+      b=$pin
+    fi
+  fi
+  echo "$b"
+}
