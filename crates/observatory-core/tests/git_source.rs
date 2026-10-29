@@ -407,7 +407,7 @@ fn gate_command_runs_are_lane6_events_attributed_to_the_milestone() {
         (101, Some("m1")),
         (102, Some("m2")),
         (103, Some("m2")),
-        (104, None),
+        (104, Some("m2")),
     ] {
         for event in of_run(id) {
             assert_eq!(
@@ -431,6 +431,56 @@ fn gate_command_runs_are_lane6_events_attributed_to_the_milestone() {
 
     let ids: std::collections::BTreeSet<_> = events.iter().map(|e| e.id.clone()).collect();
     assert_eq!(ids.len(), events.len(), "event ids are unique");
+}
+
+#[test]
+fn runs_on_commits_after_a_merge_are_attributed_to_the_milestone_integrated_last() {
+    let repo = Repo::new();
+    let merges = repo.merge_shas();
+    let (m2_merge, m1_merge, pr_merge) = (&merges[0], &merges[1], &merges[2]);
+    let after = repo.git(&["rev-parse", "mission/demo"]);
+    let root = repo.git(&["rev-list", "--max-parents=0", "mission/demo"]);
+
+    // A docs commit on top of the m1 merge: the m2 merge is not among its ancestors.
+    repo.git(&["checkout", "-q", "-b", "scratch", m1_merge]);
+    let after_m1 = repo.commit(&repo.main, "after-m1.txt", "docs after the m1 merge");
+    repo.git(&["checkout", "-q", "mission/demo"]);
+
+    let unknown = "0".repeat(40);
+    let runs = vec![
+        run(201, &after, Some(RunConclusion::Passed)),
+        run(202, m2_merge, Some(RunConclusion::Passed)),
+        run(203, m1_merge, Some(RunConclusion::Failed)),
+        run(204, &after_m1, Some(RunConclusion::Passed)),
+        run(205, pr_merge, Some(RunConclusion::Passed)),
+        run(206, &root, Some(RunConclusion::Passed)),
+        run(207, &unknown, None),
+    ];
+    let events = repo.source().gate_command_events(&runs).unwrap();
+
+    for (id, milestone) in [
+        (201, Some("m2")),
+        (202, Some("m2")),
+        (203, Some("m1")),
+        (204, Some("m1")),
+        (205, None),
+        (206, None),
+        (207, None),
+    ] {
+        let needle = format!("/runs/{id}");
+        let of_run: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(&e.source, SourcePtr::GitHub { url } if url.ends_with(&needle)))
+            .collect();
+        assert!(!of_run.is_empty(), "run {id} has events");
+        for event in of_run {
+            assert_eq!(
+                event.milestone_id.as_ref().map(|m| m.0.as_str()),
+                milestone,
+                "run {id}: {event:?}"
+            );
+        }
+    }
 }
 
 #[test]
