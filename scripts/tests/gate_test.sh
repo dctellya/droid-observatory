@@ -371,6 +371,35 @@ case "$out" in *"src/main.rs"*) ;; *) fail "--diff does not list the changed cod
 case "$out" in *"D-001.md"*) fail "--diff lists a docs file: $out" ;; esac
 cd "$repo" || exit 1
 
+# Owner item 14b: a `test` run keeps the name and verdict of every test beside the record, so the contract checks can
+# read which named tests ran and passed (reports/gate/<code tree>/test.tests: `R <binary>` then `<status> <name>`).
+cat > "$tmp/cargo-out.sh" <<'EOF2'
+echo "     Running unittests src/lib.rs (/t/debug/deps/observatory_core-0123abcd)"
+echo "test config::tests::example_config_equals_defaults ... ok"
+echo "test store::tests::slow_one ... ignored, takes a minute"
+echo "test store::tests::broken ... FAILED"
+echo "     Running tests/mapping.rs (/t/debug/deps/mapping-fedcba98)"
+echo "test mapping_is_frozen ... ok"
+echo "   Doc-tests observatory_core"
+echo "test src/lib.rs - doc (line 3) ... ok"
+echo "test result: FAILED. 3 passed; 1 failed; 1 ignored"
+exit 101
+EOF2
+sh "$gate" test -- sh "$tmp/cargo-out.sh" > /dev/null 2>&1
+tests_file="reports/gate/$(gate_key)/test.tests"
+if [ -f "$tests_file" ]; then
+  [ "$(sed -n 1p "$tests_file")" = "R observatory_core" ] || fail "test.tests line 1 is not 'R observatory_core': $(sed -n 1p "$tests_file")"
+  grep -qx 'ok config::tests::example_config_equals_defaults' "$tests_file" || fail "test.tests lacks the ok line"
+  grep -qx 'ignored store::tests::slow_one' "$tests_file" || fail "test.tests lacks the ignored line (reason must be dropped)"
+  grep -qx 'FAILED store::tests::broken' "$tests_file" || fail "test.tests lacks the FAILED line"
+  grep -qx 'R mapping' "$tests_file" || fail "test.tests lacks the integration target line"
+  grep -qx 'R doc-observatory_core' "$tests_file" || fail "test.tests lacks the doc-tests target line"
+else
+  fail "test.tests was not written beside the test record"
+fi
+sh "$gate" unit2 -- sh "$tmp/cargo-out.sh" > /dev/null 2>&1
+[ ! -f "reports/gate/$(gate_key)/unit2.tests" ] || fail "a non-test gate wrote a .tests file"
+
 # Argument errors.
 sh "$gate" > /dev/null 2>&1 && fail "no arguments accepted"
 sh "$gate" unit > /dev/null 2>&1 && fail "missing command accepted"
