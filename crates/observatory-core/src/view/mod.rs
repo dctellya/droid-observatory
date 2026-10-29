@@ -17,6 +17,7 @@ mod scrub;
 mod scrubber;
 mod state;
 mod summary;
+mod worktree;
 
 pub use agent_panel::{AgentEntry, AgentStream, agent_entries, agent_stream, session_name};
 pub use agents::{AgentRow, AgentStatus, Marker, MarkerKind, agent_markers};
@@ -52,3 +53,4 @@ pub use scrubber::{
 };
 pub use state::{BoardState, RoleTurns, SubLane, TrayEntry};
 pub use summary::MissionSummary;
+pub use worktree::{MilestoneWorktree, milestone_worktrees};
