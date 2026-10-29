@@ -18,8 +18,8 @@ pub mod usage_log;
 pub mod watch;
 
 pub use capture::{
-    CaptureHeader, UsageLogInfo, capture_path, mapping_version_of, read_capture, select_mapping_of,
-    usage_log_path,
+    CaptureHeader, UsageLogInfo, capture_path, mapping_version_of, missing_usage_log_warning,
+    read_capture, select_mapping_of, usage_log_path,
 };
 pub use jsonl::JsonlSource;
 pub use live::{

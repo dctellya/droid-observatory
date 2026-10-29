@@ -113,6 +113,31 @@ impl UsageLogSource {
         Ok(source)
     }
 
+    /// A source with no file, for a log the host already holds in memory (the browser).
+    pub fn in_memory(cfg: &IngestConfig) -> Self {
+        Self::new(cfg, None)
+    }
+
+    /// The turns of a whole log held in memory, its unfinished last line included (a replay's
+    /// log will not grow). Call once per file, oldest first: the join state carries over.
+    pub fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> Vec<UsageTurn> {
+        let mut turns = Vec::new();
+        let mut offset = 0_u64;
+        let mut lines = bytes.split(|byte| *byte == b'\n').peekable();
+        while let Some(line) = lines.next() {
+            let last = lines.peek().is_none();
+            if !(last && line.is_empty()) {
+                let line_at = Line {
+                    offset,
+                    bytes: line.to_vec(),
+                };
+                turns.extend(self.consume(path, &line_at));
+            }
+            offset += line.len() as u64 + 1;
+        }
+        turns
+    }
+
     fn new(cfg: &IngestConfig, dir: Option<PathBuf>) -> Self {
         let chunk_bytes =
             usize::try_from(cfg.tail_chunk_kb.saturating_mul(KB)).unwrap_or(usize::MAX);
