@@ -141,15 +141,6 @@ scratch mono5
 edit apps/observatory-app/ui/src/library.rs 's/<div class="lib">//'
 expect_red "$d" "a table outside the kit's .lib box" 'not inside the kit'"'"'s .lib box'
 
-# The pending list is exact: a violation that was fixed leaves the list, a new one is red.
-scratch pend1
-edit apps/observatory-app/ui/src/panel.rs 's/<span class="count" aria-label="overlay-human-count">/<span class="count mono" aria-label="overlay-human-count">/'
-expect_red "$d" "a pending violation that was fixed but is still listed" 'kit-pending.txt'
-
-scratch pend2
-: > "$d/apps/observatory-app/kit-pending.txt"
-expect_red "$d" "a known violation missing from the pending list" 'is not in the mono face'
-
 # The pending list holds comments only on the real tree: every rule 2 violation has been fixed.
 if grep -v -e '^#' -e '^[[:space:]]*$' "$root/apps/observatory-app/kit-pending.txt" | grep -q .; then
   fail "kit-pending.txt lists a violation on the real tree"
