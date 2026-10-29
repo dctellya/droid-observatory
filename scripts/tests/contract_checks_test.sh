@@ -603,6 +603,27 @@ m3_expect FAIL "JSON that does not parse"
 expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command not landed: pending)"
 case "$out" in *pending*) ;; *) fail "g3: the real tree has no metrics command yet, wanted pending: $out" ;; esac
 
+# --- wiring: make check-contract, make check, the mission-branch CI -----------------------------------------------------
+
+grep -q '^check-contract:' "$root/Makefile" || fail "Makefile has no check-contract target"
+grep -A2 '^check-contract:' "$root/Makefile" | grep -q 'scripts/contract-checks/run-all.sh' || fail "check-contract does not run scripts/contract-checks/run-all.sh"
+awk '/^check:/ { on = 1; next } on && /^[^\t]/ { exit } on' "$root/Makefile" | grep -q 'check-contract' || fail "the check recipe does not run check-contract"
+awk '/^check:/ { on = 1; next } on && /^[^\t]/ { exit } on' "$root/Makefile" | grep -q 'CONTRACT_REQUIRE_TESTLOG=1' || fail "make check must require the test log (CONTRACT_REQUIRE_TESTLOG=1)"
+grep -E '^check-scripts:' "$root/Makefile" | grep -q 'check-contract-checks' || fail "check-scripts does not run the contract checks' self-test"
+grep -q 'contract_checks_test.sh' "$root/Makefile" || fail "Makefile never runs contract_checks_test.sh"
+grep -E '^\.PHONY:' -A3 "$root/Makefile" | grep -q 'check-contract' || fail "check-contract is not declared .PHONY"
+yq -e '.jobs.contract' "$root/.github/workflows/mission-branch.yml" > /dev/null 2>&1 || fail "mission-branch.yml has no contract job"
+yq -e '.jobs.contract.steps[] | select(.run == "make check-contract" or (.run | test("make check-contract")))' "$root/.github/workflows/mission-branch.yml" > /dev/null 2>&1 || fail "the contract job does not run make check-contract"
+yq -e '.jobs.contract.steps[] | select(.with."fetch-depth" == 0)' "$root/.github/workflows/mission-branch.yml" > /dev/null 2>&1 || fail "the contract job needs full history (fetch-depth: 0)"
+yq -e '.jobs."mission-checks".needs | contains(["contract"])' "$root/.github/workflows/mission-branch.yml" > /dev/null 2>&1 || fail "mission-checks.needs does not list contract"
+sh "$root/scripts/check-ci-jobs.sh" "$tmp/wf-no-contract.yml" > /dev/null 2>&1 && fail "check-ci-jobs accepted a missing workflow file"
+d=$(fresh ci1)
+sed 's/needs: \[detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract\]/needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage]/' "$root/.github/workflows/mission-branch.yml" > "$d/mb.yml"
+sh "$root/scripts/check-ci-jobs.sh" "$d/mb.yml" "$root/.github/workflows/demo-gate.yml" > /dev/null 2>&1 && fail "check-ci-jobs accepts mission-checks without the contract job"
+grep -q 'contract' "$root/scripts/contract-checks/README.md" 2> /dev/null || fail "scripts/contract-checks/README.md is missing"
+grep -q 'G8' "$root/scripts/contract-checks/README.md" 2> /dev/null || fail "README.md does not document the G8 gate-record stage"
+grep -q 'G10' "$root/scripts/contract-checks/README.md" 2> /dev/null || fail "README.md does not document the G10 gate-record stage"
+
 # --- the runner --------------------------------------------------------------------------------------------------
 
 out=$(CONTRACT_SKIP="g5-fixture-secrets" sh "$checks/run-all.sh" 2> /dev/null)
