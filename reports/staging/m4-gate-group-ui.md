@@ -37,21 +37,6 @@ Red commit `5a2919b`, green commit `9481d87` (core), shell `0249217`, UI `4723ad
   `10px` (F-103/F-104 reverted, their two rows deleted from `kit-departures.md`). `make check-kit`:
   `check-kit ok VAL-UI-001 [3 departures recorded]`.
 
-## Claims (rule 30)
-
-- VAL-GATE-014: `crates/observatory-core/tests/gate_view.rs::the_gate_group_lists_checks_reviews_ruleset_and_attestations` (7 passed);
-  `apps/observatory-app/src-tauri/src/github.rs` `announce_gate` logs `required_checks`, `reviews`, `ruleset`, `attestations`,
-  `attestation_ids` in `gate_changed`; the window shows them in `gate.e2e.ts` "the gate group lists the required check, reviews,
-  ruleset and attestations". The sqlite counts and `gh` comparison are the live walk's (`m4-forge-live-walk-2`).
-- VAL-GATE-018 (not in this feature's claim list, e2e case written here as the Pass 27 note asks): `gate.e2e.ts` "red check moves
-  the affected card to the build lane with cycle 1", PNG `card-lane3-cycle-1.png`.
-- VAL-GATE-019: `gate.e2e.ts` "red check draws the return arc with cycle 1", PNG `return-arc-cycle-1.png`;
-  `gate_view.rs::red_required_check_draws_a_return_arc_from_the_final_lane_to_the_build_lane`;
-  `tests/forge.rs::red_required_check_opens_a_fix_cycle_on_the_affected_card` is the store-side one.
-- VAL-GATE-022: `gate.e2e.ts` "merge button appears only when the checks are green and a human is required", PNG `merge-button.png`;
-  `gate_view.rs::the_merge_offer_follows_the_policy_and_the_checks_through_the_view`;
-  `tests/forge_merge.rs::merge_button_shows_only_when_policy_is_human_and_checks_are_green`.
-
 ## Decisions
 
 None. Proposal (owner Q4, for the integrator to put to the owner): one kit variant class, not a local override. If a denser
@@ -85,3 +70,18 @@ selector. Not applied here.
 - `e2e_gate_poll` and `[github] poll_interval_s = 3600` in `apps/observatory-app/e2e/lib/env.ts` are how window cases get PR data
   without GitHub. Run one spec: `cargo tauri build --debug --no-bundle --features e2e` from the repository root (from the app
   directory trunk cannot find `ui/Trunk.toml`), then `cd apps/observatory-app/e2e && E2E_RUN_DIR=<dir> npx wdio run wdio.conf.ts --spec specs/gate.e2e.ts`.
+
+**Claims (rule 30)**
+
+- VAL-GATE-014: `crates/observatory-core/tests/gate_view.rs::the_gate_group_lists_checks_reviews_ruleset_and_attestations` (7 passed);
+  `apps/observatory-app/src-tauri/src/github.rs` `announce_gate` logs `required_checks`, `reviews`, `ruleset`, `attestations`,
+  `attestation_ids` in `gate_changed`; the window shows them in `gate.e2e.ts` "the gate group lists the required check, reviews,
+  ruleset and attestations". The sqlite counts and `gh` comparison are the live walk's (`m4-forge-live-walk-2`).
+- VAL-GATE-018 (not in this feature's claim list, e2e case written here as the Pass 27 note asks): `gate.e2e.ts` "red check moves
+  the affected card to the build lane with cycle 1", PNG `card-lane3-cycle-1.png`.
+- VAL-GATE-019: `gate.e2e.ts` "red check draws the return arc with cycle 1", PNG `return-arc-cycle-1.png`;
+  `gate_view.rs::red_required_check_draws_a_return_arc_from_the_final_lane_to_the_build_lane`;
+  `tests/forge.rs::red_required_check_opens_a_fix_cycle_on_the_affected_card` is the store-side one.
+- VAL-GATE-022: `gate.e2e.ts` "merge button appears only when the checks are green and a human is required", PNG `merge-button.png`;
+  `gate_view.rs::the_merge_offer_follows_the_policy_and_the_checks_through_the_view`;
+  `tests/forge_merge.rs::merge_button_shows_only_when_policy_is_human_and_checks_are_green`.

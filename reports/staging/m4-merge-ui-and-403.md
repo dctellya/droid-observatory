@@ -25,7 +25,32 @@ closing commit.
   to api.github.com, the merge PUT gets the 403); `E2E_CONFIG_FILE` in `lib/env.ts` replaces the generated config; `specs/walk-*.walk.ts`
   are the live walk, not matched by the `.e2e.ts` glob. 3142-3149 are the mission's scratch ports; 3147 is now taken by the stub.
 
-## Claims (rule 30)
+## Decisions
+
+None.
+
+## BACKLOG
+
+- No UI lists `human_actions`; a refused merge row is visible only in the store and the Gate lane's overlay events.
+- The merge answer (`merge-result`) is held in window memory (board context); a reload shows the Merge button without it.
+- The UI and its e2e cases landed in one commit (`df26b36`) with the e2e spec as the executable test, not red first; the core and the
+  shell halves have separate red commits.
+- Contract text for VAL-GATE-025 reads `lane=7`; the store keeps lane ids since migration 0002, so the row reads `lane='gate'`.
+
+## Deferred clauses
+
+- A real 403 from the read-only PAT (keychain, off-limits to workers): the proxy stands in; owner-run.
+- External merger role live (one login on this machine): unit test only.
+- Attestation ids on the badge: the demo workflow uploads none; the list is empty and says so.
+
+## Library
+
+- The app log is the newest `wdio-*.log` of the report directory (`captureBackendLogs`); `appLog()` reads it.
+- A hosted fake-droid mission cannot show a fix cycle (no milestone event, so no card); attach the S fixture session and name the head
+  branch literally in `branch_pattern` for a live Gate walk.
+- `gh pr create --label demo:red` opens two runs (opened, labeled); the first is cancelled by the concurrency group.
+
+**Claims (rule 30)**
 
 - VAL-GATE-023: `gate.e2e.ts` "merge click opens a confirmation naming the PR and the target", PNG `confirm-dialog.png`; no request before
   the confirmation (`forge.requests == []`, no `PUT` in the app log); live: `live-confirm-dialog.png`, text `Merge PR #32 into demo/base?`;
@@ -46,7 +71,7 @@ closing commit.
   The merger role is `human` (login is not the app's PAT); the External role rests on `tests/forge_merge.rs` (one login on this machine).
 - VAL-GATE-033: run ids and PR numbers below.
 
-## Live walk (2026-10-29, demo pair `demo/base` at 36f287b)
+**Live walk (2026-10-29, demo pair `demo/base` at 36f287b)**
 
 Setup, stated honestly: the app read the real GitHub through a loopback proxy (`[github].api_base`, `GITHUB_TOKEN="$(gh auth token)"`), and
 the proxy answers the merge PUT with 403. The owner's read-only PAT is in the keychain, which no worker may open, so the 403 is the
@@ -74,28 +99,3 @@ fix cycle has a card to return to) with `branch_pattern = "demo/red-1"`; a hoste
   `events`: `app:1:0|approval.given|human|gate|human|app`, `app:2:0|...`. Then the owner merge above.
 - Commands: `E2E_RUN_DIR=/tmp/m4-walkN E2E_REPORT_DIR=/tmp/m4-walkN-report E2E_CONFIG_FILE=/tmp/walk/config-{auto,policy}.toml npx wdio run
   wdio.conf.ts --spec specs/walk-N-*.walk.ts --mochaOpts.timeout 600000` (wall 1m10.6s, 36.6s, 1m12.8s).
-
-## Decisions
-
-None.
-
-## BACKLOG
-
-- No UI lists `human_actions`; a refused merge row is visible only in the store and the Gate lane's overlay events.
-- The merge answer (`merge-result`) is held in window memory (board context); a reload shows the Merge button without it.
-- The UI and its e2e cases landed in one commit (`df26b36`) with the e2e spec as the executable test, not red first; the core and the
-  shell halves have separate red commits.
-- Contract text for VAL-GATE-025 reads `lane=7`; the store keeps lane ids since migration 0002, so the row reads `lane='gate'`.
-
-## Deferred clauses
-
-- A real 403 from the read-only PAT (keychain, off-limits to workers): the proxy stands in; owner-run.
-- External merger role live (one login on this machine): unit test only.
-- Attestation ids on the badge: the demo workflow uploads none; the list is empty and says so.
-
-## Library
-
-- The app log is the newest `wdio-*.log` of the report directory (`captureBackendLogs`); `appLog()` reads it.
-- A hosted fake-droid mission cannot show a fix cycle (no milestone event, so no card); attach the S fixture session and name the head
-  branch literally in `branch_pattern` for a live Gate walk.
-- `gh pr create --label demo:red` opens two runs (opened, labeled); the first is cancelled by the concurrency group.

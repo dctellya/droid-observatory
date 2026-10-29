@@ -1,16 +1,5 @@
 # m4-fix-g7-demo-red-pr-window
 
-## Claims (rule 30)
-
-```json
-[
-  {
-    "assertion": "VAL-GATE-020",
-    "evidence": "Check on the walk's PR: `GH_TOKEN=\"$(gh auth token)\" sh scripts/contract-checks/g7-demo-red-pr.sh` prints `g7-demo-red-pr ok VAL-GATE-020` (exit 0) with /tmp/m4-walk-pr.txt = 33; `gh pr list --base demo/base --head demo/red-1 --state all --json number,createdAt` lists #33 (2026-10-29T19:23:30Z, the walk's PR, in the window), #32 (16:01:25Z), #31 (15:57:12Z), #30 (15:55:32Z), the older three outside it. `make check-contract` with the token: `g7-demo-red-pr ok VAL-GATE-020`, `contract checks: 29 ok, 2 skipped, 0 FAIL in 5.1s` (/tmp/cc.txt). Self-test: scripts/tests/contract_checks_test.sh, section 'G7' after the g7-mission-pr cases: one in-window PR with two older ones is ok, two in-window PRs FAIL, only older PRs skip, a PR created at the window start counts, window start from CONTRACT_RUN_START, from the walk store's pr.opened row (store started before #32 FAILs) and from the walk's recorded PR; red on e6f5b40 and 3e1f156 (`sh scripts/tests/contract_checks_test.sh`, exit 1, 7 then 8 FAIL lines, /tmp/red.txt and /tmp/red2.txt), green on 3bd9a42 (`contract_checks_test: ok`, exit 0, /tmp/green.txt). The store-side half (`SELECT COUNT(*) FROM prs WHERE head='demo/red-1'` is 1) stays a gate-record stage (G8) and is not claimed here."
-  }
-]
-```
-
 ## SPEC §9
 
 | kind | row |
@@ -35,3 +24,14 @@ None.
 ## Library
 
 None.
+
+**Claims (rule 30)**
+
+```json
+[
+  {
+    "assertion": "VAL-GATE-020",
+    "evidence": "Check on the walk's PR: `GH_TOKEN=\"$(gh auth token)\" sh scripts/contract-checks/g7-demo-red-pr.sh` prints `g7-demo-red-pr ok VAL-GATE-020` (exit 0) with /tmp/m4-walk-pr.txt = 33; `gh pr list --base demo/base --head demo/red-1 --state all --json number,createdAt` lists #33 (2026-10-29T19:23:30Z, the walk's PR, in the window), #32 (16:01:25Z), #31 (15:57:12Z), #30 (15:55:32Z), the older three outside it. `make check-contract` with the token: `g7-demo-red-pr ok VAL-GATE-020`, `contract checks: 29 ok, 2 skipped, 0 FAIL in 5.1s` (/tmp/cc.txt). Self-test: scripts/tests/contract_checks_test.sh, section 'G7' after the g7-mission-pr cases: one in-window PR with two older ones is ok, two in-window PRs FAIL, only older PRs skip, a PR created at the window start counts, window start from CONTRACT_RUN_START, from the walk store's pr.opened row (store started before #32 FAILs) and from the walk's recorded PR; red on e6f5b40 and 3e1f156 (`sh scripts/tests/contract_checks_test.sh`, exit 1, 7 then 8 FAIL lines, /tmp/red.txt and /tmp/red2.txt), green on 3bd9a42 (`contract_checks_test: ok`, exit 0, /tmp/green.txt). The store-side half (`SELECT COUNT(*) FROM prs WHERE head='demo/red-1'` is 1) stays a gate-record stage (G8) and is not claimed here."
+  }
+]
+```

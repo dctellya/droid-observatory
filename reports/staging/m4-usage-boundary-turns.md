@@ -25,21 +25,6 @@ adds a line `orchestrator turns per feature boundary`, target 3").
   split at every marker (rejected: the M3 window holds 8 rewrites and the log 17 resumes in all, so it would give fragments; the owner asked for before and after one
   compaction); split at the last marker (rejected: a late cache expiry would leave an after-side of one turn).
 
-## M3 reading
-
-The two new lines in the M3 window (`reports/usage/m3.md` is not regenerated here; the integrator's boundary run writes them):
-
-```text
-orchestrator turns per feature boundary: 194 / 24 = 8.1 (target 3)
-
-before compaction: 7 turns / 0 boundaries = n/a, 0.23 USD-eq per turn; after: 187 turns / 24 boundaries = 7.8, 0.36 USD-eq per turn (marker: lead context rewrite 2026-10-25T07:24:46.425Z)
-```
-
-M3 already ran at 8.1 turns per boundary (the owner's reading at 14:00 on M4 is about 8: 125 turns for 16 boundaries), so the rule is
-the change, not a regression. The cost per turn is 68.81 / 194 = 0.35 USD-eq over the window. The split at 07:24:46 is a cache expiry
-(8 rewrites in the window), not a compaction the orchestrator chose; the first 7 turns were before any boundary. The M4 reading will
-show whether rule A.3's target of 3 held once the orchestrator records its compaction as a `mission_resumed` line.
-
 ## Decisions
 
 None.
@@ -66,3 +51,18 @@ None.
   `-W clippy::cognitive_complexity` clippy of `make lint`). d344112 extracts the echoed-pause retraction into an associated function
   (behaviour and log lines unchanged, the same split as 995fa86); `cargo clippy -p observatory-app --all-targets -- -D warnings -W
   clippy::cognitive_complexity` exit 0 and `cargo test -p observatory-app` exit 0 (19.067 s) before the rerun.
+
+**M3 reading**
+
+The two new lines in the M3 window (`reports/usage/m3.md` is not regenerated here; the integrator's boundary run writes them):
+
+```text
+orchestrator turns per feature boundary: 194 / 24 = 8.1 (target 3)
+
+before compaction: 7 turns / 0 boundaries = n/a, 0.23 USD-eq per turn; after: 187 turns / 24 boundaries = 7.8, 0.36 USD-eq per turn (marker: lead context rewrite 2026-10-25T07:24:46.425Z)
+```
+
+M3 already ran at 8.1 turns per boundary (the owner's reading at 14:00 on M4 is about 8: 125 turns for 16 boundaries), so the rule is
+the change, not a regression. The cost per turn is 68.81 / 194 = 0.35 USD-eq over the window. The split at 07:24:46 is a cache expiry
+(8 rewrites in the window), not a compaction the orchestrator chose; the first 7 turns were before any boundary. The M4 reading will
+show whether rule A.3's target of 3 held once the orchestrator records its compaction as a `mission_resumed` line.
