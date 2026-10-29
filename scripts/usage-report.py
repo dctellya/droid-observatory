@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import usage_classes
 import usage_idle
+import usage_rewrites
 import usage_testing
 
 BEGIN = "<!-- usage:begin -->"
@@ -1017,6 +1018,13 @@ def build(args):
     idle_min = usage_idle.idle_lines(emit, md_table, events, facts, pause_rows(progress, pl_label), interventions)
     usage_idle.host_lines(emit, md_table, facts, usage_idle.parse_boottime(args.boottime), now, end if "T" in end else end, idle_min["host"])
 
+    lead_turns = []
+    for ts, model, d in sorted(orch_turns, key=lambda x: x[0]):
+        a = Acc()
+        a.add(ts, d, "")
+        lead_turns.append({"ts": ts, "cr": a.cr, "cw": a.cw, "usd": price(prices, model, a) or 0.0})
+    usage_rewrites.rewrite_lines(emit, md_table, args.milestone, lead_turns, usd)
+
     # User testing
     usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
                                      lambda model, a: price(prices, model, a) or 0.0, usd)
@@ -1150,6 +1158,8 @@ def build(args):
          "total by the milestone's features with status `completed` in `features.json`. Fix rounds and re-tests are inside the window total.")
     emit("")
 
+    usage_rewrites.allowance_line(emit, args.milestone, window_total.usd, fulfilled, features, args.next_milestone)
+
     # Mission to date
     emit("### Mission to date by role")
     emit("")
@@ -1268,6 +1278,8 @@ def main(argv=None):
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")
     ap.add_argument("--now", help="generation time (tests)")
     ap.add_argument("--boottime", help="the output of `sysctl kern.boottime`, or `unavailable`; default runs the command")
+    ap.add_argument("--next-milestone", help="the milestone whose claimed assertions price the weekly allowance share; "
+                                             "default the milestone after --milestone in features.json")
     ap.add_argument("--out", help="default reports/usage/<milestone>.md")
     ap.add_argument("--cap", action="append", default=[], metavar="ROLE=USD", help="cap to compare mission-to-date with")
     ap.add_argument("--cross-check", action="store_true", help="compare the session rows with scripts/usage-from-log.sh")

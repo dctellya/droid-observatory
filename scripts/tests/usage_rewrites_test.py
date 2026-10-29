@@ -109,10 +109,10 @@ class WeeklyAllowance(unittest.TestCase):
         s = Scratch()
         try:
             allowance_scenario(s, NEXT)
-            text = s.run(milestone="m8").text
+            text = s.run(milestone="m7").text
         finally:
             s.close()
-        self.assertIn("weekly allowance share: unavailable (no assertion fulfilled in m8)", text)
+        self.assertIn("weekly allowance share: unavailable (no assertion fulfilled in m7)", text)
 
     def test_the_caption_says_the_orchestrator_states_it_before_dispatch(self):
         self.assertIn("The orchestrator states the weekly allowance share before it dispatches the next milestone", self.run_with())

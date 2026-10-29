@@ -1,4 +1,4 @@
-"""Usage report tables for user testing (cost per round and per flow group) and the lead's context rewrites.
+"""Usage report tables for user testing (cost per round and per flow group).
 
 Imported by scripts/usage-report.py (same directory); Python 3 standard library only.
 """

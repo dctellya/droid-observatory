@@ -562,10 +562,10 @@ class UsageReportFile(unittest.TestCase):
     def test_the_script_imports_only_the_standard_library(self):
         mods = set()
         for path in (SCRIPT, os.path.join(HERE, "..", "usage_classes.py"), os.path.join(HERE, "..", "usage_idle.py"),
-                     os.path.join(HERE, "..", "usage_testing.py")):
+                     os.path.join(HERE, "..", "usage_testing.py"), os.path.join(HERE, "..", "usage_rewrites.py")):
             mods |= set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", read(path), re.M))
         allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect",
-                   "usage_classes", "usage_idle", "usage_testing"}
+                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "statistics"}
         self.assertLessEqual(mods, allowed, mods - allowed)
 
 
