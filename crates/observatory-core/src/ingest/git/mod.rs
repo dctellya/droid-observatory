@@ -2,7 +2,7 @@
 //! It reads the mission branch, the `wt/*` milestone branches and their worktrees, turns each
 //! first-parent merge on the mission branch into one `integration.merged` event, and turns the
 //! fast-check runs a forge reports into `gate_command` events attributed to the milestone whose
-//! merge is the run's head.
+//! merge is the run's head or its nearest first-parent ancestor merge.
 //!
 //! Every event is built with a kind the model knows; nothing here yields `Unknown`. Lanes come
 //! from the cycle template (`lane_of`), never from a name (F-041, D-035). The source runs `git`
@@ -331,18 +331,28 @@ impl GitSource {
     }
 
     /// `gate_command.run` for every run and `gate_command.passed` or `.failed` for each that
-    /// has a verdict, attributed to the milestone whose merge commit is the run's head. A run
-    /// on any other commit has no milestone: guessing one would put the run in the wrong
-    /// section of the Integrate lane.
+    /// has a verdict, attributed to the milestone whose `wt/<m>` merge is the run's head or the
+    /// nearest first-parent ancestor of it: the milestone integrated last. A commit after a
+    /// merge (docs, a fix) belongs to the section the merge opened. A run whose head has no such
+    /// merge behind it has no milestone: guessing one would put the run in the wrong section of
+    /// the Integrate lane.
     pub fn gate_command_events(&self, runs: &[FastCheckRun]) -> Result<Vec<Event>, IngestError> {
-        let by_sha: HashMap<String, Option<MilestoneId>> = self
+        let by_sha: HashMap<String, MilestoneId> = self
             .merges()?
             .into_iter()
-            .map(|merge| (merge.sha, merge.milestone))
+            .filter_map(|merge| Some((merge.sha, merge.milestone?)))
             .collect();
+        let mut heads: HashMap<&str, Option<MilestoneId>> = HashMap::new();
         let mut events = Vec::with_capacity(runs.len() * 2);
         for run in runs {
-            let milestone = by_sha.get(&run.head_sha).cloned().flatten();
+            let milestone = match heads.get(run.head_sha.as_str()) {
+                Some(known) => known.clone(),
+                None => {
+                    let found = self.milestone_integrated_last(&run.head_sha, &by_sha)?;
+                    heads.insert(&run.head_sha, found.clone());
+                    found
+                }
+            };
             let pointer = || SourcePtr::GitHub {
                 url: run.url.clone(),
             };
@@ -373,6 +383,27 @@ impl GitSource {
             }
         }
         Ok(events)
+    }
+}
+
+impl GitSource {
+    /// One first-parent walk of merges from `head`; the first one a milestone made is the
+    /// answer. A head this clone does not hold has no milestone.
+    fn milestone_integrated_last(
+        &self,
+        head: &str,
+        by_sha: &HashMap<String, MilestoneId>,
+    ) -> Result<Option<MilestoneId>, IngestError> {
+        // A run's head comes from a forge; anything but a full object name never reaches git.
+        if head.len() < 40 || !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Ok(None);
+        }
+        let commit = format!("{head}^{{commit}}");
+        let walked = cmd::git_or_none(
+            &self.repo,
+            &["rev-list", "--first-parent", "--merges", &commit, "--"],
+        )?;
+        Ok(walked.and_then(|walked| walked.lines().find_map(|sha| by_sha.get(sha)).cloned()))
     }
 }
 
