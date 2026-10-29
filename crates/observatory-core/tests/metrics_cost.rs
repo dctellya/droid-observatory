@@ -591,3 +591,70 @@ fn overhead_is_separate_unless_apportionment_is_equal() {
         assert!(close(amount, 5.0));
     }
 }
+
+#[test]
+fn a_model_without_a_price_row_is_counted_not_priced() {
+    let mut orphan = turn("o", 10, Role::Worker, SONNET, "build", [1, 2, 3]);
+    orphan.session_id = None;
+    let events = vec![
+        turn("a", 10, Role::Worker, "kimi-k3", "build", [1000, 0, 0]),
+        turn("b", 20, Role::Worker, SONNET, "elsewhere", [10, 0, 0]),
+        orphan,
+    ];
+
+    let report = report(&events, t(30));
+
+    assert_eq!(report.unpriced.len(), 1);
+    assert_eq!(report.unpriced[0].model, Some(ModelId("kimi-k3".into())));
+    assert_eq!(report.unpriced[0].tokens.input, 1000);
+    assert_eq!(report.total_tokens.input, 1011, "tokens are all counted");
+    assert!(close(
+        report.cost_so_far.amount,
+        usd([10, 0, 0], [2.0, 10.0, 0.10]) + usd([1, 2, 3], [2.0, 10.0, 0.10])
+    ));
+    assert_eq!(
+        report.tokens_other_lanes.input, 10,
+        "a lane the template lacks"
+    );
+    let lanes: u64 = report.tokens_by_lane.iter().map(|l| l.tokens.input).sum();
+    assert_eq!(
+        lanes + report.tokens_other_lanes.input,
+        report.total_tokens.input
+    );
+    assert!(
+        report
+            .reconciliation
+            .sessions
+            .iter()
+            .any(|row| row.session.0 == "unjoined" && row.turns.input == 1),
+        "a turn with no session is listed under its own id"
+    );
+}
+
+#[test]
+fn a_price_table_names_its_error() {
+    assert!(
+        PriceTable::parse("currency = \"USD\"").is_err(),
+        "no effective date"
+    );
+    let missing =
+        PriceTable::load(std::path::Path::new("no/such/prices.toml")).expect_err("a missing file");
+    assert!(missing.to_string().contains("no/such/prices.toml"));
+    let table = PriceTable::parse("effective = \"2026-01-01\"").expect("a table with no rows");
+    assert_eq!(table.currency(), "USD");
+    assert!(table.rates(SONNET).is_none());
+    assert!(
+        table
+            .session_cost(
+                &TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 1,
+                    cache_write: 1,
+                    credits: None
+                },
+                Some(SONNET)
+            )
+            .is_none()
+    );
+}
