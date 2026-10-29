@@ -3,6 +3,10 @@
 # aggregate job `mission-checks` is the single name other tooling depends on.
 #
 # Rust jobs activate automatically once Cargo.toml exists (walking skeleton).
+#
+# A push that changes only reports, the tool-call log, docs or Markdown outside the code roots (crates, apps, scripts,
+# config, .github) runs nothing: the same set scripts/gate.sh leaves out of its key. A push that also touches one code
+# path runs everything. `paths-ignore` cannot negate, so the Markdown outside the code roots is listed by directory.
 
 name: mission-branch
 
@@ -11,6 +15,13 @@ on:
     branches:
       - "mission/**"
       - "wt/**"
+    paths-ignore:
+      - "reports/**"
+      - "build-log/**"
+      - "docs/**"
+      - "*.md"
+      - "ai/**/*.md"
+      - ".factory/**/*.md"
   pull_request:
     branches:
       - "mission/**"
@@ -114,8 +125,9 @@ jobs:
         run: |
           cargo clippy --workspace --exclude observatory-app --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity
           cargo clippy -p observatory-ui --target wasm32-unknown-unknown --all-targets --all-features -- -D warnings
+      # The core tests run once, in the `coverage` job (llvm-cov runs them all); this step runs the CLI's.
       - name: test
-        run: cargo test -p observatory-core -p observatory-cli --all-features
+        run: cargo test -p observatory-cli --all-features
       - name: replay fixtures
         if: needs.detect.outputs.has_fixtures == 'true'
         run: make replay-fixtures
