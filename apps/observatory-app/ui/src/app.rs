@@ -119,6 +119,7 @@ pub fn App() -> impl IntoView {
                     spawn_local(async move {
                         held.refresh_sessions().await;
                         held.refresh_gate().await;
+                        held.refresh_worktrees().await;
                     });
                     current.set(Some(capture));
                     refresh_rows(rows, rows_state);
@@ -208,9 +209,13 @@ pub fn App() -> impl IntoView {
             }
             match open {
                 Some(capture) => {
-                    if capture.merge(batch) {
-                        spawn_local(async move { capture.refresh_sessions().await });
-                    }
+                    let new_session = capture.merge(batch);
+                    spawn_local(async move {
+                        if new_session {
+                            capture.refresh_sessions().await;
+                        }
+                        capture.refresh_worktrees().await;
+                    });
                 }
                 None => refresh_rows(rows, rows_state),
             }

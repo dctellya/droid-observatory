@@ -166,7 +166,6 @@ fn poll_mission<R: Runtime>(
             &cfg.github,
             token.map(|secret| Secret::new(secret.expose().to_owned())),
         );
-        let _ = store.set_mission_branch(&mission, &branch);
         sources.insert(
             mission.clone(),
             Tracked {

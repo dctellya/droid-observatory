@@ -9,7 +9,9 @@ use observatory_core::ingest::{
     EventBatch, MemoryReplay, OpenedMission, SessionInfo, drop_events, merge_ordered, retract_stale,
 };
 use observatory_core::model::{Event, EventId, MissionId};
-use observatory_core::view::{GateGroup, MissionSummary, RawLineView, raw_line_view};
+use observatory_core::view::{
+    GateGroup, MilestoneWorktree, MissionSummary, RawLineView, raw_line_view,
+};
 use serde_json::json;
 
 use crate::shell;
@@ -30,6 +32,8 @@ pub struct Capture {
     pub live: ArcRwSignal<bool>,
     /// The Gate header as the last poll read it; none before the first poll or in the browser host.
     pub gate: ArcRwSignal<Option<GateGroup>>,
+    /// The worktrees git listed for the milestones at the last poll; empty in the browser host.
+    pub worktrees: ArcRwSignal<Vec<MilestoneWorktree>>,
     raw: RawSource,
 }
 
@@ -41,6 +45,7 @@ impl Capture {
             sessions: ArcRwSignal::new(replay.sessions.clone()),
             live: ArcRwSignal::new(false),
             gate: ArcRwSignal::new(None),
+            worktrees: ArcRwSignal::new(Vec::new()),
             raw: RawSource::Memory(replay),
         }
     }
@@ -52,6 +57,7 @@ impl Capture {
             sessions: ArcRwSignal::new(opened.sessions),
             live: ArcRwSignal::new(opened.live),
             gate: ArcRwSignal::new(None),
+            worktrees: ArcRwSignal::new(Vec::new()),
             raw: RawSource::Shell,
         }
     }
@@ -97,6 +103,16 @@ impl Capture {
         let args = json!({ "mission_id": self.mission_id() });
         if let Ok(Some(gate)) = shell::invoke::<_, Option<GateGroup>>("gate_group", &args).await {
             self.gate.set(Some(gate));
+        }
+    }
+
+    /// Asks the shell for the worktrees the last poll listed for the milestones.
+    pub async fn refresh_worktrees(&self) {
+        let args = json!({ "mission_id": self.mission_id() });
+        if let Ok(worktrees) =
+            shell::invoke::<_, Vec<MilestoneWorktree>>("milestone_worktrees", &args).await
+        {
+            self.worktrees.set(worktrees);
         }
     }
 

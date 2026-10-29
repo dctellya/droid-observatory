@@ -233,6 +233,26 @@ fn card_view(card: &Card) -> AnyView {
     .map(|text| view! { <p class="now">{text}</p> });
     let milestone = card.milestone.clone();
     let details = card.milestone.clone();
+    let worktrees = ctx.worktrees.clone();
+    let named = card.milestone.clone();
+    let worktree = move || {
+        worktrees.with(|all| {
+            all.iter()
+                .find(|worktree| worktree.milestone == named)
+                .map(|worktree| {
+                    view! {
+                        <p
+                            class="mono"
+                            aria-label="card-worktree"
+                            data-testid="card-worktree"
+                            title=worktree.path.clone()
+                        >
+                            {worktree.name.clone()}
+                        </p>
+                    }
+                })
+        })
+    };
     let marker = stall_marker(card.features.clone());
     let marks = view! { <FeatureMarks features=card.features.clone() /> };
     let template = expect_context::<RwSignal<CycleTemplate>>();
@@ -276,6 +296,7 @@ fn card_view(card: &Card) -> AnyView {
                 {card.features.len()} " features" {(!features.is_empty()).then(|| format!(": {features}"))}
             </p>
             {marker}
+            {worktree}
             {arc}
             {now}
             {marks}

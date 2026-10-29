@@ -74,6 +74,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
         open_details: Callback::new(move |milestone| details.set(Some(milestone))),
         sessions: capture.sessions.clone(),
         gate,
+        worktrees: capture.worktrees.clone(),
     });
 
     provide_context(crate::gate::MergeState::new());
