@@ -8,6 +8,7 @@ pub mod github;
 mod jsonl;
 mod live;
 mod memory;
+mod mission;
 #[cfg(feature = "rpc")]
 pub mod rpc;
 mod sessions;
@@ -29,6 +30,7 @@ pub use live::{
 pub use memory::{
     MemoryReplay, SessionInfo, order_key, replay_files, replay_files_with, session_infos,
 };
+pub use mission::mission_events;
 pub use sessions::{Session, SessionTree, display_name, feature_id_in, feature_id_of, user_tag};
 pub use sidecar::{Sidecar, SidecarTag, SidecarUsage, read_sidecar, sidecar_path};
 pub use source::{IngestError, RawRecord, Source, SourceKind};

@@ -1,4 +1,5 @@
 mod inspect;
+mod metrics;
 mod replay;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
@@ -35,6 +36,21 @@ enum Command {
         /// (`OBSERVATORY_CONFIG` or `~/.droid-observatory/config.toml`), else none.
         #[arg(long, value_name = "PATH")]
         store: Option<PathBuf>,
+    },
+    /// Print tokens, cost, waste tokens, reconciliation, budget and model comparison of a
+    /// capture as JSON, with the usage log its header names.
+    Metrics {
+        /// The orchestrator session `.jsonl` of the capture.
+        file: PathBuf,
+        /// Print the report as JSON (the default and only format here).
+        #[arg(long)]
+        json: bool,
+        /// The price table; default `[metrics].price_table`.
+        #[arg(long, value_name = "FILE")]
+        price_table: Option<PathBuf>,
+        /// The launch budget in USD; it wins over `[metrics].budget` when above zero.
+        #[arg(long, value_name = "USD")]
+        budget_usd: Option<f64>,
     },
     /// Print the raw line an event was mapped from, found by its stored pointer.
     Inspect {
@@ -91,6 +107,28 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     template: &template,
                 },
                 store.as_mut(),
+                &mut out,
+                &mut io::stderr().lock(),
+            )?;
+            out.flush()?;
+            Ok(())
+        }
+        Command::Metrics {
+            file,
+            json: _,
+            price_table,
+            budget_usd,
+        } => {
+            let file = std::path::absolute(&file)?;
+            let mut out = BufWriter::new(io::stdout().lock());
+            metrics::metrics(
+                &file,
+                &metrics::Setup {
+                    config: &config,
+                    template: &template,
+                    price_table: price_table.as_deref(),
+                    budget_usd,
+                },
                 &mut out,
                 &mut io::stderr().lock(),
             )?;
