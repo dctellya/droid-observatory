@@ -602,10 +602,12 @@ def build(args):
     pl_label = os.path.basename(mission_dir.rstrip("/")) + "/progress_log.jsonl"
     ft_path = os.path.join(mission_dir, "features.json")
     ft_label = os.path.basename(mission_dir.rstrip("/")) + "/features.json"
-    skills = {}
+    skills, budgets, features = {}, {}, []
     if os.path.exists(ft_path):
         with open(ft_path) as f:
-            skills = {x["id"]: x.get("skillName") or "-" for x in json.load(f).get("features", []) if "id" in x}
+            features = [x for x in json.load(f).get("features", []) if "id" in x]
+        skills = {x["id"]: x.get("skillName") or "-" for x in features}
+        budgets = {x["id"]: x.get("turnBudget") for x in features}
     start = args.start
     if not start:
         firsts = [r["timestamp"] for _, r in progress
@@ -987,16 +989,30 @@ def build(args):
             f[2] = a.first if f[2] is None else min(f[2], a.first)
             f[3] = a.last if f[3] is None else max(f[3], a.last)
             f[4] |= a.files
-    rows = [[f, skills.get(f, "-"), rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])), v[1],
-             "yes" if v[1] > FEATURE_TURN_CAP else "no", v[2], v[3],
-             "`%s`; %s%s" % (", ".join(sorted(v[4])), pl_label, "; " + ft_label if f in skills else "")]
+    feat_usd = collections.Counter()
+    for sid, a in by_sess.items():
+        c = clf.of(sid)
+        if c["role"] in ("worker", "validator") and c["feature"]:
+            feat_usd[c["feature"]] += a.usd
+    for x in features:
+        if x.get("milestone") == args.milestone:
+            feats.setdefault(x["id"], [[], 0, None, None, set()])
+    budget_of = lambda f: budgets.get(f)  # noqa: E731
+    rows = [[f, skills.get(f, "-"), rounds[f], ", ".join("`%s`" % s for s in sorted(v[0])) or "-", v[1],
+             "yes" if v[1] > FEATURE_TURN_CAP else "no",
+             "-" if budget_of(f) is None else budget_of(f),
+             "-" if budget_of(f) is None else ("yes" if v[1] > budget_of(f) else "no"),
+             usd(feat_usd[f]), ts_or_dash(v[2]), ts_or_dash(v[3]),
+             "`%s`; %s%s" % (", ".join(sorted(v[4])) or "-", pl_label, "; " + ft_label if f in skills else "")]
             for f, v in sorted(feats.items())]
-    for r in md_table(["Feature", "Skill", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP, "First ts", "Last ts",
-                       "Source"], rows):
+    for r in md_table(["Feature", "Skill", "Rounds", "Sessions", "Turns", "Over %d turns" % FEATURE_TURN_CAP, "Turn budget",
+                       "Over budget", "USD-eq", "First ts", "Last ts", "Source"], rows):
         emit(r)
     emit("")
     emit("Rounds are the `worker_started` entries for the feature in `%s`; turns and the first and last timestamps are those of its root "
-         "sessions' log turns in the window; the skill is the feature's `skillName` in `%s`." % (pl_label, ft_label))
+         "sessions' log turns in the window; the skill and the `turnBudget` are the feature's `skillName` and `turnBudget` in `%s` "
+         "(`-` when it has none; the features of the milestone that never ran are listed with 0 turns); USD-eq is the cost of the "
+         "feature's sessions and of the subagents they started." % (pl_label, ft_label))
     emit("")
 
     # Mission to date
