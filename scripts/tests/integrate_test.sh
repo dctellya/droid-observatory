@@ -201,6 +201,43 @@ check "miss: reason shows the diff stat" grep -q 'moved.txt' "$tmp/miss.out"
 check "miss: the gate command ran once" [ "$(runs)" = "$((runs_before + 1))" ]
 check "miss: report says the gate ran" grep -q 'real run' reports/readiness/2026-10-25-m9.md
 
+echo "== code paths: docs commits on the mission branch keep the hit, the miss lists code files only =="
+mkrepo docshit
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+mkdir -p docs/notes
+echo "# a note" > docs/notes/note.md
+echo "# readme" > README.md
+git add -A
+git commit -q -m "docs: a note and a readme after validation"
+runs_before=$(runs)
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/docshit.out" 2>&1
+code=$?
+check "docs hit: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/docshit.out"
+check "docs hit: summary says gate HIT" grep -q 'gate: HIT' "$tmp/docshit.out"
+check "docs hit: the gate printed HIT with the code tree" grep -q 'gate check: HIT code tree' "$tmp/docshit.out"
+check "docs hit: the gate command did not run" [ "$(runs)" = "$((runs_before))" ]
+
+mkrepo codemiss
+mkbranch wt/m9 m9-feat
+validate
+git checkout -q main
+mkdir -p docs/notes
+echo "# a note" > docs/notes/note.md
+echo moved > moved.txt
+git add -A
+git commit -q -m "chore: code and docs moved after validation"
+sh scripts/integrate.sh m9 wt/m9 > "$tmp/codemiss.out" 2>&1
+code=$?
+check "code miss: exit 0" [ "$code" -eq 0 ]
+[ "$code" -ne 0 ] && cat "$tmp/codemiss.out"
+check "code miss: the gate printed MISS" grep -q 'gate check: MISS' "$tmp/codemiss.out"
+summary_part=$(sed -n '/Boundary summary/,$p' "$tmp/codemiss.out")
+check "code miss: the summary reason names the code file" sh -c "printf '%s' '$summary_part' | grep -q moved.txt"
+check "code miss: the summary reason does not name the docs file" sh -c "! printf '%s' '$summary_part' | grep -q note.md"
+
 echo "== inner hit, outer miss: only the lint gate was proven =="
 mkrepo inner
 printf 'GATE := sh scripts/gate.sh\n\ncheck:\n\t@$(GATE) check -- sh -c '"'"'make --no-print-directory lint; echo run >> "$$COUNTER"; echo "test result: ok. 2 passed; 0 failed"'"'"'\n\nlint:\n\t@$(GATE) lint -- sh -c '"'"'echo "lint ran"; echo "test result: ok. 1 passed; 0 failed"'"'"'\n\nusage:\n\t@mkdir -p reports/usage && echo "usage table for $(M)" > reports/usage/$(M).md\n\ndecisions-index:\n\t@sh scripts/gen-decisions-index.sh > docs/decisions/README.md\n' > Makefile
