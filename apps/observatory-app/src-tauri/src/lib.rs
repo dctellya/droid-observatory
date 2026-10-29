@@ -11,6 +11,7 @@ mod ingest;
 #[cfg(test)]
 mod live_check;
 mod logging;
+mod merge;
 mod process;
 mod stall;
 
