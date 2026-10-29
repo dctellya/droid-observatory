@@ -34,8 +34,3 @@ tempfile.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { workspace = true, optional = true }
-
-# Declared ahead of the modules that use them; each worker removes its entry when the
-# first use lands (cargo machete reads this list).
-[package.metadata.cargo-machete]
-ignored = ["keyring-core", "apple-native-keyring-store"]
