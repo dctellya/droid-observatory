@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,7 +61,10 @@ export function prepareRunDir(): void {
     `path = "${join(RUN_DIR, 'observatory.sqlite')}"`,
     '',
   ].join('\n');
-  writeFileSync(join(RUN_DIR, 'config.toml'), toml);
+  // A live walk of the gate (a real poll of the demo pair) brings its own config; `{RUN_DIR}` stands for RUN_DIR.
+  const own = process.env.E2E_CONFIG_FILE;
+  const config = own ? readFileSync(own, 'utf8').replaceAll('{RUN_DIR}', RUN_DIR) : toml;
+  writeFileSync(join(RUN_DIR, 'config.toml'), config);
 }
 
 /**

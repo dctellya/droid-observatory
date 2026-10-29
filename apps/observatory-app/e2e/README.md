@@ -93,3 +93,21 @@ failure and carries on. Screenshots for a human come from an attended run or the
 (`.github/workflows/e2e.yml`, see CI below), never from a validator retrying on a locked display.
 The locked-display result of the one run made on 2026-10-25 is recorded in
 `reports/staging/m3-e2e-harness.md`.
+
+## Live walk of the Gate (not part of `make e2e`)
+
+`specs/walk-*.walk.ts` drive the real poll against the demo pair (`demo/base`, `demo/red-1`, workflow `demo-gate`); the default
+`specs/**/*.e2e.ts` glob does not match them, so pass them with `--spec`. They need the `gh` CLI logged in and a token in the
+environment (`GITHUB_TOKEN="$(gh auth token)"`; the keychain is never read), and take their own config:
+
+```sh
+E2E_RUN_DIR=/tmp/m4-walk1 E2E_REPORT_DIR=/tmp/m4-walk1-report E2E_CONFIG_FILE=/tmp/walk/config-auto.toml \
+  npx wdio run wdio.conf.ts --spec specs/walk-1-red-green.walk.ts --mochaOpts.timeout 600000
+```
+
+`E2E_CONFIG_FILE` replaces the generated config (`{RUN_DIR}` stands for the run directory); the walk's config sets
+`branch_pattern = "demo/red-1"`, `poll_interval_s = 30` and `api_base = "http://127.0.0.1:3147"`. `lib/forge.ts` `startForgeProxy`
+listens there, forwards reads to api.github.com and answers the merge request with the 403 a read-only token gets. Run 1 opens the
+PR with `demo:red`, then removes the label; run 2 (`merge_policy = "policy"`) shows the green PR without Merge; run 3 presses Merge
+twice and merges as the owner with `gh pr merge --squash --delete-branch`. The commands and app-log lines go to
+`walk-commands.log` in the report directory.
