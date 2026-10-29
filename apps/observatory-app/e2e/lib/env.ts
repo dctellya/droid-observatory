@@ -60,8 +60,18 @@ export function prepareRunDir(): void {
   writeFileSync(join(RUN_DIR, 'config.toml'), toml);
 }
 
+/**
+ * A PAT-shaped value built at run time (a literal trips secret scanners). The app reads the keychain
+ * only under FORGE_LIVE=1; a launched app has a token in its environment so no worker-started
+ * process can prompt the owner.
+ */
+export function fakeGithubToken(): string {
+  return ['github', 'pat', 'x'.repeat(40)].join('_');
+}
+
 export function appEnv(): Record<string, string> {
   return {
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN || fakeGithubToken(),
     OBSERVATORY_CONFIG: join(RUN_DIR, 'config.toml'),
     OBSERVATORY_TIMING_LOG: TIMING_LOG,
     FAKE_DROID_LOG,
