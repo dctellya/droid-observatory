@@ -1,6 +1,7 @@
 #!/bin/sh
 # Milestone boundary as a target (owner item 19, VAL-TOOL-006): `make integrate M=<milestone> FROM=<branch>...`.
 #   1. refuse on a dirty tree (build-log/ may differ)
+#   1b. validate every staging file of the branches still to merge (stray `##` headings, file:line, exit 2) before any merge
 #   2. git merge --no-ff of each branch, message from scripts/templates/integrate-commit.txt, trailers from .git-trailers
 #   3. final gate through `make check` (scripts/gate.sh), keyed by the code paths: a HIT when the merged code paths equal a
 #      proven gate, a real run on a MISS that lists the code files that differ; red aborts with the summary, nothing is rerun
@@ -62,6 +63,17 @@ add_trailers() { # add_trailers <message-file>: the trailers file is the source,
     [ -z "$t" ] || git interpret-trailers --in-place --if-exists addIfDifferent --trailer "$t" "$1"
   done < .git-trailers
 }
+
+# (1b) every staging file of every branch still to merge is validated before the first merge, all problems in one pass
+bad=0
+for b in $branches; do
+  git merge-base --is-ancestor "$b" HEAD && continue
+  python3 "$here/integrate-staging.py" --check --rev "$b" || bad=1
+done
+if [ "$bad" -ne 0 ]; then
+  echo "integrate: staging files are invalid; fix them on the branch (new commit) and run the target again. Nothing was merged."
+  exit 2
+fi
 
 # (2) one no-ff merge per branch
 for b in $branches; do

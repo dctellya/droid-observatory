@@ -483,8 +483,8 @@ check "comma: the colon form still merges" grep -qF '| F-004 | 2026-10-25 | colo
 check "comma: the parenthesis form merges" grep -qF '| F-005 | 2026-10-25 | parenthesis row three. |' "$tmp/comma-dry/SPEC.md"
 check "comma: the bare form merges" grep -qF '| F-006 | 2026-10-25 | bare row four. |' "$tmp/comma-dry/SPEC.md"
 check "comma: no marker text is left in SPEC" sh -c "! grep -q 'F-NEW' $tmp/comma-dry/SPEC.md"
-check "comma: the B-NEW comma item is filed without the marker" grep -qF '| B-003 | comma backlog item | comma reason (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
-check "comma: the B-NEW colon item is filed" grep -qF '| B-004 | colon backlog item | colon reason (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+check "comma: the B-NEW comma item is filed without the marker" grep -qF '| B-003 | comma backlog item | comma reason. (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
+check "comma: the B-NEW colon item is filed" grep -qF '| B-004 | colon backlog item | colon reason. (comma-rows) |' "$tmp/comma-dry/BACKLOG.md"
 
 echo "== stray headings: every staging file is validated before any merge step =="
 mkrepo stray

@@ -12,9 +12,13 @@ A staging file has the sections `## SPEC §9` (also `## SPEC §9 rows`, `## SPEC
     `D-NNN (...)` prefix); a bullet that says the decision is new or that there is no amendment, and a bullet naming no
     decision, is listed in the report.
   - Deferred clauses and Library: copied into the report part, per feature.
-Prose paragraphs of the first three sections (other than "None.") are listed in the report. A bullet, table row or
-paragraph under any other `##` section, or an addendum whose decision file does not exist, is unfiled: the script
-prints `unfiled: N` with the items, exits 1 and writes nothing, so the staging file can be fixed and the run repeated.
+Prose paragraphs of the first three sections (other than "None.") are listed in the report. Every staging file is
+validated before anything is planned or written: a `##` heading that is not one of the sections above is reported as
+`file:line: ...` for every file in one pass, and the script exits 2 with nothing written. An addendum whose decision file
+does not exist is unfiled: the script prints `unfiled: N` with the items, exits 1 and writes nothing, so the staging
+file can be fixed and the run repeated.
+--check validates only (no shared file is read); --rev REV validates the staging files of a git revision under --staging
+(scripts/integrate.sh runs it on each branch before the merge, so a stray heading never stops a half-done boundary).
 The staging files are deleted after a successful merge. The report part (markdown) goes to --out, the counts and one
 line per filed item to stdout. Files are merged in name order, so row numbers are reproducible.
 --dry-run DIR copies SPEC.md, BACKLOG.md and the decisions directory into DIR, merges there, keeps the staging files
@@ -26,11 +30,12 @@ import glob
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 SPEC, DECISIONS, BACKLOG, DEFERRED, LIBRARY = "spec", "decisions", "backlog", "deferred", "library"
-NEW_ROW = re.compile(r"^(?:Row\s*)?\(?F-NEW\)?:?\s*", re.IGNORECASE)
-NEW_BACKLOG = re.compile(r"^(?:B-NEW|New)\b:?\s*", re.IGNORECASE)
+NEW_ROW = re.compile(r"^(?:Row\s*)?\(?F-NEW\)?[:,]?\s*", re.IGNORECASE)
+NEW_BACKLOG = re.compile(r"^(?:B-NEW\b[:,]?|New\b:?)\s*", re.IGNORECASE)
 CLOSURE = re.compile(r"^(?:Closed?\b|B-\d+\s*:\s*(?:done|closed))", re.IGNORECASE)
 NONE_TEXT = re.compile(r"(?:none|nothing to merge|none added)\.?", re.IGNORECASE)
 DECISION_REF = re.compile(r"\bD-(\d{3})\b")
@@ -53,18 +58,58 @@ def section_key(name):
     return "?" + name.strip()
 
 
-def parse(path):
+def parse_text(text):
     """Return {section key: [lines]} of one staging file."""
     sections = {}
     current = None
-    with open(path, encoding="utf-8") as fh:
-        for line in fh.read().splitlines():
-            if line.startswith("## "):
-                current = section_key(line[3:])
-                sections.setdefault(current, [])
-            elif current is not None:
-                sections[current].append(line)
+    for line in text.splitlines():
+        if line.startswith("## "):
+            current = section_key(line[3:])
+            sections.setdefault(current, [])
+        elif current is not None:
+            sections[current].append(line)
     return sections
+
+
+def read_text(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def stray_headings(label, text):
+    """One `label:line: message` per `##` heading that is not a known section."""
+    problems = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if line.startswith("## ") and section_key(line[3:]).startswith("?"):
+            problems.append("%s:%d: stray heading %r is not a staging section (SPEC §9, Decisions, BACKLOG, Deferred "
+                            "clauses, Library); rename it or make it a bullet" % (label, number, line.rstrip()))
+    return problems
+
+
+def git_staging_texts(rev, staging):
+    """(label, text) of every staging file of a git revision, in name order."""
+    listing = subprocess.run(["git", "ls-tree", "-r", "--name-only", rev, "--", staging], capture_output=True, text=True)
+    if listing.returncode != 0:
+        raise SystemExit("integrate-staging: git ls-tree %s failed: %s" % (rev, listing.stderr.strip()))
+    texts = []
+    for path in sorted(p for p in listing.stdout.splitlines() if p.endswith(".md")):
+        shown = subprocess.run(["git", "show", "%s:%s" % (rev, path)], capture_output=True, text=True, encoding="utf-8")
+        if shown.returncode != 0:
+            raise SystemExit("integrate-staging: git show %s:%s failed: %s" % (rev, path, shown.stderr.strip()))
+        texts.append(("%s:%s" % (rev, path), shown.stdout))
+    return texts
+
+
+def validate(texts):
+    """Report every problem of every staging file; return the exit code (0 valid, 2 problems)."""
+    problems = [p for label, text in texts for p in stray_headings(label, text)]
+    if not problems:
+        return 0
+    for problem in problems:
+        print(problem)
+    print("staging validation failed: %d problem(s) in %d file(s), nothing merged"
+          % (len(problems), sum(1 for label, text in texts if stray_headings(label, text))))
+    return 2
 
 
 def split_cells(line):
@@ -250,11 +295,6 @@ class Plan:
             items, paras = items_and_paragraphs(sec.get(key, []))
             paras = [p for p in paras if not is_none(p)]
             counts[key] = len(items) + len(paras)
-        for key, lines in sec.items():
-            if key.startswith("?"):
-                items, paras = items_and_paragraphs(lines)
-                for text in [t for t, _c in items] + [p for p in paras if not is_none(p)]:
-                    self.unfiled.append("%s (## %s): %s" % (feature, key[1:], text))
         self.files.append((feature, counts))
 
     def totals(self):
@@ -307,8 +347,8 @@ def write_changes(plan, spec, backlog, args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--milestone", required=True)
-    ap.add_argument("--date", required=True)
+    ap.add_argument("--milestone")
+    ap.add_argument("--date")
     ap.add_argument("--staging", default="reports/staging")
     ap.add_argument("--spec", default="SPEC.md")
     ap.add_argument("--backlog", default="BACKLOG.md")
@@ -316,14 +356,28 @@ def main():
     ap.add_argument("--out", help="markdown report part (default with --dry-run: DIR/report.md)")
     ap.add_argument("--keep", action="store_true", help="do not delete the staging files")
     ap.add_argument("--dry-run", metavar="DIR", help="merge into a copy of the shared files under DIR")
+    ap.add_argument("--check", action="store_true", help="validate the staging files only; exit 0, or 2 with file:line problems")
+    ap.add_argument("--rev", help="with --check: read the staging files of this git revision instead of the working tree")
     args = ap.parse_args()
+    if args.rev and not args.check:
+        ap.error("--rev needs --check")
+    if not args.check and not (args.milestone and args.date):
+        ap.error("--milestone and --date are required without --check")
+
+    files = sorted(glob.glob(os.path.join(args.staging, "*.md")))
+    texts = git_staging_texts(args.rev, args.staging) if args.rev else [(f, read_text(f)) for f in files]
+    code = validate(texts)
+    if code or args.check:
+        if not code:
+            print("staging files valid: %d" % len(texts))
+        return code
+
     if args.dry_run:
         prepare_dry_run(args)
     elif not args.out:
         ap.error("--out is required without --dry-run")
 
-    files = sorted(glob.glob(os.path.join(args.staging, "*.md")))
-    parsed = [(os.path.splitext(os.path.basename(f))[0], f, parse(f)) for f in files]
+    parsed = [(os.path.splitext(os.path.basename(f))[0], f, parse_text(text)) for f, (_label, text) in zip(files, texts)]
     with open(args.spec, encoding="utf-8") as fh:
         spec = fh.read()
     with open(args.backlog, encoding="utf-8") as fh:
