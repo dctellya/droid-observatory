@@ -34,8 +34,9 @@ commit that touches a hook file.
   reads `session_id`, `tool_name` and `tool_input` from the hook's stdin JSON. A session not listed in
   `officer-sessions.txt` exits 0 untouched: workers, validators and subagents are not affected. The matcher is honoured for tools
   invoked inside a Script as nested calls.
-- **Commits:** a4b4646 (the deny-list hook) and the commit that carries this file and the allow-list. Both are named here by short
-  sha, as `scripts/contract-checks/g6-hooks-config.sh` matches hook-file commits against `docs/decisions`.
+- **Commits:** a4b4646 (the deny-list hook) and 060698a (the allow-list and this file). Both are named here by short
+  sha, as `scripts/contract-checks/g6-hooks-config.sh` matches hook-file commits against `docs/decisions`; a commit cannot name
+  its own sha, so 060698a is named by the docs-only commit that follows it.
 - **Scope:** from the 2026-10-29 wake through the M4 integration and all of M5. Not a model change, not a cap change.
 
 ## Alternatives
@@ -54,5 +55,4 @@ commit that touches a hook file.
   orchestrator reads that file at every wake. The hook keys on the session id and cannot tell two processes of one session apart.
 - The harness still has no per-role tool set (feedback item 21); the hook is the workaround, one `jq` call per tool call in every
   session because the matcher is `*`.
-- A change to the hook files is a commit that a decision file names by short sha: this commit's own sha is added to this file in
-  the commit that follows it.
+- A change to the hook files is a commit that a decision file names by short sha, written in a docs-only commit after it.
