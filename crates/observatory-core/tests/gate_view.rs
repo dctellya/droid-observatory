@@ -61,6 +61,7 @@ fn facts(conclusions: &[(&str, CheckConclusion)], attestations: &[&str]) -> Gate
         reviews: 0,
         attestation_ids: attestations.iter().map(|id| (*id).to_owned()).collect(),
         pr_open: true,
+        target: "demo/base".into(),
     }
 }
 
@@ -264,4 +265,55 @@ fn red_required_check_draws_a_return_arc_from_the_final_lane_to_the_build_lane()
         .expect("the count stays on the card");
     assert_eq!((arc.cycle, arc.active), (1, false));
     assert_eq!(&green.cards[0].lane, template.final_lane());
+}
+
+#[test]
+fn the_merge_confirmation_names_the_pr_and_the_target() {
+    let template = CycleTemplate::engineering();
+    let offer = GateGroup::of(&opened_green())
+        .with_facts(&facts(&[("demo-gate", CheckConclusion::Passed)], &[]))
+        .view(&template)
+        .merge
+        .expect("the offer");
+    assert_eq!(offer.target, "demo/base");
+    let confirmation = offer.confirmation();
+    assert!(
+        confirmation.text.contains("PR #24"),
+        "{}",
+        confirmation.text
+    );
+    assert!(
+        confirmation.text.contains("demo/base"),
+        "{}",
+        confirmation.text
+    );
+    assert_eq!(confirmation.confirm, "Confirm merge");
+    assert_eq!(confirmation.cancel, "Cancel");
+}
+
+#[test]
+fn a_scrubbed_board_keeps_the_target_the_poll_read() {
+    let template = CycleTemplate::engineering();
+    let polled = GateGroup::of(&opened_green())
+        .with_facts(&facts(&[("demo-gate", CheckConclusion::Passed)], &[]));
+    let now = GateGroup::of(&opened_green()).with_polled(&polled);
+    assert_eq!(
+        now.view(&template).merge.map(|offer| offer.target),
+        Some("demo/base".to_owned())
+    );
+}
+
+#[test]
+fn a_header_that_does_not_know_the_target_offers_no_merge() {
+    let template = CycleTemplate::engineering();
+    let mut unknown = facts(&[("demo-gate", CheckConclusion::Passed)], &[]);
+    unknown.target = String::new();
+    assert!(
+        GateGroup::of(&opened_green())
+            .with_facts(&unknown)
+            .view(&template)
+            .merge
+            .is_none(),
+        "a dialog that cannot name the target is never opened"
+    );
 }

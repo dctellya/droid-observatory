@@ -277,6 +277,7 @@ fn facts(requires_human: bool, checks: &[CheckConclusion], pr_open: bool) -> Gat
         reviews: 0,
         attestation_ids: Vec::new(),
         pr_open,
+        target: "main".into(),
     }
 }
 
