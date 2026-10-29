@@ -6,6 +6,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::rework::{ReworkSpan, first_pass_and_rework};
+use super::span::{Span, union};
 use super::state::{Interval, TimeState, WaitKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -84,15 +85,31 @@ impl TimeState {
     }
 }
 
-/// Time per waste cause.
+/// Time per waste cause, and the bands of time it was measured in.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WasteTotals {
     by_cause: BTreeMap<WasteCause, Duration>,
+    bands: BTreeMap<WasteCause, Vec<Span>>,
 }
 
 impl WasteTotals {
     pub fn duration(&self, cause: WasteCause) -> Duration {
         self.by_cause.get(&cause).copied().unwrap_or_default()
+    }
+
+    /// The spans of time counted under `cause`, oldest first. The bands of one card's causes do
+    /// not overlap: the intervals are disjoint and the `rework` band lies inside Active ones.
+    pub fn bands(&self, cause: WasteCause) -> &[Span] {
+        self.bands.get(&cause).map_or(&[], Vec::as_slice)
+    }
+
+    /// The cause whose band holds `at` (a band is half open: `from <= at < to`).
+    pub fn cause_at(&self, at: crate::model::Timestamp) -> Option<WasteCause> {
+        WasteCause::ALL.into_iter().find(|cause| {
+            self.bands(*cause)
+                .iter()
+                .any(|band| band.from <= at && at < band.to)
+        })
     }
 
     /// Whole seconds, rounded to the nearest.
@@ -125,11 +142,33 @@ pub fn waste_by_cause(intervals: &[Interval], rework: &[ReworkSpan]) -> WasteTot
     for interval in intervals {
         if let Some(cause) = interval.state.waste_cause() {
             *totals.by_cause.entry(cause).or_default() += interval.length();
+            totals.bands.entry(cause).or_default().push(Span {
+                from: interval.from,
+                to: interval.to,
+            });
         }
     }
     let (_, rework_time) = first_pass_and_rework(intervals, rework);
     if !rework_time.is_zero() {
         totals.by_cause.insert(WasteCause::Rework, rework_time);
+        let covered = union(
+            rework
+                .iter()
+                .map(|span| Span {
+                    from: span.from,
+                    to: span.to,
+                })
+                .collect(),
+        );
+        let band = totals.bands.entry(WasteCause::Rework).or_default();
+        for interval in intervals.iter().filter(|i| i.state == TimeState::Active) {
+            for span in &covered {
+                let (from, to) = (span.from.max(interval.from), span.to.min(interval.to));
+                if from < to {
+                    band.push(Span { from, to });
+                }
+            }
+        }
     }
     totals
 }

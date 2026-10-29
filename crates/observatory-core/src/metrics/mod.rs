@@ -1,17 +1,32 @@
-//! Time states, rework windows and throttled time (architecture §9, PRD §10.1 and §10.2).
+//! Time states, rework windows, throttled time, tokens and cost (architecture §9, PRD §10.1,
+//! §10.2 and §10.5).
 //!
 //! Everything here is pure over mapped events: no store, no clock, no I/O. Lanes are addressed
 //! by the cycle template (F-041); a rework window's cause is the lane id of the lane that holds
 //! the event that opened it. Compiled to wasm with the rest of the model (architecture I9).
 
+mod budget;
+mod cards;
+mod compare;
 mod notes;
+mod price;
+mod report;
 mod rework;
 mod span;
 mod state;
 mod throttled;
+mod tokens;
 mod waste;
 
+pub use budget::{BudgetMeter, budget_meter};
+pub use cards::{CardTime, card_times};
+pub use compare::{ModelComparisonRow, completed_features, model_comparison};
 pub use notes::{Notes, events_of_feature};
+pub use price::{Cost, CostUnit, PriceError, PriceTable, Rates};
+pub use report::{
+    CostInput, CostReport, LaneUsage, MilestoneUsage, Overhead, OverheadShare, RoleCost,
+    RoleTokens, SessionCost, UnpricedTokens, cost_report,
+};
 pub use rework::{
     ReworkKind, ReworkSpan, ReworkWindow, first_pass_and_rework, fix_loops, merge_windows,
     rework_causes, rework_windows,
@@ -21,4 +36,8 @@ pub use state::{
     Interval, PartitionContext, TimeState, WaitKind, active_spans, partition, partition_in,
 };
 pub use throttled::{Throttled, ThrottledInterval, UNKNOWN_REASON, throttled};
+pub use tokens::{
+    Reconciliation, SessionReconciliation, SignedCounts, TokenCounts, TokensInWaste, Turn,
+    UNJOINED_SESSION, reconcile, tokens_in_waste, turns,
+};
 pub use waste::{WasteCause, WasteGroup, WasteTotals, waste_by_cause};

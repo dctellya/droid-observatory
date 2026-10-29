@@ -61,3 +61,13 @@ pub(super) fn union(mut spans: Vec<Span>) -> Vec<Span> {
     }
     merged
 }
+
+/// The time two sets of disjoint spans share.
+pub(super) fn overlap(a: &[Span], b: &[Span]) -> Duration {
+    a.iter()
+        .flat_map(|x| {
+            b.iter()
+                .map(move |y| gap(x.from.max(y.from), x.to.min(y.to)))
+        })
+        .sum()
+}

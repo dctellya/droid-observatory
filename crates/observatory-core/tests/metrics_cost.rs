@@ -147,15 +147,17 @@ fn tokens_per_role_and_lane_sum_turn_usage_events() {
             [1, 2, 3],
         ),
     ];
-    let with_multiplier = PriceTable::parse(&format!(
-        "{}\n[roles]\nworker = 2.0\n",
-        std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../config/prices/2026-10-22.toml")
-        )
-        .expect("the price table exists")
-    ))
-    .expect("parses");
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/prices/2026-10-22.toml"),
+    )
+    .expect("the price table exists");
+    assert!(
+        text.contains("worker = 1.0"),
+        "the table names the multiplier key"
+    );
+    let with_multiplier =
+        PriceTable::parse(&text.replace("worker = 1.0", "worker = 2.0")).expect("parses");
 
     let report = report_with(&events, &with_multiplier, t(50));
 
