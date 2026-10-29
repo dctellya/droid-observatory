@@ -55,3 +55,7 @@ This decision supersedes the private demo repository (B-007).
 - The ruleset can be inspected with `gh api repos/dctellya/droid-observatory/rulesets/26112925`. Editing it
   reopens VAL-GATE-002.
 - `demo/*` branches left behind by an aborted run are the next run's first cleanup.
+
+## Addendum 2026-10-29 (m4 integration, m4-demo-branch-and-ruleset)
+
+D-040 `docs/decisions/D-040-demo-branch-pair.md` (supersedes the private demo repository, B-007). The index is regenerated in the worktree; the integrator regenerates it again if the merge moves it.
