@@ -363,7 +363,8 @@ def load_transcript(path):
             recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg})
             for b in content:
                 if b.get("type") == "tool_use" and b.get("name") == "WaitForScript":
-                    waits.append((ts, b.get("id")))
+                    inp = b.get("input") or {}
+                    waits.append((ts, b.get("id"), inp.get("toolCallId"), inp.get("action")))
     recs.sort(key=lambda r: r["t"])
     return recs, results, waits
 
@@ -447,8 +448,13 @@ def gate_rows(gate_dir, repo_root, start, end):
                 r = json.load(f)
         except (ValueError, OSError):
             continue
-        st = r.get("started_at")
-        if not st or not (sec(start) <= sec(st) <= sec(end)):
+        st, fin = r.get("started_at"), r.get("finished_at")
+        if not (st or fin):
+            continue
+        if not st:
+            r["started_at"] = st = fin
+        fin = fin or st
+        if not ((sec(st) < sec(end) or sec(fin) <= sec(end)) and sec(fin) >= sec(start)):
             continue
         r["_path"] = os.path.relpath(path, repo_root) if path.startswith(repo_root) else os.path.join(
             os.path.basename(gate_dir), os.path.relpath(path, gate_dir))
@@ -720,15 +726,25 @@ def build(args):
                        "First ts", "Last ts"], srows):
         emit(r)
     emit("")
-    n_waits = sum(a.turns for (c, _), a in split.items() if c == "waits")
-    short = in_win = 0
-    for ts, tid in (waits or []):
-        if not (sec(start) <= sec(ts) <= sec(end)):
+    short = in_win = reissued = kills = 0
+    seen = set()
+    for ts, tid, call_id, action in sorted(waits or [], key=lambda w: parse_ts(w[0])):
+        inside = sec(start) <= sec(ts) <= sec(end)
+        in_win += inside
+        if action == "kill":
+            kills += inside
             continue
-        in_win += 1
+        repeat = call_id in seen
+        seen.add(call_id)
+        if not inside:
+            continue
+        reissued += repeat
         if tid in results and (parse_ts(results[tid]) - parse_ts(ts)).total_seconds() < SHORT_WAIT_S:
             short += 1
-    emit("- re-issued waits: %d (orchestrator turns whose only tool call is `WaitForScript`, or a `StartMissionRun` repeated straight after a wait)" % n_waits)
+    emit("- re-issued waits: %d (WaitForScript calls, any `action` but `kill`, on the same `toolCallId` as an earlier wait; "
+         "the first wait on each id and every kill are not counted)" % reissued)
+    emit("- worker pauses (kills): %d (WaitForScript calls whose `action` is `kill`: a worker or script stopped on purpose, "
+         "not a wait)" % kills)
     emit("- waits returning in under %d s: %d" % (SHORT_WAIT_S, short))
     emit("- WaitForScript calls in the window: %d" % in_win)
     emit("- orchestrator turns matched to the transcript: %d of %d (tolerance %.0f s)" % (matched, len(orch_turns), MATCH_TOLERANCE_S))
@@ -823,7 +839,11 @@ def build(args):
     emit("gate seconds run: %.3f" % sum(g.get("seconds", 0) for g in gr))
     emit("gates served from cache: %d, minutes saved: %.2f" % (len(hits), sum(h["seconds"] for h in hits) / 60))
     emit("")
-    emit("Gates run are the records `%s/*/*.json` by `started_at`; gates served from cache are the lines of `%s/hits.log` "
+    emit("Gate window rule: a gate run is in the table when it overlaps the window: `started_at` < `--to` or `finished_at` <= `--to`, "
+         "and it did not finish before the window start; a run that started before `--to` and finished after it is in, one that "
+         "started at or after `--to` is not (pass a later `--to` to include the integration's own gate runs).")
+    emit("")
+    emit("Gates run are the records `%s/*/*.json`; gates served from cache are the lines of `%s/hits.log` "
          "by time, and the minutes saved are their stored seconds, the run each hit did not repeat." % (label, label))
     emit("")
     emit("### Gate runs")
