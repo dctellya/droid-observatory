@@ -3,7 +3,7 @@
 # root with one planted violation. A check prints exactly one line `<check> <ok|FAIL|skip ...> <assertion ids>` and
 # exits 0 (ok, skip) or 1 (FAIL); CONTRACT_ROOT points a check at a scratch tree.
 set -u
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GITHUB_EVENT_NAME
 root=$(cd "$(dirname "$0")/../.." && pwd)
 checks="$root/scripts/contract-checks"
 tmp=$(mktemp -d)
@@ -218,6 +218,24 @@ printf 'x\n' > "$r/x.txt"
 git -C "$r" add x.txt
 git -C "$r" commit -q -m 'feat: no trailer here'
 expect_red g6-commit-format "$r" "no co-author trailer"
+# The pull_request checkout of GitHub: HEAD is a synthetic merge commit (no trailer) of the PR head into the base.
+r=$(repo gc4)
+git -C "$r" checkout -q -b wt/m9
+commit "$r" 'feat: a clean change'
+git -C "$r" checkout -q --detach mission/observatory-v1
+git -C "$r" merge -q --no-ff -m 'Merge wt/m9 into the base' wt/m9
+export GITHUB_EVENT_NAME=pull_request
+expect_ok g6-commit-format "$r" "pull_request merge commit over a clean PR head"
+r5=$(repo gc5)
+git -C "$r5" checkout -q -b wt/m9
+printf 'x\n' > "$r5/x.txt"
+git -C "$r5" add x.txt
+git -C "$r5" commit -q -m 'feat: no trailer here'
+git -C "$r5" checkout -q --detach mission/observatory-v1
+git -C "$r5" merge -q --no-ff -m 'Merge wt/m9 into the base' wt/m9
+expect_red g6-commit-format "$r5" "pull_request merge over a PR head commit without the trailer"
+unset GITHUB_EVENT_NAME
+expect_red g6-commit-format "$r" "the same merge commit outside a pull_request event"
 
 r=$(repo gr1)
 git -C "$r" checkout -q -b wt/m9
@@ -416,6 +434,7 @@ cat > "$gs/bin/gh" <<'STUB'
 #!/bin/sh
 # Stub gh: the first rule file (sorted) whose first line is a substring of the arguments prints its remaining lines.
 args="$*"
+printf '%s\n' "$args" >> "$GH_STUB/../args.log"
 for r in "$GH_STUB"/*.rule; do
   [ -f "$r" ] || continue
   pat=$(sed -n 1p "$r")
@@ -528,6 +547,14 @@ gh_rule 1 'run list' '{"databaseId":7,"conclusion":"failure","status":"completed
 gh_check g7-ci-run FAIL "run failed"
 gh_rule 1 'run list' 'null'
 gh_check g7-ci-run skip "no run for the commit"
+gh_rule 1 'run list' '{"databaseId":7,"conclusion":"success","status":"completed"}'
+gh_rule 2 'run view' 'machete success
+coverage success'
+rm -f "$gs/args.log"
+gh_check g7-ci-run ok "g7-ci-run filters the run list to the mission-branch push run"
+listed=$(grep '^run list' "$gs/args.log" 2> /dev/null)
+case "$listed" in *"--workflow mission-branch.yml"*) ;; *) fail "g7-ci-run filters the run list to the mission-branch push run: no --workflow mission-branch.yml in '$listed'" ;; esac
+case "$listed" in *"--event push"*) ;; *) fail "g7-ci-run filters the run list to the mission-branch push run: no --event push in '$listed'" ;; esac
 
 gh_clear
 gh_rule 1 'pr list' '0'
