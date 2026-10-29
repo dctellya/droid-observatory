@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(HERE, "..")
@@ -53,6 +52,21 @@ elif os.path.exists(failed):
     os.remove(failed)
 sys.exit(1 if fails else 0)
 ''' % {"all": list(SUITES), "names": SUITES}
+
+
+def read(path):
+    with open(path) as f:
+        return f.read()
+
+
+def root_outcome(path):
+    return re.search(r'<testsuites\b[^>]*\boutcome="([^"]*)"', read(path)).group(1)
+
+
+def suites(path):
+    """{suite name: its element text}; the stub's junit and the runner's are flat, and python's XML parser is not always
+    loadable here (Homebrew python 3.14.7 fails to import pyexpat)."""
+    return {re.search(r'name="([^"]*)"', s).group(1): s for s in re.findall(r"<testsuite\b.*?</testsuite>", read(path), re.S)}
 
 
 class Harness:
@@ -226,20 +240,21 @@ class RerunPolicy(unittest.TestCase):
 
     def test_junit_names_the_outcome_and_keeps_both_attempts(self):
         h, _ = self.outcome("1")
-        root = ET.parse(os.path.join(h.report, "junit.xml")).getroot()
-        self.assertEqual(root.get("outcome"), "flaked")
-        gate = [s for s in root.iter("testsuite") if s.get("name") == "gate lane"][0]
-        self.assertEqual(gate.get("failures"), "0")
-        props = {p.get("name"): p.get("value") for p in gate.iter("property")}
-        self.assertEqual(props.get("outcome"), "flaked")
+        junit = os.path.join(h.report, "junit.xml")
+        self.assertEqual(root_outcome(junit), "flaked")
+        gate = suites(junit)["gate lane"]
+        self.assertIn('failures="0"', gate)
+        self.assertIn('<property name="outcome" value="flaked"/>', gate)
+        self.assertNotIn("<failure", read(junit))
         for name in ("junit-attempt-1.xml", "junit-attempt-2.xml"):
             self.assertTrue(os.path.isfile(os.path.join(h.report, name)), name)
-        first = ET.parse(os.path.join(h.report, "junit-attempt-1.xml")).getroot()
-        self.assertEqual(sum(int(s.get("failures")) for s in first.iter("testsuite")), 1)
+        self.assertEqual(read(os.path.join(h.report, "junit-attempt-1.xml")).count("<failure"), 1)
 
     def test_a_plain_red_junit_names_failed(self):
         h, _ = self.outcome("1,2")
-        self.assertEqual(ET.parse(os.path.join(h.report, "junit.xml")).getroot().get("outcome"), "failed")
+        junit = os.path.join(h.report, "junit.xml")
+        self.assertEqual(root_outcome(junit), "failed")
+        self.assertEqual(read(junit).count("<failure"), 1)
 
     def test_a_failure_that_names_no_spec_is_red_without_a_rerun(self):
         h = Harness("1")
