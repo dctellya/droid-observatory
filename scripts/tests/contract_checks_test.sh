@@ -168,6 +168,178 @@ secret=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 36)
 put "$d" fixtures/streams/leak.jsonl "{\"env\":\"GITHUB_TOKEN=ghp_$secret\"}"
 expect_red g5-fixture-secrets "$d" "a GitHub token in a fixture"
 
+# --- G6: git history rules, on throwaway repositories -----------------------------------------------------------
+
+TRAILER='Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>'
+# repo <name>: a repository with a `mission/observatory-v1` branch holding one commit, HEAD on it.
+repo() {
+  r="$tmp/$1"
+  rm -rf "$r"
+  mkdir -p "$r"
+  (
+    cd "$r" || exit 1
+    git init -q -b mission/observatory-v1 .
+    git config user.name t
+    git config user.email t@example.invalid
+    git config commit.gpgsign false
+    printf 'base\n' > base.txt
+    git add base.txt
+    git commit -q -m 'base commit'
+  )
+  echo "$r"
+}
+# commit <repo> <subject> [path]: one commit with the trailer (a path is written first).
+commit() {
+  (
+    cd "$1" || exit 1
+    printf '%s\n' "$2" > "${3:-f-$(printf '%s' "$2" | cksum | cut -d' ' -f1).txt}"
+    git add -A
+    printf '%s\n\n%s\n' "$2" "$TRAILER" > "$tmp/msg"
+    git commit -q -F "$tmp/msg"
+  )
+}
+
+r=$(repo gc1)
+git -C "$r" checkout -q -b wt/m9
+commit "$r" 'feat: a short subject'
+expect_ok g6-commit-format "$r" "short subject with the trailer"
+commit "$r" 'feat: a subject that is far longer than the seventy-two characters the commit-msg hook allows'
+expect_red g6-commit-format "$r" "subject over 72 characters"
+r=$(repo gc2)
+git -C "$r" checkout -q -b wt/m9
+commit "$r" 'wip: half done'
+expect_red g6-commit-format "$r" "WIP marker"
+r=$(repo gc3)
+git -C "$r" checkout -q -b wt/m9
+printf 'x\n' > "$r/x.txt"
+git -C "$r" add x.txt
+git -C "$r" commit -q -m 'feat: no trailer here'
+expect_red g6-commit-format "$r" "no co-author trailer"
+
+r=$(repo gr1)
+git -C "$r" checkout -q -b wt/m9
+commit "$r" 'feat: one'
+expect_ok g6-no-history-rewrite "$r" "reflog without rewrites"
+git -C "$r" commit -q --amend -m 'feat: one, amended'
+expect_red g6-no-history-rewrite "$r" "reflog shows an amend"
+
+r=$(repo gh1)
+git -C "$r" config core.hooksPath .githooks
+expect_ok g6-hooks-config "$r" "hooksPath .githooks"
+git -C "$r" config core.hooksPath .git/hooks
+expect_red g6-hooks-config "$r" "hooksPath elsewhere"
+git -C "$r" config core.hooksPath .githooks
+commit "$r" 'feat: edit a hook' .githooks/commit-msg
+expect_red g6-hooks-config "$r" "hook edited after the baseline without a decision"
+sha=$(git -C "$r" log -1 --format=%h)
+put "$r" docs/decisions/D-900-hooks.md "The hook change $sha is recorded here."
+git -C "$r" add -A
+git -C "$r" commit -q -m 'docs: decision naming the hook change'
+expect_ok g6-hooks-config "$r" "hook edit named by a decision"
+
+# the worktree layout needs the observatory-wt/<m> directory shape
+lay="$tmp/lay"
+rm -rf "$lay"
+mkdir -p "$lay"
+(
+  cd "$lay" || exit 1
+  git init -q -b mission/observatory-v1 main-checkout
+  cd main-checkout || exit 1
+  git config user.name t
+  git config user.email t@example.invalid
+  printf 'a\n' > a.txt
+  git add a.txt
+  git commit -q -m base
+  mkdir -p ../observatory-wt
+  git worktree add -q ../observatory-wt/m9 -b wt/m9
+  ln -s m9 ../observatory-wt/current
+)
+expect_ok g6-worktree-layout "$lay/observatory-wt/m9" "worktree on wt/m9 with current pointing at it"
+rm "$lay/observatory-wt/current"
+ln -s m8 "$lay/observatory-wt/current"
+expect_red g6-worktree-layout "$lay/observatory-wt/m9" "current points elsewhere"
+expect_skip g6-worktree-layout "$(repo notwt)" "a checkout that is not an observatory-wt worktree"
+
+# merge shape: integrated worktree branches are second parents of exactly one first-parent merge
+r=$(repo gm1)
+git -C "$r" checkout -q -b wt/m1
+commit "$r" 'feat: m1 work'
+git -C "$r" checkout -q mission/observatory-v1
+printf 'Integrate m1\n\n%s\n' "$TRAILER" > "$tmp/msg"
+git -C "$r" merge -q --no-ff -F "$tmp/msg" wt/m1
+git -C "$r" checkout -q wt/m1
+expect_ok g6-merge-shape "$r" "m1 integrated by a no-ff merge"
+r=$(repo gm2)
+git -C "$r" checkout -q -b wt/m1
+commit "$r" 'feat: m1 work'
+git -C "$r" checkout -q mission/observatory-v1
+git -C "$r" merge -q --ff-only wt/m1
+expect_red g6-merge-shape "$r" "m1 fast-forwarded into the mission branch"
+
+# shared files: a worktree branch must not touch README.md, BACKLOG.md and the other integrator files
+r=$(repo gs1)
+git -C "$r" checkout -q -b wt/m9
+commit "$r" 'feat: code' src.rs
+expect_ok g6-shared-files "$r" "worktree branch touching only code"
+commit "$r" 'docs: backlog edit' BACKLOG.md
+expect_red g6-shared-files "$r" "worktree branch edited BACKLOG.md"
+r=$(repo gs2)
+git -C "$r" checkout -q -b wt/m9
+printf '| F-999 | row |\n' > "$r/SPEC.md"
+git -C "$r" add SPEC.md
+git -C "$r" commit -q -m 'docs: spec row' -m "$TRAILER"
+git -C "$r" checkout -q mission/observatory-v1
+printf '| F-001 | row |\n' > "$r/SPEC.md"
+git -C "$r" add SPEC.md
+git -C "$r" commit -q -m 'docs: spec base'
+git -C "$r" checkout -q wt/m9
+git -C "$r" merge -q --no-edit mission/observatory-v1 > /dev/null 2>&1
+printf '| F-999 | row |\n| F-001 | row |\n' > "$r/SPEC.md"
+git -C "$r" add SPEC.md
+git -C "$r" commit -q -m 'docs: spec rows again' -m "$TRAILER"
+expect_red g6-shared-files "$r" "worktree branch added a SPEC section 9 row"
+
+# metrics sources stay untouched on wt/m4
+r=$(repo gx1)
+git -C "$r" checkout -q -b wt/m4
+commit "$r" 'feat: elsewhere' crates/observatory-core/src/other.rs
+expect_ok g5-metrics-untouched "$r" "wt/m4 leaves metrics alone"
+commit "$r" 'feat: metrics' crates/observatory-core/src/metrics/mod.rs
+expect_red g5-metrics-untouched "$r" "wt/m4 touched the metrics directory"
+git -C "$r" checkout -q mission/observatory-v1
+expect_skip g5-metrics-untouched "$r" "not on wt/m4"
+
+# --- G9: make targets --------------------------------------------------------------------------------------------
+
+expect_ok g9-check-target-list '' "g9-check-target-list on the real tree"
+d=$(fresh tl1)
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures'
+expect_ok g9-check-target-list "$d" "all named targets listed"
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index fmt-check lint test deny machete replay-fixtures'
+expect_red g9-check-target-list "$d" "check-secrets dropped from check-all"
+
+expect_ok g9-make-targets '' "g9-make-targets on the real tree"
+d=$(fresh mk1)
+printf 'check-decisions-index:\n\t@true\ncheck-file-size:\n\t@true\ncheck-todos:\n\t@true\n' > "$d/Makefile"
+expect_ok g9-make-targets "$d" "three targets exit 0"
+printf 'check-decisions-index:\n\t@true\ncheck-file-size:\n\t@false\ncheck-todos:\n\t@true\n' > "$d/Makefile"
+expect_red g9-make-targets "$d" "check-file-size exits non-zero"
+
+# --- the runner --------------------------------------------------------------------------------------------------
+
+out=$(CONTRACT_SKIP="g5-fixture-secrets" sh "$checks/run-all.sh" 2> /dev/null)
+rc=$?
+[ "$rc" -eq 0 ] || fail "run-all.sh on the real tree: exit $rc, output: $out"
+printf '%s\n' "$out" | grep -q '^g1-no-check-runs ok ' || fail "run-all.sh output lacks the g1-no-check-runs line"
+printf '%s\n' "$out" | grep -q '^g5-fixture-secrets skip (CONTRACT_SKIP) ' || fail "run-all.sh did not honour CONTRACT_SKIP"
+printf '%s\n' "$out" | tail -n 1 | grep -Eq '^contract checks: [0-9]+ ok, [0-9]+ skipped, 0 FAIL' || fail "run-all.sh summary line missing: $(printf '%s\n' "$out" | tail -n 1)"
+d=$(fresh run1)
+put "$d" crates/observatory-core/src/x.rs 'let u = "check-runs";'
+out=$(CONTRACT_ROOT="$d" CONTRACT_SKIP="g5-fixture-secrets g6-commit-format" sh "$checks/run-all.sh" 2> /dev/null)
+rc=$?
+[ "$rc" -eq 1 ] || fail "run-all.sh with a planted violation: exit $rc, wanted 1"
+printf '%s\n' "$out" | grep -q '^g1-no-check-runs FAIL ' || fail "run-all.sh lost the FAIL line"
+
 if [ "$failures" -ne 0 ]; then
   echo "contract_checks_test: $failures failure(s)"
   exit 1
