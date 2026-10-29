@@ -118,6 +118,39 @@ fn a_pause_that_never_resumes_stays_open_to_the_end() {
     ];
     let found = throttled(&events, &Notes::default(), t(1200));
     assert_eq!(found.intervals.len(), 1);
+    assert_eq!(
+        secs(t(0), found.intervals[0].from),
+        0,
+        "the last event before it"
+    );
     assert_eq!(secs(t(0), found.intervals[0].to), 1200);
-    assert_eq!(found.intervals[0].minutes, 10);
+    assert_eq!(found.intervals[0].minutes, 20);
+}
+
+#[test]
+fn an_active_span_across_the_stop_does_not_count_the_stop_as_active() {
+    // A subagent's whole run is one span; the platform stopped it for 400 s inside the run.
+    let events = [
+        ev("e0", EventKind::TaskStarted, 0).feature("f"),
+        ev("done", EventKind::SubagentFinished, 1000)
+            .feature("f")
+            .lasting(1000),
+    ];
+    let spans = [observatory_core::metrics::Span {
+        from: t(300),
+        to: t(700),
+    }];
+    let ctx = PartitionContext {
+        others_active: &[],
+        throttled: &spans,
+    };
+
+    let intervals = partition_in(&events, t(1000), &ctx);
+
+    let active: i64 = intervals
+        .iter()
+        .filter(|i| i.state == observatory_core::metrics::TimeState::Active)
+        .map(|i| secs(i.from, i.to))
+        .sum();
+    assert_eq!(active, 600, "1000 s of run, 400 s of them throttled");
 }

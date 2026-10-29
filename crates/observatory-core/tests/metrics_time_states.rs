@@ -80,8 +80,8 @@ fn time_states_partition_every_instant_exactly_once() {
         let first = events.iter().map(|e| e.at).min().expect("an event");
         let end = events.iter().map(|e| e.at).max().expect("an event");
         let intervals = partition(&events, end);
-        let sum: i64 = intervals.iter().map(|i| secs(i.from, i.to)).sum();
-        let elapsed = secs(intervals[0].from, end);
+        let sum: std::time::Duration = intervals.iter().map(Interval::length).sum();
+        let elapsed = (end.0 - intervals[0].from.0).unsigned_abs();
         assert!(
             intervals[0].from <= first,
             "{feature}: starts at the first span"
