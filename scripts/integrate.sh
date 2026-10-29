@@ -5,6 +5,11 @@
 #   2. git merge --no-ff of each branch, message from scripts/templates/integrate-commit.txt, trailers from .git-trailers
 #   3. final gate through `make check` (scripts/gate.sh), keyed by the code paths: a HIT when the merged code paths equal a
 #      proven gate, a real run on a MISS that lists the code files that differ; red aborts with the summary, nothing is rerun
+#   3b. the long work (scripts/integrate-long.sh, `make integrate-long`): its result for the merged code tree is read from
+#      reports/integrate-long/<code tree>.json into the report and the summary; INTEGRATE_LONG=1 runs it here first (the
+#      branch must be pushed, the ci job waits for the pushed head). A pending or red result does not stop the boundary: a
+#      red one fails the target after the boundary commit; after a separate `make integrate-long`, run this target again
+#      (merged branches are skipped, the gate is a hit) to refresh the report
 #   4. make usage M=<milestone>
 #   5. merge reports/staging/*.md into SPEC.md section 9, BACKLOG.md and the decision files, delete them,
 #      make decisions-index (scripts/integrate-staging.py)
@@ -12,6 +17,7 @@
 #   7. commit the boundary files and print the boundary summary
 # Forward only: a failed step leaves the merges in place; fix with a new commit and run the target again (a branch that
 # is already merged is skipped). INTEGRATE_DATE overrides the date (tests). CAPS and USAGE_ARGS reach `make usage`.
+# shellcheck disable=SC2016 # backticks in single quotes are Markdown, not command substitution
 set -u
 LC_ALL=C
 export LC_ALL
@@ -32,10 +38,11 @@ branches="$*"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/integrate.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-# (1) the tree must be clean: the gate key hashes the code paths of the working tree, so stray code files would turn a hit into a miss
-dirty=$(git status --porcelain -- . ':(exclude)build-log')
+# (1) the tree must be clean: the gate key hashes the code paths of the working tree, so stray code files would turn a hit into a miss.
+# reports/integrate-long/ is output of the long work, written between two runs of this target and committed by it.
+dirty=$(git status --porcelain -- . ':(exclude)build-log' ':(exclude)reports/integrate-long')
 if [ -n "$dirty" ]; then
-  echo "integrate: working tree not clean (only build-log/ may differ):"
+  echo "integrate: working tree not clean (only build-log/ and reports/integrate-long/ may differ):"
   echo "$dirty"
   exit 1
 fi
@@ -131,6 +138,21 @@ $reason"
   greport="real run, no record for the merged code tree"
 fi
 
+# (3b) the long work
+lrec="reports/integrate-long/$tree.json"
+if [ "${INTEGRATE_LONG:-}" = 1 ]; then
+  echo "integrate: integrate-long on code tree $tree (the ci job needs the branch pushed)"
+  sh "$here/integrate-long.sh" "$m" || echo "integrate: the long work is red; the boundary continues and the target fails at the end"
+fi
+lstate=pending
+if [ -f "$lrec" ]; then
+  lworst=$(jq -r .exit_code "$lrec")
+  if [ "$lworst" = 0 ]; then lstate=OK; else lstate=RED; fi
+  lnote="long work: $lstate (worst exit code $lworst) on code tree $tree, $lrec"
+else
+  lnote="long work: not run for code tree $tree; push the branch, start 'make integrate-long M=$m' as a background job, then run 'make integrate M=$m FROM=\"$branches\"' again to refresh the report"
+fi
+
 # (4) usage
 echo "integrate: make usage M=$m"
 make --no-print-directory usage M="$m" || { echo "integrate: make usage failed; fix and run the target again"; exit 1; }
@@ -171,6 +193,28 @@ report="reports/readiness/$date-$m.md"
     echo '```'
   done
   echo
+  echo "## Long work"
+  echo
+  if [ -f "$lrec" ]; then
+    echo "Code tree \`$tree\`: $lstate, worst exit code $(jq -r .exit_code "$lrec"), $(jq -r .seconds "$lrec") s wall, finished $(jq -r .finished_at "$lrec") (\`$lrec\`)."
+    echo
+    echo "| Job | Lane | Exit | Seconds | Reused | Log |"
+    echo "|---|---|---|---|---|---|"
+    jq -r '.jobs[] | "| \(.name) | \(.lane) | \(.exit_code) | \(.seconds) | \(.hit) | \(.log) |"' "$lrec"
+    for n in $(jq -r '.jobs[].name' "$lrec"); do
+      g="reports/gate/$tree/$n.json"
+      [ -f "$g" ] || continue
+      echo
+      echo "Summary of \`$n\`:"
+      echo
+      echo '```text'
+      jq -r .summary "$g"
+      echo '```'
+    done
+  else
+    echo "The long work is pending: no result for code tree \`$tree\`. After the push, start \`make integrate-long M=$m\` as a background job and run \`make integrate\` again."
+  fi
+  echo
   echo "## Staging"
   echo
   cat "$tmp/staging.md"
@@ -206,9 +250,11 @@ git log --merges --format='  %h parents %p  %s' "$start..HEAD"
 echo "gate: $gstate on code tree $tree"
 echo "  $gnote"
 echo "  summary: $(echo "$summary" | tr '\n' ' ')"
+echo "  $lnote"
 echo "usage: reports/usage/$m.md"
 echo "staging:"
 sed 's/^/  /' "$tmp/staging.summary"
 echo "boundary report: $report"
 echo "commits since start:"
 git log --format='  %h %s' "$start..HEAD"
+[ "$lstate" != RED ] || { echo "integrate: the long work is red (see $lrec)"; exit 1; }

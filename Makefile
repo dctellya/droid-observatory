@@ -24,7 +24,7 @@ COVERAGE_MIN ?= 80
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-scripts check-gate-cache check-integrate integrate usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
@@ -43,7 +43,7 @@ check: ## All light checks (= mission-branch CI), cached by the code paths throu
 
 check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
 
-check-scripts: check-gate-cache check-integrate ## Shell tests of the repository scripts
+check-scripts: check-gate-cache check-integrate check-integrate-long ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
@@ -60,6 +60,13 @@ usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M
 integrate: ## Land a milestone: no-ff merge, final gate, usage, staging files (M=<milestone> FROM='<branch>...'), see README 'Running a boundary'
 	@test -n "$(M)" -a -n "$(FROM)" || { echo "usage: make integrate M=<milestone> FROM='<worktree-branch>...'" >&2; exit 2; }
 	@sh scripts/integrate.sh "$(M)" $(FROM)
+
+integrate-long: ## The integration's long work in parallel lanes: coverage, test timings, CI on the pushed head (M=<milestone>); one result file reports/integrate-long/<code tree>.json; start it as a background job
+	@test -n "$(M)" || { echo "usage: make integrate-long M=<milestone> [FORCE=1]" >&2; exit 2; }
+	@sh scripts/integrate-long.sh $(if $(FORCE),--force) "$(M)"
+
+check-integrate-long: ## Self-test of scripts/integrate-long.sh with a fake job set and a stub gh
+	@sh scripts/tests/integrate_long_test.sh
 
 check-integrate: ## Self-test of scripts/integrate.sh on throwaway repositories
 	@sh scripts/tests/integrate_test.sh
