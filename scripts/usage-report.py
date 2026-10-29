@@ -565,12 +565,12 @@ def minutes(a, b):
     return "%.2f" % ((parse_ts(b) - parse_ts(a)).total_seconds() / 60)
 
 
-def cross_check(script_dir, files, start, end, per_session):
+def cross_check(script_dir, files, start, end, per_session, prices_path):
     sh = os.path.join(script_dir, "usage-from-log.sh")
     if not os.path.exists(sh):
         return ["cross-check: unavailable (scripts/usage-from-log.sh not found)"]
     ids = sorted(per_session)
-    cmd = ["sh", sh] + list(files) + ["--embedded", "--from", start, "--to", end, "--session"] + ids
+    cmd = ["sh", sh] + list(files) + ["--embedded", "--prices", prices_path, "--from", start, "--to", end, "--session"] + ids
     proc = subprocess.run(cmd, capture_output=True, text=True)
     got = {}
     for line in proc.stdout.splitlines():
@@ -585,7 +585,7 @@ def cross_check(script_dir, files, start, end, per_session):
         if have != want:
             diffs.append("  %s: usage-report.py %s, usage-from-log.sh %s" % (sid, want, have))
     if proc.returncode == 0 and not diffs:
-        return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read against scripts/usage-from-log.sh --embedded)" % len(ids)]
+        return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read, cache write and the price of every model against scripts/usage-from-log.sh --embedded)" % len(ids)]
     return ["cross-check: DIFFERENT (exit %d)" % proc.returncode] + diffs[:50]
 
 
@@ -696,15 +696,16 @@ def build(args):
         for (sid, model), a in win.items():
             c = per.get(sid)
             if c is None:
-                per[sid] = [a.first, a.last, a.turns, a.i, a.o, a.cr]
+                per[sid] = [a.first, a.last, a.turns, a.i, a.o, a.cr, a.cw]
             else:
                 c[0], c[1] = min(c[0], a.first), max(c[1], a.last)
                 c[2] += a.turns
                 c[3] += a.i
                 c[4] += a.o
                 c[5] += a.cr
+                c[6] += a.cw
         for r in cross_check(os.path.dirname(os.path.abspath(__file__)), files, start, end,
-                             {k: tuple(str(x) for x in v) for k, v in per.items()}):
+                             {k: tuple(str(x) for x in v) for k, v in per.items()}, args.prices):
             emit(r)
         emit("")
 
