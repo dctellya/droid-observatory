@@ -10,6 +10,9 @@ use crate::ingest::IngestError;
 const FIELD: char = '\u{1f}';
 const RECORD: char = '\u{1e}';
 
+/// What git says (`LC_ALL=C`) of an object the clone does not hold.
+const MISSING_OBJECT: [&str; 3] = ["bad object", "unknown revision", "bad revision"];
+
 fn command(repo: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
@@ -69,13 +72,18 @@ pub(super) fn git_if_found(repo: &Path, args: &[&str]) -> Result<Option<String>,
 }
 
 /// Stdout of a command that fails when it names an object this clone does not hold (a run's head
-/// that was never fetched); that is "nothing there", not an error. Spawn failures still are.
+/// that was never fetched); that is "nothing there", not an error. Any other failure still is.
 pub(super) fn git_or_none(repo: &Path, args: &[&str]) -> Result<Option<String>, IngestError> {
     let output = run(repo, args)?;
-    Ok(output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).into_owned()))
+    if output.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if MISSING_OBJECT.iter().any(|text| stderr.contains(text)) {
+        Ok(None)
+    } else {
+        Err(failure(repo, args, &stderr))
+    }
 }
 
 /// One entry of `git worktree list --porcelain`.

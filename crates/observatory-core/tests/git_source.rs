@@ -168,7 +168,7 @@ fn integration_lane() -> observatory_core::model::LaneId {
 fn git_source_lists_mission_branch_and_worktrees() {
     let repo = Repo::new();
     assert_eq!(
-        GitSource::mission_branches(&repo.main).unwrap(),
+        GitSource::mission_branches(&repo.main, &GitOptions::default()).unwrap(),
         vec!["mission/demo".to_owned()]
     );
 
@@ -239,7 +239,7 @@ fn a_branch_that_does_not_exist_is_an_error_not_an_empty_source() {
     assert!(err.to_string().contains("mission/absent"), "{err}");
 
     let not_a_repo = tempfile::tempdir().unwrap();
-    assert!(GitSource::mission_branches(not_a_repo.path()).is_err());
+    assert!(GitSource::mission_branches(not_a_repo.path(), &GitOptions::default()).is_err());
 }
 
 #[test]
@@ -616,7 +616,7 @@ fn the_real_repository_yields_lane6_events_and_no_unknown() {
     let snapshot = source.snapshot().unwrap();
     println!(
         "mission branches: {:?}",
-        GitSource::mission_branches(&repo).unwrap()
+        GitSource::mission_branches(&repo, &GitOptions::default()).unwrap()
     );
     for worktree in &snapshot.worktrees {
         println!(
@@ -652,6 +652,14 @@ fn the_real_repository_yields_lane6_events_and_no_unknown() {
     .unwrap();
     assert_eq!(events.len(), listed.lines().count());
 
+    let first_milestone_merge = events
+        .iter()
+        .find(|event| event.milestone_id.is_some())
+        .and_then(|event| match &event.source {
+            SourcePtr::Git { sha, .. } => Some(sha.clone()),
+            _ => None,
+        })
+        .expect("the mission branch has a merge a milestone made");
     let mut all = events;
     if let Ok(path) = std::env::var("GIT_SOURCE_RUNS_JSON") {
         let json: Vec<serde_json::Value> =
@@ -688,6 +696,26 @@ fn the_real_repository_yields_lane6_events_and_no_unknown() {
                 of_run.first().and_then(|e| e.milestone_id.clone()),
             );
             assert!(!of_run.is_empty());
+            // A run whose head descends from a milestone merge has a milestone.
+            let descends = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args([
+                    "merge-base",
+                    "--is-ancestor",
+                    &first_milestone_merge,
+                    &run.head_sha,
+                ])
+                .status()
+                .unwrap()
+                .success();
+            if descends {
+                assert!(
+                    of_run.iter().all(|e| e.milestone_id.is_some()),
+                    "run {} descends from {first_milestone_merge}",
+                    run.run_id
+                );
+            }
         }
         all.extend(gate);
     }

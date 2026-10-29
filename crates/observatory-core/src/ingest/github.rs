@@ -17,6 +17,7 @@ use super::forge::{
     Attestation, Check, CheckConclusion, CheckSource, Forge, ForgeError, GateFacts, MergeMethod,
     MergePolicy, Merged, Poll, Pr, PrState, RequiredCheck, Review, RuleAttribution, WindowChange,
 };
+use super::git::{FastCheckRun, RunConclusion};
 use crate::config::{GithubConfig, MergePolicy as ConfigMergePolicy};
 use crate::mapping::MappingVersion;
 use crate::model::{
@@ -27,6 +28,10 @@ use crate::secrets::Secret;
 /// The production API host; tests point the client at a loopback server instead.
 const API_BASE: &str = "https://api.github.com";
 const API_VERSION: &str = "2022-11-28";
+/// The workflow that runs the fast check on every push to a mission branch.
+const MISSION_BRANCH_WORKFLOW: &str = "mission-branch.yml";
+/// The most runs the API returns per page; a branch has far fewer than this many in flight.
+const RUNS_PER_PAGE: u32 = 100;
 
 /// One response, reduced to what the client reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -356,6 +361,13 @@ struct RawRun {
     conclusion: Option<String>,
     html_url: String,
     updated_at: Option<String>,
+    /// Absent from the recorded fixtures of the per-head poll, which never read them.
+    #[serde(default)]
+    head_sha: Option<String>,
+    #[serde(default)]
+    run_started_at: Option<String>,
+    #[serde(default)]
+    created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -451,6 +463,44 @@ fn attestation_id(raw: &RawAttestation, subject: &str, index: usize) -> String {
 }
 
 impl<T: HttpTransport> GitHubClient<T> {
+    /// The runs of the `mission-branch.yml` workflow on `branch`, newest first as the forge
+    /// lists them, as fast-check runs: the head they ran on, when they started and, once they
+    /// have a verdict, when it came. A run the forge reports without a head or a start time says
+    /// nothing a gate event could be attributed by and is left out.
+    pub fn mission_branch_runs(&self, branch: &str) -> Result<Vec<FastCheckRun>, ForgeError> {
+        let listed: RawRuns = self.get_json(&format!(
+            "/actions/workflows/{MISSION_BRANCH_WORKFLOW}/runs?branch={branch}&per_page={RUNS_PER_PAGE}"
+        ))?;
+        let mut runs = Vec::with_capacity(listed.workflow_runs.len());
+        for run in listed.workflow_runs {
+            let (Some(head_sha), Some(started)) = (
+                run.head_sha.clone(),
+                run.run_started_at.as_deref().or(run.created_at.as_deref()),
+            ) else {
+                continue;
+            };
+            let started_at = parse_time(started, "run_started_at")?;
+            let completed = run.status == "completed";
+            runs.push(FastCheckRun {
+                run_id: run.id,
+                url: run.html_url.clone(),
+                head_sha,
+                started_at,
+                finished_at: if completed {
+                    parse_optional_time(run.updated_at.as_deref(), "updated_at")?
+                } else {
+                    None
+                },
+                conclusion: run
+                    .conclusion
+                    .as_deref()
+                    .filter(|_| completed)
+                    .and_then(RunConclusion::from_github),
+            });
+        }
+        Ok(runs)
+    }
+
     fn head_runs(&self, head_sha: &str) -> Result<RawRuns, ForgeError> {
         self.get_json(&format!("/actions/runs?head_sha={head_sha}"))
     }

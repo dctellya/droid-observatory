@@ -85,6 +85,20 @@ impl Store {
         Ok(added)
     }
 
+    /// Like `insert_events`, and returns the events that were not stored yet: what a poll that
+    /// re-reads the same facts every time tells the window.
+    pub fn insert_new_events(&mut self, events: &[Event]) -> Result<Vec<Event>, StoreError> {
+        let tx = self.conn.transaction()?;
+        let mut new = Vec::new();
+        for event in events {
+            if insert_events_in(&tx, std::slice::from_ref(event))? == 1 {
+                new.push(event.clone());
+            }
+        }
+        tx.commit()?;
+        Ok(new)
+    }
+
     /// Deletes the events read from the lines of a session file after its first that start
     /// before `below_offset` (with their usage rows): the file was rewritten and those
     /// pointers name bytes that moved. The first line keeps its events, see `Retraction`.

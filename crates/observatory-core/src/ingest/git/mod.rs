@@ -9,11 +9,15 @@
 //! read-only and keeps no raw text: a merge event points at its commit (`SourcePtr::Git`).
 
 mod cmd;
+mod sync;
+
+pub use sync::{GitSync, GitSyncError, git_sync};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::config::MissionConfig;
 use crate::ingest::IngestError;
 use crate::mapping::MappingVersion;
 use crate::model::{
@@ -22,20 +26,36 @@ use crate::model::{
 
 use cmd::{RawMerge, git, git_if_found};
 
-/// Where the mission's refs live. The defaults are the project's branch convention
-/// (architecture §16): `mission/<name>` for the mission, `wt/<milestone>` per milestone.
+/// The placeholder of `[mission].branch_pattern` that stands for the mission name.
+const NAME_PLACEHOLDER: &str = "<name>";
+/// A full object name in hex: the only text of a run's head that reaches git.
+const OBJECT_NAME_LEN: usize = 40;
+
+/// Where the mission's refs live: the mission branches by the prefix of `[mission].branch_pattern`,
+/// `wt/<milestone>` per milestone (architecture §16).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitOptions {
     pub mission_prefix: String,
     pub worktree_prefix: String,
 }
 
-impl Default for GitOptions {
-    fn default() -> Self {
+impl GitOptions {
+    /// The options of a `[mission].branch_pattern` such as `mission/<name>`: the mission branches
+    /// are the branches that start with the text before the name.
+    pub fn from_branch_pattern(pattern: &str) -> Self {
+        let prefix = pattern
+            .split_once(NAME_PLACEHOLDER)
+            .map_or(pattern, |(before, _)| before);
         Self {
-            mission_prefix: "mission/".into(),
+            mission_prefix: prefix.to_owned(),
             worktree_prefix: "wt/".into(),
         }
+    }
+}
+
+impl Default for GitOptions {
+    fn default() -> Self {
+        Self::from_branch_pattern(&MissionConfig::default().branch_pattern)
     }
 }
 
@@ -117,10 +137,10 @@ pub struct GitSource {
 }
 
 impl GitSource {
-    /// The mission branches of the repository, as `git for-each-ref refs/heads/mission/*` lists
-    /// them.
-    pub fn mission_branches(repo: &Path) -> Result<Vec<String>, IngestError> {
-        branches_under(repo, &GitOptions::default().mission_prefix)
+    /// The mission branches of the repository, as `git for-each-ref refs/heads/<prefix>*` lists
+    /// them, the prefix being the one `options` took from `[mission].branch_pattern`.
+    pub fn mission_branches(repo: &Path, options: &GitOptions) -> Result<Vec<String>, IngestError> {
+        branches_under(repo, &options.mission_prefix)
     }
 
     /// A source for `branch` of `repo`. A branch the repository does not have is an error: an
@@ -311,8 +331,12 @@ impl GitSource {
 
     /// One `integration.merged` per first-parent merge of the mission branch, oldest first.
     pub fn integration_events(&self) -> Result<Vec<Event>, IngestError> {
-        Ok(self
-            .merges()?
+        Ok(self.integration_events_of(self.merges()?))
+    }
+
+    /// The events of `merges`, which a poll reads once and shares with `gate_command_events_of`.
+    fn integration_events_of(&self, merges: Vec<Merge>) -> Vec<Event> {
+        merges
             .into_iter()
             .map(|merge| {
                 self.event(
@@ -327,7 +351,7 @@ impl GitSource {
                     },
                 )
             })
-            .collect())
+            .collect()
     }
 
     /// `gate_command.run` for every run and `gate_command.passed` or `.failed` for each that
@@ -337,10 +361,17 @@ impl GitSource {
     /// merge behind it has no milestone: guessing one would put the run in the wrong section of
     /// the Integrate lane.
     pub fn gate_command_events(&self, runs: &[FastCheckRun]) -> Result<Vec<Event>, IngestError> {
-        let by_sha: HashMap<String, MilestoneId> = self
-            .merges()?
-            .into_iter()
-            .filter_map(|merge| Some((merge.sha, merge.milestone?)))
+        self.gate_command_events_of(&self.merges()?, runs)
+    }
+
+    fn gate_command_events_of(
+        &self,
+        merges: &[Merge],
+        runs: &[FastCheckRun],
+    ) -> Result<Vec<Event>, IngestError> {
+        let by_sha: HashMap<&str, &MilestoneId> = merges
+            .iter()
+            .filter_map(|merge| Some((merge.sha.as_str(), merge.milestone.as_ref()?)))
             .collect();
         let mut heads: HashMap<&str, Option<MilestoneId>> = HashMap::new();
         let mut events = Vec::with_capacity(runs.len() * 2);
@@ -392,10 +423,10 @@ impl GitSource {
     fn milestone_integrated_last(
         &self,
         head: &str,
-        by_sha: &HashMap<String, MilestoneId>,
+        by_sha: &HashMap<&str, &MilestoneId>,
     ) -> Result<Option<MilestoneId>, IngestError> {
         // A run's head comes from a forge; anything but a full object name never reaches git.
-        if head.len() < 40 || !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if head.len() < OBJECT_NAME_LEN || !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Ok(None);
         }
         let commit = format!("{head}^{{commit}}");
@@ -403,7 +434,13 @@ impl GitSource {
             &self.repo,
             &["rev-list", "--first-parent", "--merges", &commit, "--"],
         )?;
-        Ok(walked.and_then(|walked| walked.lines().find_map(|sha| by_sha.get(sha)).cloned()))
+        Ok(walked.and_then(|walked| {
+            walked
+                .lines()
+                .find_map(|sha| by_sha.get(sha))
+                .copied()
+                .cloned()
+        }))
     }
 }
 
