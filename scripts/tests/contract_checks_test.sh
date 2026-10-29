@@ -474,6 +474,24 @@ gh_clear
 gh_rule 1 'branches/demo/base' ''
 gh_check g7-demo-base FAIL "demo/base answers nothing"
 
+# B-184: `git-baseline.txt` is the range base of the history checks (it moves to the boundary tip) and
+# `demo-base-cut.txt` is the commit `demo/base` was cut from (it never moves); g7-demo-base reads only the second.
+cut=1111111111111111111111111111111111111111
+tip=2222222222222222222222222222222222222222
+sc=$(fresh split-checks)
+cp "$checks/lib.sh" "$checks/g7-demo-base.sh" "$sc/"
+put "$sc" git-baseline.txt "$tip"
+put "$sc" demo-base-cut.txt "$cut"
+gh_clear
+gh_rule 1 'branches/demo/base' 'demo/base'
+gh_rule 2 "compare/$cut...demo/base" 'ahead'
+out=$(PATH="$gs/bin:$PATH" GH_STUB="$gs/rules" GH_TOKEN=stub-token CONTRACT_REPO=o/r CONTRACT_ROOT="$root" sh "$sc/g7-demo-base.sh" 2> "$tmp/err")
+case "$out" in "g7-demo-base ok"*) ;; *) fail "g7-demo-base does not read demo-base-cut.txt: '$out' ($(cat "$tmp/err"))" ;; esac
+[ -s "$checks/demo-base-cut.txt" ] || fail "scripts/contract-checks/demo-base-cut.txt is missing or empty"
+[ -s "$checks/git-baseline.txt" ] || fail "scripts/contract-checks/git-baseline.txt is missing or empty"
+grep -q 'demo-base-cut.txt' "$checks/README.md" || fail "the contract-checks README does not document demo-base-cut.txt"
+grep -q 'git-baseline.txt' "$checks/README.md" || fail "the contract-checks README does not document git-baseline.txt"
+
 gh_clear
 gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["refs/heads/demo/base"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"}]}},{"type":"non_fast_forward"}]}'
 gh_rule 2 'rulesets --jq' '42'
