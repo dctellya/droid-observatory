@@ -29,8 +29,10 @@ const REPO: &str = "dctellya/droid-observatory";
 const BRANCH: &str = "demo/smoke-1";
 const API: &str = "https://api.github.com";
 const HEAD_SHA: &str = "1d994af00fb141466e46021e9c6f8adbf314db55";
-/// 40 characters after the prefix: the shape of a fine-grained PAT, and not a real one.
-const TOKEN: &str = "github_pat_11AAAAAAA0abcdefghijklmnopqrst_0123456789abcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
+/// The shape of a fine-grained PAT, built at run time: a literal would trip secret scanners on push.
+fn fake_token() -> String {
+    ["github", "pat", &"x".repeat(82)].join("_")
+}
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/github/demo-smoke-1")
@@ -564,7 +566,7 @@ fn serve(connections: usize) -> (String, std::thread::JoinHandle<Vec<String>>) {
 #[test]
 fn token_is_redacted_from_logs() {
     let (base, server) = serve(3);
-    let transport = UreqTransport::new(Some(Secret::new(TOKEN.into())), Duration::from_secs(5));
+    let transport = UreqTransport::new(Some(Secret::new(fake_token())), Duration::from_secs(5));
     let client = GitHubClient::new(transport, REPO).with_base_url(&base);
     let mut source = GitHubSource::new(
         client,
@@ -597,7 +599,7 @@ fn token_is_redacted_from_logs() {
         assert!(
             lower.contains(&format!(
                 "authorization: bearer {}",
-                TOKEN.to_ascii_lowercase()
+                fake_token().to_ascii_lowercase()
             )),
             "the token is sent to the API: {head}"
         );
@@ -624,7 +626,8 @@ fn token_is_redacted_from_logs() {
     assert!(lines[1].contains("/actions/runs?head_sha="), "{}", lines[1]);
     assert!(lines[2].contains("/status"), "{}", lines[2]);
     let lower = log.to_ascii_lowercase();
-    for needle in [TOKEN, "github_pat_", "authorization", "bearer"] {
+    let token = fake_token();
+    for needle in [token.as_str(), "github_pat_", "authorization", "bearer"] {
         assert!(
             !lower.contains(&needle.to_ascii_lowercase()),
             "the log holds {needle}"
