@@ -110,8 +110,35 @@ Two ways to see the board (SPEC §6):
   `~/.droid-observatory/config.toml`.
 - `config/prices/<date>.toml`: the dated price table that turns tokens into money. Each cost on
   the board names the table it used.
-- `.env.example`: environment variables, including the Grafana Cloud OTLP contract. Secrets go
+- `.env.example`: environment variables (`GITHUB_TOKEN`, `FORGE_LIVE`, the CI-only OTLP variables). Secrets go
   in the OS keychain on the desktop; the environment is the fallback and what CI uses.
+
+## Environment and secrets
+
+See `.env.example`. Secrets come from the OS keychain (`droid-observatory/<name>` entries) or the environment, never from the
+repository, the store or logs. The forge (the Gate lane's GitHub source) is off unless `GITHUB_TOKEN` is set or the owner starts the
+app with `FORGE_LIVE=1`, which lets it read the keychain item `droid-observatory/github-token` (`FORGE_LIVE=1 make app-dev`, or
+`GITHUB_TOKEN="$(gh auth token)" make app-dev` for the token without the keychain). `FORGE_LIVE=1` is the owner's launch from his
+own terminal: no process a worker starts reads the keychain (F-218, F-219). The token is a read-only fine-grained PAT, so the
+Merge button surfaces the `403` and the owner merges by hand (D-014).
+
+## Demo branch pair (test infrastructure)
+
+The Gate lane is exercised against a branch pair in this repository (D-040): `demo/base` is long-lived test infrastructure and
+stays; it carries the ruleset `demo-gate` (PR required, required check `demo-gate`, no force push) and the workflow
+`.github/workflows/demo-gate.yml`, which fails while the label `demo:red` is on the pull request. PRs come from `demo/*` into
+`demo/base`; every `demo/*` branch other than `demo/base` is deleted after its run (a `gh` step, not an observed event).
+After the M4 validation, on 2026-10-29T22:20:16Z:
+
+```sh
+gh api repos/dctellya/droid-observatory/branches --paginate --jq '.[].name' | grep '^demo/'
+```
+
+```text
+demo/base
+```
+
+Pair PRs of the M4 validation: #29, #32, #33 and #34 (merge `0a853d9`).
 
 ## Running it as a mission
 
@@ -173,10 +200,11 @@ the app's last event, `handed_to_cd`).
 
 ## Observability
 
-Grafana Cloud over OTLP is the telemetry backend (D-004): the app's own traces and metrics,
-and the Panel's mission series (`observatory.*`). Off by default; the app works fully offline.
-Endpoint and credentials come from `OTEL_EXPORTER_OTLP_*` or the keychain, never from the
-repository.
+The app exports the Panel's mission series (`observatory.*`) over OTLP to a local collector
+(`[telemetry].endpoint`, default `http://localhost:4318`, D-046); the collector is configured for the sink (Grafana Cloud, a local
+Grafana stack or any provider), so the app holds no provider credential. Off by default; the app works fully offline. An optional
+header comes from the keychain item named by `[telemetry].headers_keychain_item`, never from the repository. CI telemetry
+(B-002) stays deferred.
 
 ## Repository layout
 
@@ -209,6 +237,7 @@ Rule 10: real time and usage per milestone, stated here as the work lands.
 | M1 board, replay, attach | 342.0 min of assistant time in 23 parent sessions (first worker 2026-10-23 12:29Z, last validator finished 2026-10-24 04:08Z; a 4 h 13 min owner pause and two 5-hour usage limits, 255.4 min in total, are inside that wall time) | 17 workers (this integration included), scrutiny and user-testing validators with their 25 children | 110.38 USD-eq of the 110 cap on workers, validators and orchestrator subagents; the orchestrator's own delta is 115.74 USD-eq against its cap of 22 (`reports/usage/m1.md`) |
 | M2 host | 871.95 min of wall clock from the first worker (2026-10-24 05:04:43Z) to the report time 19:36:40Z, of which 121.3 min are one `unrecoverable_usage_402` throttle; episode 4 (Model-Router fallback to `kimi-k3`, SPEC §9 F-046) voided the sessions listed in that row | 9 workers (this integration included), validators in five scrutiny and four user-testing rounds | 120.61 USD-eq of the 50 cap on workers, validators and orchestrator subagents; the orchestrator's own M2 spend is over its 30 USD-eq stop (118.84 USD-eq on the log's fable turns); record mission-to-date 694.66 USD-eq, 110.3 % of the 630 hard stop (`reports/usage/m2.md`) |
 | M3 controls | 620.1 min of wall clock from the first worker (2026-10-25 07:59:07Z) to the end of the usage window 18:19:14Z, of which 15.64 min are one `unrecoverable_usage_402` throttle (the F-057 verification, SPEC §9 F-132) | 19 workers (this integration included), two scrutiny rounds and three user-testing rounds (a fourth session, `1653b1f7`, was stopped by the 402) | 210.98 USD-eq in the window against the cap 110 (over); the orchestrator's own 68.81 USD-eq against 30 (over); mission to date 990.09 USD-eq, past the 950 stop-and-decide line (`reports/usage/m3.md`) |
+| M4 mission branch, gate, fix loop | the window is 2026-10-25T18:19:15Z to 2026-10-29T22:05:24Z (4.1 days), of which 4 usage-limit gaps (1893 min) and 13 owner gaps (3067 min) are idle; the first M4 worker started 2026-10-29 09:25Z and the last implementation feature ended 21:10Z | 38 worker sessions (1662 turns, this integration excluded), scrutiny in three rounds (32, 3 and 2 review subagents) and user testing in two rounds, 48 validator sessions | 253.73 USD-eq in the window against the cap 200 (over); the orchestrator's own 111.86 USD-eq against 30 (over); 7.93 USD-eq per assertion fulfilled against M3's 4.75; mission to date 1260.74 USD-eq of the 1350 notify-and-ask line (`reports/usage/m4.md`, D-043) |
 
 Token usage is pasted from the session sidecars into `reports/usage/<milestone>.md` at each
 integration; the observatory's first job is to make that number visible.

@@ -17,13 +17,16 @@ Spec: `SPEC.md` (approved 2026-10-22, amended v0.4 at the M0 to M1 boundary; the
 
 Current state: the walking skeleton (S), the stream capture and mapping milestone (M0), the board in replay and
 attach (M1), the host (M2, on 2026-10-24: `RpcSource`, launch form, hosted launch recipe D-034, live output) and the
-controls (M3, on 2026-10-25: human actions, stall flag, cycle template D-035, e2e harness D-037) are
+controls (M3, on 2026-10-25: human actions, stall flag, cycle template D-035, e2e harness D-037) and the mission branch, gate
+and fix loop (M4, on 2026-10-29: `GitSource`, `GitHubSource` behind the `Forge` trait, gate group, Merge button, demo pair D-040) are
 integrated on `mission/observatory-v1`: core crate, canonical `Event`, mapping v1 with
 its golden file, SQLite pointer store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the
 usage-log source (`turn.usage` is Panel data, D-029), a Leptos board with Details and agents views (D-030: go) and the
 Tauri host with live attach and hosted launch. Each later milestone deepens one area from it. From M2 on, a change to the store schema
 is a new numbered migration (`0002_*.sql`); `0001_init.sql` is never edited in place again (a dogfooding store exists at
 `~/.droid-observatory/observatory.sqlite`).
+The forge reads the GitHub token from `GITHUB_TOKEN`, or from the keychain only under the owner's `FORGE_LIVE=1` launch; no
+process a worker starts reaches the keychain (F-218, F-219, F-231).
 
 ## Setup, build, test
 
@@ -195,12 +198,14 @@ Models per role (rule 19; `.factory/settings.json`; D-006):
 | Orchestrator | `claude-fable-5.1` |
 | Workers | `claude-sonnet-5-5` |
 | Validators (scrutiny, user testing) | `claude-opus-5-5` |
-| Subagents | `claude-sonnet-5-5` for mechanical work and flow runners, `claude-opus-5-5` for scrutiny reviewers and verdicts; pinned by the droid files in `.factory/droids/` (D-039, SPEC §2); the Task `complexity` tier routes nothing here |
+| Subagents | `claude-sonnet-5-5` for mechanical work, flow runners and the per-claim reviews of scrutiny and user testing (one batched task per feature); `claude-opus-5-5` for the validators' synthesis and verdicts only; pinned by the droid files in `.factory/droids/` (D-039, D-044, SPEC §2); the Task `complexity` tier routes nothing here |
 | Scratch missions (self-checks) | `claude-haiku-4-5-20251001`, effort `low` (F-042, SPEC §2) |
 
 Command: see README "Running it as a mission".
 Reasoning effort: orchestrator `high`, workers `high`, validators `high` (SPEC §2).
-A model change is a decision file.
+A model change is a decision file. Rule D (D-044): the validators keep Opus for the synthesis; their per-claim review subagents run on
+the pinned Sonnet droid, one batched task per feature, and Opus re-reads only the claims the Sonnet pass marks failed or unsure; the
+inverse (back to Opus) applies when a Sonnet pass misses a defect the synthesis then finds.
 
 The human answers only at milestone boundaries or when the stall flag is up (rule 15).
 Deviations from the spec are proposed with reason and cost, and wait for approval (rule 9).
@@ -224,8 +229,9 @@ contain secrets: render read-only, never upload, never copy into the store.
   Checks API (no Checks permission). Keychain items are generic passwords with service
   `droid-observatory/<name>` (see `reports/readiness/2026-10-22-dependency-readiness.md`).
 
-Grafana Cloud OTLP (`OTEL_EXPORTER_OTLP_*`) is the telemetry backend; export is off unless
-`[telemetry].enabled = true`.
+Telemetry goes to a local OTLP collector (`[telemetry].endpoint`, default `http://localhost:4318`, D-046); the collector holds the
+sink (Grafana Cloud or any provider) and the app holds no provider credential; export is off unless `[telemetry].enabled = true`.
+The owner's `FORGE_LIVE=1` launch is the only path from the app to the keychain for the GitHub token (F-218).
 
 ## Do not
 
