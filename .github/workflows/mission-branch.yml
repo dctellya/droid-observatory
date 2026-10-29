@@ -199,9 +199,19 @@ jobs:
           CONTRACT_TESTLOG: none
         run: make check-contract
 
+  # The UI kit v2 lint (scripts/check-kit.py): mono and tabular figures, spacing overrides, recorded departures.
+  kit:
+    name: kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: UI kit lint
+        run: make check-kit
+
   mission-checks:
     name: mission-checks
-    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract]
+    needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract, kit]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

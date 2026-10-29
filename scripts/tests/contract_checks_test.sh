@@ -618,7 +618,7 @@ yq -e '.jobs.contract.steps[] | select(.with."fetch-depth" == 0)' "$root/.github
 yq -e '.jobs."mission-checks".needs | contains(["contract"])' "$root/.github/workflows/mission-branch.yml" > /dev/null 2>&1 || fail "mission-checks.needs does not list contract"
 sh "$root/scripts/check-ci-jobs.sh" "$tmp/wf-no-contract.yml" > /dev/null 2>&1 && fail "check-ci-jobs accepted a missing workflow file"
 d=$(fresh ci1)
-sed 's/needs: \[detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract\]/needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage]/' "$root/.github/workflows/mission-branch.yml" > "$d/mb.yml"
+sed 's/needs: \[detect, docs, links, workflows, secrets, rust, deny, machete, coverage, contract, kit\]/needs: [detect, docs, links, workflows, secrets, rust, deny, machete, coverage, kit]/' "$root/.github/workflows/mission-branch.yml" > "$d/mb.yml"
 sh "$root/scripts/check-ci-jobs.sh" "$d/mb.yml" "$root/.github/workflows/demo-gate.yml" > /dev/null 2>&1 && fail "check-ci-jobs accepts mission-checks without the contract job"
 grep -q 'contract' "$root/scripts/contract-checks/README.md" 2> /dev/null || fail "scripts/contract-checks/README.md is missing"
 grep -q 'G8' "$root/scripts/contract-checks/README.md" 2> /dev/null || fail "README.md does not document the G8 gate-record stage"

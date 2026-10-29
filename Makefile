@@ -24,7 +24,7 @@ COVERAGE_MIN ?= 80
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-contract check-contract-checks check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-kit check-kit-lint check-contract check-contract-checks check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
@@ -42,9 +42,9 @@ check: ## All light checks (= mission-branch CI), cached by the code paths throu
 	@$(GATE) check -- $(MAKE) --no-print-directory check-all
 	@CONTRACT_REQUIRE_TESTLOG=1 $(MAKE) --no-print-directory check-contract
 
-check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-scripts fmt-check lint test deny machete replay-fixtures
+check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-kit check-scripts fmt-check lint test deny machete replay-fixtures
 
-check-scripts: check-gate-cache check-integrate check-integrate-long check-contract-checks ## Shell tests of the repository scripts
+check-scripts: check-gate-cache check-integrate check-integrate-long check-contract-checks check-kit-lint ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
@@ -68,6 +68,12 @@ integrate-long: ## The integration's long work in parallel lanes: coverage, test
 
 check-contract: ## The mechanical clauses of the validation contract: one line per check (scripts/contract-checks/README.md); GH_TOKEN enables the gh checks
 	@sh scripts/contract-checks/run-all.sh
+
+check-kit: ## UI-kit lint: mono and tabular figures, spacing overrides, recorded departures (scripts/check-kit.py, apps/observatory-app/kit-departures.md)
+	@python3 scripts/check-kit.py
+
+check-kit-lint: ## Self-test of the UI-kit lint: green on the tree, red on a planted override or sans cell, wiring
+	@sh scripts/tests/kit_lint_test.sh
 
 check-contract-checks: ## Self-test of the contract checks: green on the tree, red on a planted violation
 	@sh scripts/tests/contract_checks_test.sh
