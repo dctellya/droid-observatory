@@ -22,6 +22,9 @@ export const FIXTURE_ROOT = join(REPO_ROOT, 'fixtures/streams/2026-10-22-observa
 export const HOSTED_REPO = join(RUN_DIR, 'repo');
 export const HOSTED_MISSION_FILE = join(RUN_DIR, 'mission.md');
 
+/** Port of the loopback forge the gate spec starts (lib/forge.ts); 3142-3149 are the mission's scratch ports. */
+export const FORGE_STUB_PORT = 3147;
+
 /** How long a scenario waits for something the app does on its own. */
 export const WAIT_MS = 30_000;
 
@@ -48,6 +51,7 @@ export function prepareRunDir(): void {
     '[github]',
     // The gate spec feeds the window its own polls; a real poll of the repository would race them.
     'poll_interval_s = 3600',
+    `api_base = "http://127.0.0.1:${FORGE_STUB_PORT}"`,
     '',
     '[intervention]',
     'stall_threshold_min = 1',

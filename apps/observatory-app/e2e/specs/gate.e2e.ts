@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { $, browser, expect } from '@wdio/globals';
 import type { ChainablePromiseElement } from 'webdriverio';
+import { appLog, query } from '../lib/attach.js';
 import { REPORT_DIR, WAIT_MS } from '../lib/env.js';
+import { type ForgeStub, startForgeStub } from '../lib/forge.js';
 import { byId, launchHosted, openBoardOf } from '../lib/hosted.js';
 import { setTheme } from '../lib/theme.js';
 
@@ -10,6 +12,12 @@ const CARD = 'card-e2e-gate';
 /** Lane ids and numbers of the default engineering template (config/cycles/engineering.toml). */
 const BUILD = { id: 'build', number: 3 };
 const GATE = { id: 'gate', number: 7 };
+
+const PR = 24;
+const REFUSED = `Merge of PR #${PR} into demo/base refused: token lacks pull_requests:write. Merge in GitHub; the badge updates from the next poll.`;
+
+/** The lines of the app log that show the merge request of the PR leaving the app. */
+const putLines = () => appLog().filter((line) => line.includes('github.request') && line.includes(`pulls/${PR}/merge`));
 
 const cardIn = (lane: string) => $(`section[data-lane="${lane}"] [aria-label="${CARD}"]`);
 
@@ -34,9 +42,17 @@ async function png(name: string, target: ChainablePromiseElement): Promise<void>
 }
 
 describe('the Gate lane of a hosted mission after the pull request polls', () => {
+  let forge: ForgeStub;
+  let firstRow = 0;
+
   before(async () => {
+    forge = await startForgeStub();
     await launchHosted(BRANCH);
     await openBoardOf(BRANCH);
+  });
+
+  after(async () => {
+    await forge.close();
   });
 
   it('red check moves the affected card to the build lane with cycle 1', async () => {
@@ -77,6 +93,62 @@ describe('the Gate lane of a hosted mission after the pull request polls', () =>
     await cardIn(GATE.id).waitForDisplayed({ timeout: WAIT_MS });
     await expect($(`[aria-label="${CARD}"] [data-testid="card-cycle"]`)).toHaveText('cycle 1');
     await png('merge-button', byId('merge'));
+  });
+
+  it('merge click opens a confirmation naming the PR and the target', async () => {
+    firstRow = Number(query('SELECT COALESCE(MAX(id), 0) FROM human_actions')[0]);
+    await byId('merge').click();
+    const dialog = byId('merge-confirmation');
+    await dialog.waitForDisplayed({ timeout: WAIT_MS, timeoutMsg: 'no confirmation after the click' });
+    await expect(byId('merge-confirmation-text')).toHaveText(expect.stringContaining(`PR #${PR}`));
+    await expect(byId('merge-confirmation-text')).toHaveText(expect.stringContaining('demo/base'));
+    expect(forge.requests).toEqual([]);
+    expect(putLines()).toEqual([]);
+    await png('confirm-dialog', dialog);
+  });
+
+  it('cancelling the confirmation sends nothing and keeps the button', async () => {
+    await byId('merge-cancel').click();
+    await expect(byId('merge-confirmation')).not.toBeExisting();
+    await expect(byId('merge')).toBeDisplayed();
+    expect(forge.requests).toEqual([]);
+    expect(query(`SELECT COUNT(*) FROM human_actions WHERE kind = 'merge' AND id > ${firstRow}`)).toEqual(['0']);
+  });
+
+  it('confirming the merge with the read-only token shows the refusal message', async () => {
+    await byId('merge').click();
+    await byId('merge-confirm').click();
+    const result = byId('merge-result');
+    await result.waitForDisplayed({ timeout: WAIT_MS, timeoutMsg: 'no answer after the confirmation' });
+    await expect(result).toHaveText(REFUSED);
+    await expect(byId('merge')).toBeDisplayed();
+    await expect(byId('merge-confirmation')).not.toBeExisting();
+    expect(forge.requests).toEqual([`PUT /repos/dctellya/droid-observatory/pulls/${PR}/merge`]);
+    await browser.waitUntil(() => putLines().length === 1, { timeout: WAIT_MS, timeoutMsg: 'no PUT line in the app log' });
+    expect(putLines()[0]).toContain('status=403');
+    await png('403-message', result);
+  });
+
+  it('two presses of Merge after the 403 send two requests', async () => {
+    await byId('merge').click();
+    await byId('merge-confirm').click();
+    await browser.waitUntil(() => forge.requests.length === 2, { timeout: WAIT_MS, timeoutMsg: 'no second request' });
+    await browser.waitUntil(async () => (await byId('merge').isEnabled()) === true, { timeout: WAIT_MS });
+    await expect(byId('merge-result')).toHaveText(REFUSED);
+    await browser.waitUntil(() => putLines().length === 2, { timeout: WAIT_MS, timeoutMsg: 'no second PUT line in the app log' });
+    expect(putLines().every((line) => line.includes('status=403'))).toBe(true);
+    expect(
+      query(`SELECT COUNT(*) FROM human_actions WHERE kind = 'merge' AND state = 'refused' AND id > ${firstRow}`),
+    ).toEqual(['2']);
+    // Each press is one human-overlay approval.given event on the Gate lane (the store keeps lane ids since migration 0002).
+    expect(
+      query(
+        `SELECT COUNT(*) FROM events e JOIN human_actions a ON a.id = e.action_id WHERE e.kind = 'approval.given' ` +
+          `AND e.overlay = 'human' AND e.role = 'human' AND e.source = 'app' AND e.lane = '${GATE.id}' ` +
+          `AND a.kind = 'merge' AND a.id > ${firstRow}`,
+      ),
+    ).toEqual(['2']);
+    await png('two-presses-refused', byId('gate-group'));
   });
 
   it('a merged pull request reads handed to CD with the sha, the PR and the merger', async () => {

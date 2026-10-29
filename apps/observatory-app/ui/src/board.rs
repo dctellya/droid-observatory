@@ -76,6 +76,8 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
         gate,
     });
 
+    provide_context(crate::gate::MergeState::new());
+
     let tauri = crate::shell::is_tauri();
     let hosted = expect_context::<HostedCtx>();
     let mission = capture.mission_id().clone();
