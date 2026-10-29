@@ -1,4 +1,5 @@
-"""Usage report tables for user testing (cost per round and per flow group).
+"""Usage report tables for the testing section: user testing (cost per round and per flow group) and the e2e runs
+(`flaked` is a line of its own, never a pass).
 
 Imported by scripts/usage-report.py (same directory); Python 3 standard library only.
 """
@@ -125,4 +126,63 @@ def user_testing_lines(emit, md_table, win, clf, sidecars, sessions_dir, cost, u
          "its cost is the session's own turns plus every subagent session under it (nested ones too). A flow group is a subagent the "
          "validator started with the Task tool: its `callingToolUseId` in the sidecar is matched to the `description` of that Task call in "
          "the validator's transcript, and the subagents it started count in its group. Scrutiny validators are not user testing.")
+    emit("")
+
+
+def e2e_records(e2e_dir, repo_root, start, end):
+    """The reports/e2e/<run>/record.json files (scripts/e2e_run.py) that overlap the window, oldest first."""
+    rows = []
+    for path in sorted(glob.glob(os.path.join(e2e_dir, "*", "record.json"))):
+        try:
+            with open(path) as f:
+                r = json.load(f)
+        except (ValueError, OSError):
+            continue
+        st = r.get("started_at") or r.get("finished_at")
+        fin = r.get("finished_at") or st
+        if not st or not ((st[:19] < end[:19] or fin[:19] <= end[:19]) and fin[:19] >= start[:19]):
+            continue
+        r["_path"] = os.path.relpath(path, repo_root) if path.startswith(repo_root) else os.path.join(
+            os.path.basename(e2e_dir.rstrip("/")), os.path.relpath(path, e2e_dir))
+        rows.append(r)
+    rows.sort(key=lambda r: (r.get("started_at") or "", r.get("run") or ""))
+    return rows
+
+
+def rerun_seconds(record):
+    attempts = record.get("attempts") or []
+    if record.get("rerun_seconds") is not None:
+        return float(record["rerun_seconds"])
+    return float(attempts[1]["seconds"]) if len(attempts) > 1 else 0.0
+
+
+def e2e_lines(emit, md_table, e2e_dir, repo_root, start, end):
+    """Writes the E2E runs table, one `e2e flake:` line per flaked run and the `e2e runs:` summary."""
+    records = e2e_records(e2e_dir, repo_root, start, end)
+    emit("### E2E runs")
+    emit("")
+    rows = []
+    for r in records:
+        attempts = r.get("attempts") or [{}]
+        specs = r.get("flaked_specs") or r.get("failed_specs") or []
+        rows.append([r.get("run"), r.get("outcome"), ", ".join(specs) or "-", "%.2f" % float(attempts[0].get("seconds", 0)),
+                     "%.2f" % rerun_seconds(r) if len(attempts) > 1 else "-", r.get("started_at"), "`%s`" % r["_path"]])
+    for line in md_table(["Run", "Outcome", "Specs", "First attempt s", "Rerun s", "Started", "Source"], rows):
+        emit(line)
+    emit("")
+    for r in records:
+        if r.get("outcome") == "flaked":
+            emit("e2e flake: %s: %s; rerun %.2f s (first attempt %.2f s)" % (
+                r.get("run"), ", ".join(r.get("flaked_specs") or []), rerun_seconds(r), float((r["attempts"][0]).get("seconds", 0))))
+    count = collections.Counter(r.get("outcome") for r in records)
+    if records:
+        emit("e2e runs: %d, passed %d, flaked %d, failed %d; rerun seconds: %.2f" % (
+            len(records), count["passed"], count["flaked"], count["failed"], sum(rerun_seconds(r) for r in records)))
+    else:
+        emit("e2e runs: none")
+    emit("")
+    emit("`flaked` is a first attempt that failed and one rerun that passed: the run is green and counted as a flake, never as a "
+         "pass; `failed` is a rerun that failed too (or a failure that named no spec). The runs are the records "
+         "`reports/e2e/<run>/record.json` that overlap the window; the evidence of the first failure is in "
+         "`reports/e2e/<run>/first-failure/`, which is git-ignored and goes with the `e2e-reports` artifact of the CI run.")
     emit("")

@@ -1028,6 +1028,7 @@ def build(args):
     # User testing
     usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
                                      lambda model, a: price(prices, model, a) or 0.0, usd)
+    usage_testing.e2e_lines(emit, md_table, args.e2e_dir, repo_root, start, end)
 
     # Gates
     emit("### Gates")
@@ -1273,6 +1274,8 @@ def main(argv=None):
     ap.add_argument("--price-table", help="a dated price file to read instead of the newest: a date (2026-10-22), a file name or a "
                     "path such as the `price_table` of the config")
     ap.add_argument("--validation-state", help="validation-state.json for the cost per assertion; default <mission-dir>/validation-state.json")
+    ap.add_argument("--e2e-dir", default=os.path.join(repo_root, "reports", "e2e"),
+                    help="reports/e2e: the record.json of each `make e2e` run, listed in the testing section")
     ap.add_argument("--gate-dir", default=os.path.join(repo_root, "reports", "gate"))
     ap.add_argument("--from", dest="start", help="window start (RFC 3339); default the milestone's first worker_started")
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")

@@ -83,6 +83,7 @@ class Scratch:
         args = [sys.executable, SCRIPT, "--milestone", milestone, "--mission-dir", self.mission, "--mission-id", MISSION,
                 "--logs-dir", os.path.join(self.root, "logs"), "--sessions-dir", os.path.join(self.root, "sessions"),
                 "--prices", os.path.join(self.root, "prices.toml"), "--gate-dir", os.path.join(self.root, "gate"),
+                "--e2e-dir", os.path.join(self.root, "e2e"),
                 "--from", start, "--to", end, "--now", NOW, "--out", out] + list(extra)
         proc = subprocess.run(args, capture_output=True, text=True)
         if check and proc.returncode != 0:

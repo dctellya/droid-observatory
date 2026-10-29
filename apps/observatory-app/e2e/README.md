@@ -49,6 +49,28 @@ spec file, the p50/p95/max lines in each case's `system-out`), one PNG per scena
 - Run state lives in `$TMPDIR/observatory-e2e` (own config, store, spool, fake Droid); nothing under
   `~/.droid-observatory` is touched.
 
+## A failing run: first-failure evidence, one rerun, `flaked`
+
+`make e2e` runs the suite through `scripts/e2e_run.py` (owner inbox file
+`docs/owner-feedback/inbox/2026-10-29-1552-flaky-e2e-is-a-feature.md`; a red nobody can explain is incomplete work).
+
+- On the first failing case the `afterTest` hook (and `afterHook`) names the spec in `failed-specs.txt` and calls
+  `e2e_run.py first-failure` while the app is still up. `reports/e2e/<run>/first-failure/` then holds
+  `environment.json` (E2E_RUN_DIR, ports with the pids that listen, process lines, GITHUB_TOKEN `set` or `unset` and never its
+  value, FORGE_LIVE), `run-dir-listing.txt`, `backend-logs/` (the `wdio-*.log` of `captureBackendLogs`), `screenshots/`
+  (`fail-*.png`), `timing.jsonl` and `failed-specs.txt`. The runner refreshes the logs when the attempt ends and writes
+  `run-dir-listing-at-end-of-attempt.txt`. All of it is written before the rerun starts, and nothing in it is written again by the rerun.
+- At most one automatic rerun: the failed specs only (`--spec <path>`), on a clean run directory. A failure that names no spec
+  is red without a rerun.
+- `record.json` keeps both attempts (outcome, exit code, wall seconds, failed specs) and one outcome: `passed` (attempt 1
+  green), `flaked` (attempt 1 red, the rerun green; exit code 0), `failed` (the rerun is red too; exit code of the rerun).
+  `junit.xml` names it on its root element (`<testsuites outcome="flaked">`); a rerun-replaced suite carries the property
+  `outcome=flaked`; `junit-attempt-1.xml` and `junit-attempt-2.xml` are the two attempts as the reporter wrote them.
+- A flake is never counted as a pass: the gate row is green on `flaked`, and the usage report's testing section lists the
+  run (`e2e flake:` line: the specs and the wall time of the rerun).
+- `E2E_INDUCE_FAILURE=panel make e2e` fails the first case of `specs/panel.e2e.ts` on the first attempt only (`lib/induce.ts`):
+  the proof that the evidence, the rerun and `flaked` work. Not for CI.
+
 ## CI
 
 `.github/workflows/e2e.yml` runs `make e2e` on `macos-latest`, outside the 3-minute `mission-branch.yml` budget. It

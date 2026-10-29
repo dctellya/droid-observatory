@@ -1,12 +1,30 @@
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { APP_BINARY, DATE, REPORT_DIR, appEnv, prepareRunDir } from './lib/env.js';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { APP_BINARY, DATE, E2E_DIR, REPORT_DIR, REPO_ROOT, RUN_DIR, appEnv, prepareRunDir } from './lib/env.js';
 
 // The app starts with this process' environment plus `env` below; the files it names are written
 // before any worker starts and again, unchanged, by each worker that loads this file.
 prepareRunDir();
 
 const slug = (title: string) => title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+
+/**
+ * Names the failed spec for the rerun and keeps the evidence of the first failure while the app is still up (its ports and
+ * pids are live now). The capture writes nothing outside attempt 1 and keeps the environment of the first failure.
+ */
+function recordFailure(file: string | undefined): void {
+  if (file) appendFileSync(join(REPORT_DIR, 'failed-specs.txt'), `${relative(E2E_DIR, file)}\n`);
+  try {
+    execFileSync(
+      'python3',
+      [join(REPO_ROOT, 'scripts/e2e_run.py'), 'first-failure', '--report-dir', REPORT_DIR, '--run-dir', RUN_DIR],
+      { stdio: 'inherit' },
+    );
+  } catch (error) {
+    console.log(`first-failure capture failed: ${error}`);
+  }
+}
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
@@ -68,5 +86,10 @@ export const config: WebdriverIO.Config = {
     } catch (error) {
       console.log(`screenshot of "${test.title}" failed: ${error}`);
     }
+    if (!passed) recordFailure((test as { file?: string }).file);
+  },
+  // A failing before/after hook fails its spec without an afterTest.
+  afterHook: async (test, _context, { passed }) => {
+    if (!passed) recordFailure((test as { file?: string }).file);
   },
 };

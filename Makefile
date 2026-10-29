@@ -52,6 +52,8 @@ check-scripts: check-gate-cache check-integrate check-integrate-long check-contr
 	@python3 scripts/tests/usage_test.py
 	@python3 scripts/tests/usage_idle_test.py
 	@python3 scripts/tests/usage_testing_test.py
+	@python3 scripts/tests/usage_e2e_test.py
+	@python3 scripts/tests/e2e_run_test.py
 	@python3 scripts/tests/usage_rewrites_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
@@ -206,8 +208,9 @@ else
 endif
 
 # The window suite (owner item 14): the debug app with the embedded WebDriver server (`e2e` cargo
-# feature, never a release build), driven by WebdriverIO. JUnit and screenshots land in
-# reports/e2e/<E2E_DATE>/; the app's store, spool and fake Droid live in a scratch directory.
+# feature, never a release build), driven by WebdriverIO through scripts/e2e_run.py: a failing first attempt keeps its evidence in
+# reports/e2e/<E2E_DATE>/first-failure/ and reruns the failed specs once; the outcome (passed, flaked, failed) is in record.json.
+# JUnit and screenshots land in reports/e2e/<E2E_DATE>/; the app's store, spool and fake Droid live in a scratch directory.
 E2E_DATE ?= $(shell date +%Y-%m-%d)
 E2E_RUN_DIR ?= $(or $(TMPDIR),/tmp)/observatory-e2e
 e2e: ## Build the app with --features e2e and run the WebdriverIO suite (reports/e2e/<date>/)
@@ -215,7 +218,8 @@ ifneq (,$(HAS_TAURI))
 	@cargo build -p observatory-cli
 	@cargo tauri build --debug --no-bundle --features e2e
 	@rm -rf "$(E2E_RUN_DIR)" "reports/e2e/$(E2E_DATE)"
-	@cd apps/observatory-app/e2e && npm ci && E2E_DATE=$(E2E_DATE) E2E_RUN_DIR="$(E2E_RUN_DIR)" npx wdio run wdio.conf.ts
+	@cd apps/observatory-app/e2e && npm ci
+	@E2E_DATE=$(E2E_DATE) python3 scripts/e2e_run.py run --report-dir "reports/e2e/$(E2E_DATE)" --run-dir "$(E2E_RUN_DIR)" --cwd apps/observatory-app/e2e -- npx wdio run wdio.conf.ts
 else
 	@echo "e2e: no Tauri app yet, skipped"
 endif
