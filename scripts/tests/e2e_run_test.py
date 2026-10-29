@@ -274,7 +274,7 @@ class Wiring(unittest.TestCase):
             return f.read()
 
     def test_make_e2e_runs_the_suite_through_the_runner(self):
-        target = re.search(r"^e2e:.*?(?=^\S)", self.text("Makefile"), re.M | re.S).group(0)
+        target = re.search(r"^e2e:.*?(?=^clean:)", self.text("Makefile"), re.M | re.S).group(0)
         self.assertIn("scripts/e2e_run.py run", target)
         self.assertIn("wdio run wdio.conf.ts", target)
 
