@@ -647,3 +647,21 @@ fn the_role_of_a_pr_event_is_the_forge_not_a_person() {
     assert!(poll.events.iter().all(|event| event.role == Role::External));
     assert!(poll.events.iter().all(|event| event.overlay.is_none()));
 }
+
+#[test]
+fn an_https_request_builds_its_tls_connector_instead_of_panicking() {
+    // A peer that accepts and hangs up: the client reaches the TLS handshake, where it needs
+    // root certificates (the system store, since webpki-roots is not a dependency) and fails
+    // with an error rather than a panic.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("https://{}/", listener.local_addr().unwrap());
+    let peer = std::thread::spawn(move || drop(listener.accept()));
+    let transport = UreqTransport::new(None, Duration::from_secs(5));
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transport.get(&url)));
+    peer.join().unwrap();
+    let result = outcome.expect("no panic");
+    assert!(
+        result.is_err(),
+        "a peer that is not TLS is an error: {result:?}"
+    );
+}
