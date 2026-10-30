@@ -267,7 +267,7 @@ class PinnedDefinition(unittest.TestCase):
     def test_integration_is_its_own_term_over_the_contract_worker_cost(self):
         self.assertEqual(self.bucket("integration")["USD-eq"], "1.00")
         mine = next(r for r in table(self.text, "Ratios")[1] if r["Milestone"] == "m9 (this run)")
-        self.assertEqual((mine["Integration ratio"], mine["Cost per assertion"]), ("0.20", "4.33"))
+        self.assertEqual((mine["Integration ratio"], mine["Cost per assertion"]), ("0.20", "4.67"))
 
     def test_the_validators_seats_are_in_the_validation_ratio(self):
         self.assertEqual(self.bucket("validation")["USD-eq"], "2.00")

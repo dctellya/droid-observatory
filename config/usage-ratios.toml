@@ -5,6 +5,19 @@
 # by the size of the work instead of counting every assertion alike (owner item 10 of the M4 boundary, 2026-10-29 23:40).
 standard_assertion_turns = 23.3
 
+# Weight of one landed assertion by its kind (the `Kind:` line of the validation contract). The kind-weighted cost per assertion
+# divides the worker cost by the sum of these weights over the assertions landed, so a mechanical assertion is the unit (owner item 10
+# of the M4 boundary; weights 1.0 / 1.25 / 1.5 pinned by the owner's delegate, inbox 0145).
+[kind_weights]
+# A mechanical assertion is one a script or command proves, the cheapest to build and to check: the baseline unit.
+mechanical = 1.0
+# A behavioural assertion needs the running app or a person's reading to judge, which costs a quarter more worker and validator time.
+behavioural = 1.25
+# A mixed assertion needs both a script's proof and a behavioural check, so it costs half as much again as the baseline.
+mixed = 1.5
+# An assertion with no `Kind:` line weighs the baseline until the contract classifies it.
+unclassified = 1.0
+
 # Rows read by hand before the script existed. They are the owner's own derivation (owner item 10), kept as the first data rows so
 # a later milestone compares with them; the script's own row of the same milestone is shown next to them where both exist. Every
 # field but `milestone` and `source` is optional and shows as `-` when absent.
@@ -23,5 +36,6 @@ coordination = 2.86
 validation = 1.30
 tooling = 0.85
 all_in = 6.7
-kinds = { mechanical = 12, behavioural = 15, mixed = 6 }
+# The hand file counted 15 behavioural; the fifteenth was one of the two blocked assertions, and blocked is not landed (inbox 0145 (b)).
+kinds = { mechanical = 12, behavioural = 14, mixed = 6 }
 source = "owner item 10: worker cost on contract features 35 USD-eq, 1.06 per assertion; all-in 6.7"

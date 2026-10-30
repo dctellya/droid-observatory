@@ -1176,7 +1176,7 @@ def build(args):
         emit, md_table, usd, args.milestone, usage_ratios.load_config(ratios_path),
         [(role, (by_role.get(role) or Agg()).turns, (by_role.get(role) or Agg()).usd) for role in ROLES], window_total.usd,
         [(f, skills.get(f, "-"), v[1], feat_usd[f]) for f, v in sorted(feats.items()) if v[1]], features, budgets, fulfilled,
-        usage_ratios.read_kinds(contract_path))
+        usage_ratios.read_kinds(contract_path), window=(start, end))
 
     # Mission to date
     emit("### Mission to date by role")
