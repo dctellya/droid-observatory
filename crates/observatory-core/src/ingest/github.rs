@@ -1054,3 +1054,28 @@ impl<F: Forge> GitHubSource<F> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::merger_role;
+    use crate::model::Role;
+
+    #[test]
+    fn a_merger_other_than_the_token_owner_is_attributed_as_external() {
+        assert_eq!(
+            merger_role(Some("dctellya"), Some("some-colleague")),
+            Role::External
+        );
+    }
+
+    #[test]
+    fn a_merger_the_forge_cannot_name_is_attributed_as_external() {
+        assert_eq!(merger_role(Some("dctellya"), None), Role::External);
+        assert_eq!(merger_role(None, Some("dctellya")), Role::External);
+    }
+
+    #[test]
+    fn the_token_owner_merging_is_attributed_as_human_ignoring_case() {
+        assert_eq!(merger_role(Some("dctellya"), Some("DCTellya")), Role::Human);
+    }
+}
