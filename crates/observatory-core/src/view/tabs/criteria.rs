@@ -8,7 +8,9 @@ use super::milestone_events;
 use crate::metrics::{Notes, events_of_feature};
 use crate::model::{Event, EventId, EventKind, FeatureId, MilestoneId};
 
-const CHECKPOINTS: [(&str, fn(&EventKind) -> bool); 6] = [
+type Satisfies = fn(&EventKind) -> bool;
+
+const CHECKPOINTS: [(&str, Satisfies); 6] = [
     ("Tests run", |k| matches!(k, EventKind::TestsRun)),
     ("Committed", |k| matches!(k, EventKind::CommitCreated)),
     ("Task done", |k| matches!(k, EventKind::TaskDone)),
