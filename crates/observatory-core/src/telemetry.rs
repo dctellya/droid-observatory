@@ -2,13 +2,17 @@
 //! the label allow-list, the bounds on label values and the worst-case series count the exporter
 //! checks before it starts. Pure: the exporter that sends the series lives in the app.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
 use crate::config::TelemetryConfig;
-use crate::metrics::{ReworkKind, WasteCause};
-use crate::model::Role;
+use crate::metrics::{
+    Notes, PriceTable, ReworkKind, WasteCause, card_times, completed_features, rework_windows,
+    throttled, turns,
+};
+use crate::model::{CycleTemplate, Event, EventKind, FeatureId, Role, Timestamp};
 
 /// Values the `role` label takes: the orchestrator, the worker and one `validator` value for
 /// both validators. People, outside parties and unresolved sessions burn no tokens and are not
@@ -310,4 +314,386 @@ fn contract_names() -> [&'static str; 11] {
         "observatory.cost_usd",
         "observatory.unknown_events",
     ]
+}
+
+/// One header of the collector request, read from the keychain item `headers_keychain_item`. The
+/// value has no `Display` and prints as `<redacted>` under `Debug`; the HTTP client reads it once
+/// per request through `expose_value`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OtlpHeader {
+    name: String,
+    value: String,
+}
+
+impl OtlpHeader {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn expose_value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Debug for OtlpHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "OtlpHeader({}: <redacted>)", self.name)
+    }
+}
+
+/// Splits a keychain string `name=value` on the first `=` only: a value may hold more of them
+/// (`Authorization=Basic YWJj=`). The collector of the readiness report answered 401 to the whole
+/// string and 200 to the split. A string with no `=` or an empty name is `None`.
+pub fn parse_header(text: &str) -> Option<(&str, &str)> {
+    let (name, value) = text.trim().split_once('=')?;
+    let name = name.trim();
+    (!name.is_empty()).then_some((name, value))
+}
+
+/// What the status bar and the `telemetry{state, endpoint}` log line say (architecture §10).
+/// `status` keeps the `{enabled, reason}` of `telemetry_status`; `state` is `off (config)`,
+/// `off, no keychain item <name>` or `exporting since <timestamp>` (D-046).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelemetryReport {
+    #[serde(flatten)]
+    pub status: TelemetryStatus,
+    pub state: String,
+    pub endpoint: String,
+}
+
+impl TelemetryReport {
+    fn off(reason: &str, state: String, endpoint: &str) -> Self {
+        Self {
+            status: TelemetryStatus::off(reason),
+            state,
+            endpoint: endpoint.to_owned(),
+        }
+    }
+
+    pub fn exporting(endpoint: &str, since: &str) -> Self {
+        Self {
+            status: TelemetryStatus {
+                enabled: true,
+                reason: "exporting".into(),
+            },
+            state: format!("exporting since {since}"),
+            endpoint: endpoint.to_owned(),
+        }
+    }
+
+    /// The status bar text.
+    pub fn bar_text(&self) -> String {
+        format!("telemetry: {}", self.state)
+    }
+}
+
+/// Everything the exporter needs to start: the plan it registers, the collector and the optional
+/// header.
+#[derive(Clone, Debug)]
+pub struct ExporterStart {
+    pub plan: SeriesPlan,
+    pub endpoint: String,
+    pub header: Option<OtlpHeader>,
+}
+
+impl ExporterStart {
+    /// The report once the exporter is running since `since`.
+    pub fn report(&self, since: &str) -> TelemetryReport {
+        TelemetryReport::exporting(&self.endpoint, since)
+    }
+}
+
+/// Decides whether the exporter starts. `lookup` reads the keychain item of a service name and is
+/// called only when `[telemetry].headers_keychain_item` is non-empty and the plan is accepted: with
+/// no item the exporter starts without a header and the keychain is never touched (D-046). A
+/// configured item that is absent, refused or not `name=value` keeps export off with a state that
+/// says so; the environment is never consulted. Nothing here carries a header value into a status.
+pub fn resolve_start(
+    cfg: &TelemetryConfig,
+    lookup: impl FnOnce(&str) -> Result<Option<String>, String>,
+) -> Result<ExporterStart, TelemetryReport> {
+    let endpoint = cfg.endpoint.as_str();
+    if !cfg.enabled {
+        return Err(TelemetryReport::off(
+            "off in config",
+            "off (config)".into(),
+            endpoint,
+        ));
+    }
+    let plan = start_check(cfg).map_err(|status| TelemetryReport {
+        state: format!("off, {}", status.reason),
+        status,
+        endpoint: endpoint.to_owned(),
+    })?;
+    let item = cfg.headers_keychain_item.trim();
+    let header = if item.is_empty() {
+        None
+    } else {
+        let off =
+            |reason: &str| TelemetryReport::off(reason, format!("off, {reason} {item}"), endpoint);
+        match lookup(item) {
+            Ok(Some(text)) => match parse_header(&text) {
+                Some((name, value)) => Some(OtlpHeader {
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                }),
+                None => return Err(off("header item is not name=value")),
+            },
+            Ok(None) => return Err(off("no keychain item")),
+            Err(_) => return Err(off("keychain refused")),
+        }
+    };
+    Ok(ExporterStart {
+        plan,
+        endpoint: cfg.endpoint.clone(),
+        header,
+    })
+}
+
+/// The labels of a point: a label and its bounded value, in the order the instrument plans them.
+pub type Labels = Vec<(Label, String)>;
+
+/// One value of one series: a counter's running total, or one histogram observation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Point {
+    pub name: &'static str,
+    /// In the order the instrument plans them.
+    pub labels: Labels,
+    pub value: f64,
+    /// What makes an observation the same one on the next sample (the feature of a feature cycle,
+    /// the mission of a mission cycle); empty for a counter.
+    pub key: String,
+}
+
+/// What one mission contributes to the eleven instruments at `end`. Counters are running totals
+/// since the mission began, so the exporter adds the difference to its last sample; observations
+/// are recorded once each.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MissionSample {
+    pub counters: Vec<Point>,
+    pub observations: Vec<Point>,
+}
+
+pub struct SampleInput<'a> {
+    /// The `mission` label value.
+    pub mission: &'a str,
+    pub events: &'a [Event],
+    pub template: &'a CycleTemplate,
+    pub notes: &'a Notes,
+    pub prices: &'a PriceTable,
+    pub end: Timestamp,
+    pub cfg: &'a TelemetryConfig,
+}
+
+/// The `milestone` value of work no milestone owns; it takes one of the named slots like any id.
+const NO_MILESTONE: &str = "none";
+
+/// The `model` value of a turn whose model is unknown.
+const UNKNOWN_MODEL: &str = "unknown";
+
+fn waste_label(cause: WasteCause) -> &'static str {
+    match cause {
+        WasteCause::WaitingHumanQuestion => "waiting_human_question",
+        WasteCause::WaitingHumanPermission => "waiting_human_permission",
+        WasteCause::WaitingMerge => "waiting_merge",
+        WasteCause::WaitingValidation => "waiting_validation",
+        WasteCause::Rework => "rework",
+        WasteCause::RetryFailure => "retry_failure",
+        WasteCause::IdleQueued => "idle_queued",
+        WasteCause::IdleUnscheduled => "idle_unscheduled",
+    }
+}
+
+fn rework_label(kind: ReworkKind) -> &'static str {
+    match kind {
+        ReworkKind::Finding => "finding",
+        ReworkKind::Scenario => "scenario",
+        ReworkKind::Conflict => "conflict",
+        ReworkKind::Check => "check",
+    }
+}
+
+/// The values of the eleven instruments for one mission, every label value bounded (`overflow`,
+/// `other`) and every label one of the five. Pure over the mapped events.
+pub fn mission_sample(input: &SampleInput<'_>) -> MissionSample {
+    let SampleInput {
+        mission,
+        events,
+        template,
+        notes,
+        prices,
+        end,
+        cfg,
+    } = *input;
+    let mut milestones = BoundedLabel::milestone(cfg);
+    // Ids are assigned in event order so a value keeps its label as the mission grows.
+    for event in events.iter().filter(|event| !event.kind.is_panel_only()) {
+        if let Some(id) = &event.milestone_id {
+            milestones.value(&id.0);
+        }
+    }
+    let mut models = BoundedLabel::model();
+    let mission_label = || (Label::Mission, mission.to_owned());
+    let mut totals: BTreeMap<(&'static str, Labels), f64> = BTreeMap::new();
+    let mut add = |name: &'static str, labels: Labels, value: f64| {
+        *totals.entry((name, labels)).or_default() += value;
+    };
+
+    let stops = throttled(events, notes, end);
+    let stop_spans = stops.spans();
+    let cards = card_times(events, template, notes, end, &stop_spans);
+
+    let milestone_of = |feature: &Option<FeatureId>| -> Option<String> {
+        events
+            .iter()
+            .filter(|event| event.feature_id == *feature)
+            .find_map(|event| event.milestone_id.as_ref())
+            .map(|id| id.0.clone())
+    };
+    let mut milestone_labels: BTreeMap<Option<FeatureId>, String> = BTreeMap::new();
+    for key in cards.keys() {
+        let id = key
+            .as_ref()
+            .and_then(|_| milestone_of(key))
+            .unwrap_or_else(|| NO_MILESTONE.to_owned());
+        milestone_labels.insert(key.clone(), milestones.value(&id).to_owned());
+    }
+
+    for (key, card) in &cards {
+        let milestone = milestone_labels[key].clone();
+        for cause in WasteCause::ALL {
+            let seconds = card.waste.seconds(cause);
+            if seconds > 0 {
+                add(
+                    "observatory.waste_seconds",
+                    vec![
+                        mission_label(),
+                        (Label::Milestone, milestone.clone()),
+                        (Label::Cause, waste_label(cause).to_owned()),
+                    ],
+                    seconds as f64,
+                );
+            }
+        }
+    }
+
+    let windows = rework_windows(events, template, notes, end);
+    for window in &windows {
+        let milestone = match (&window.feature, &window.milestone) {
+            (Some(_), _) => milestone_labels.get(&window.feature).cloned(),
+            (None, Some(id)) => Some(milestones.value(&id.0).to_owned()),
+            (None, None) => milestone_labels.get(&None).cloned(),
+        }
+        .unwrap_or_else(|| milestones.value(NO_MILESTONE).to_owned());
+        add(
+            "observatory.rework_windows",
+            vec![
+                mission_label(),
+                (Label::Milestone, milestone.clone()),
+                (Label::Cause, rework_label(window.kind).to_owned()),
+            ],
+            1.0,
+        );
+        if window.kind == ReworkKind::Check {
+            add(
+                "observatory.fix_loops",
+                vec![mission_label(), (Label::Milestone, milestone)],
+                1.0,
+            );
+        }
+    }
+
+    for turn in turns(events) {
+        let Some(role) = role_label(turn.event.role) else {
+            continue;
+        };
+        let model_id = turn.model.map_or(UNKNOWN_MODEL, |model| model.0.as_str());
+        let model = models.value(model_id).to_owned();
+        let labels = vec![
+            mission_label(),
+            (Label::Role, role.to_owned()),
+            (Label::Model, model),
+        ];
+        let usd = prices
+            .turn_usd(
+                turn.event.role,
+                turn.model.map(|m| m.0.as_str()),
+                &turn.tokens,
+            )
+            .unwrap_or(0.0);
+        add(
+            "observatory.tokens.input",
+            labels.clone(),
+            turn.tokens.input as f64,
+        );
+        add(
+            "observatory.tokens.output",
+            labels.clone(),
+            turn.tokens.output as f64,
+        );
+        add(
+            "observatory.tokens.cache_read",
+            labels.clone(),
+            turn.tokens.cache_read as f64,
+        );
+        add("observatory.cost_usd", labels, usd);
+    }
+
+    let unknown = events
+        .iter()
+        .filter(|event| matches!(event.kind, EventKind::Unknown { .. }))
+        .count();
+    if unknown > 0 {
+        add(
+            "observatory.unknown_events",
+            vec![mission_label()],
+            unknown as f64,
+        );
+    }
+
+    let counters = totals
+        .into_iter()
+        .map(|((name, labels), value)| Point {
+            name,
+            labels,
+            value,
+            key: String::new(),
+        })
+        .collect();
+
+    let mut observations = Vec::new();
+    let real = || events.iter().filter(|event| !event.kind.is_panel_only());
+    let seconds = |from: Timestamp, to: Timestamp| (to.0 - from.0).as_seconds_f64().max(0.0);
+    if let (Some(first), Some(done)) = (
+        real().map(|event| event.at).min(),
+        real()
+            .filter(|event| matches!(event.kind, EventKind::HandedToCd { .. }))
+            .map(|event| event.at)
+            .max(),
+    ) {
+        observations.push(Point {
+            name: "observatory.mission.cycle_seconds",
+            labels: vec![mission_label()],
+            value: seconds(first, done),
+            key: mission.to_owned(),
+        });
+    }
+    for feature in completed_features(events, &cards) {
+        let own = || real().filter(|event| event.feature_id.as_ref() == Some(&feature));
+        if let (Some(first), Some(last)) = (
+            own().map(|event| event.at).min(),
+            own().map(|event| event.at).max(),
+        ) {
+            observations.push(Point {
+                name: "observatory.feature.cycle_seconds",
+                labels: vec![mission_label()],
+                value: seconds(first, last),
+                key: feature.0.clone(),
+            });
+        }
+    }
+    MissionSample {
+        counters,
+        observations,
+    }
 }
