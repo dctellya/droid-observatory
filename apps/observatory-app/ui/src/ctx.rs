@@ -8,6 +8,12 @@ use observatory_core::view::{GateGroupView, MilestoneWorktree};
 #[derive(Clone, Copy)]
 pub struct MetricsBudget(pub RwSignal<f64>);
 
+/// The text of the price table the Panel and the Details parse: the bundled one until the window
+/// has read `[metrics].price_table` through the shell (`price_table`); the browser host keeps the
+/// bundled one.
+#[derive(Clone, Copy)]
+pub struct PriceTableText(pub RwSignal<String>);
+
 /// What the board hands down to its cards and rows: how to open a milestone's Details and the
 /// sessions of the opened tree, which name an agent.
 #[derive(Clone)]

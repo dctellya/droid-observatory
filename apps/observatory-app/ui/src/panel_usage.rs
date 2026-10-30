@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use observatory_core::metrics::{CostReport, Throttled, TokenCounts, WasteCause};
 use observatory_core::model::CycleTemplate;
-use observatory_core::view::PanelMetrics;
+use observatory_core::view::{MilestoneFigures, PanelMetrics};
 
 const NO_MILESTONE: &str = "(none)";
 const UNKNOWN_MODEL: &str = "(unknown)";
@@ -109,7 +109,7 @@ fn lanes_table(cost: &CostReport, template: RwSignal<CycleTemplate>) -> AnyView 
     .into_any()
 }
 
-fn milestones_table(cost: &CostReport) -> AnyView {
+fn milestones_table(cost: &CostReport, figures: &[MilestoneFigures]) -> AnyView {
     let rows = cost
         .tokens_by_milestone
         .iter()
@@ -119,11 +119,19 @@ fn milestones_table(cost: &CostReport) -> AnyView {
                 .as_ref()
                 .map_or_else(|| NO_MILESTONE.to_owned(), |m| m.0.clone());
             let label = format!("usage-milestone-{name}");
+            let own = figures
+                .iter()
+                .find(|figures| Some(&figures.milestone) == row.milestone.as_ref());
+            let cycle = own.map_or_else(|| "n/a".to_owned(), |own| own.cycle_s.to_string());
+            let windows =
+                own.map_or_else(|| "n/a".to_owned(), |own| own.rework_windows.to_string());
             view! {
                 <tr aria-label=label>
                     <td class="mono">{name}</td>
                     {token_cells(row.tokens)}
                     {cost_cell(row.cost.amount, &cost.price_table)}
+                    <td class="n" aria-label="usage-milestone-cycle">{cycle}</td>
+                    <td class="n" aria-label="usage-milestone-rework-windows">{windows}</td>
                 </tr>
             }
         })
@@ -139,6 +147,8 @@ fn milestones_table(cost: &CostReport) -> AnyView {
                     <th>"Output"</th>
                     <th>"Cache read"</th>
                     <th>"Cost"</th>
+                    <th>"Cycle time (s, engineering)"</th>
+                    <th>"Rework windows"</th>
                 </tr>
             </thead>
             <tbody>{rows}</tbody>
@@ -354,7 +364,7 @@ pub fn UsageBlock(metrics: Memo<Option<PanelMetrics>>) -> impl IntoView {
                                 </p>
                                 {roles_table(cost)}
                                 {lanes_table(cost, template)}
-                                {milestones_table(cost)}
+                                {milestones_table(cost, &panel.milestones)}
                                 {waste_tokens(cost)}
                                 {throttled_block(&panel.throttled)}
                                 {budget_line(cost)}

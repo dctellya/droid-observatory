@@ -13,7 +13,7 @@ use crate::agents::AgentPanel;
 use crate::attach::AttachPanel;
 use crate::capture::Capture;
 use crate::controls::{ControlCtx, Controls, StallBannerView, StallCtx, ThemeSwitch};
-use crate::ctx::{BoardCtx, MetricsBudget};
+use crate::ctx::{BoardCtx, MetricsBudget, PriceTableText};
 use crate::details::DetailsView;
 use crate::lanes::Lanes;
 use crate::launch::HostedCtx;
@@ -50,11 +50,12 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let selected = RwSignal::new(None::<EventId>);
     let details = RwSignal::new(None::<MilestoneId>);
     let budget = expect_context::<MetricsBudget>();
-    let prices = PriceTable::parse(crate::details::PRICES).ok();
+    let price_text = expect_context::<PriceTableText>();
     let metrics = Memo::new({
         let events = events.clone();
         move |_| {
-            let prices = prices.as_ref()?;
+            let prices = price_text.0.with(|text| PriceTable::parse(text).ok())?;
+            let prices = &prices;
             let budget = budget.0.get();
             template.with(|template| {
                 events.with(|events| {
@@ -135,6 +136,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     });
 
     let summary = capture.summary.clone();
+    let mission_name = summary.name.clone();
     let live = capture.live.clone();
     let mode_live = live.clone();
     let state_live = live.clone();
@@ -193,7 +195,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
             {move || enabled.get().then(|| view! { <Controls ctx=control.clone() bar=bar /> })}
             <FilterBar filter=filter options=options />
             <ScrubberBar scrubber=scrubber at=at live=state_live />
-            <Panel board=board metrics=metrics />
+            <Panel board=board metrics=metrics events=events.clone() name=mission_name mission=capture.mission_id().clone() />
             <AgentPanel board=board capture=capture.clone() declared=agent_declared at=at />
             <DetailsView capture=capture.clone() milestone=details />
             <Lanes board=board grouping=grouping gate=gate />

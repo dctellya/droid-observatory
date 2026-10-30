@@ -136,6 +136,9 @@ pub fn CostTabView(tab: CostTab) -> impl IntoView {
                 "Price table: " <span class="mono">{tab.price_table.clone()}</span>
                 {format!(" ({})", tab.currency)}
             </p>
+            <p aria-label="cost-cycle">
+                "Cycle time (engineering): " <span class="mono">{tab.cycle_s}</span> " s"
+            </p>
             {totals}
             {features}
             {roles}
@@ -149,7 +152,7 @@ pub fn CostTabView(tab: CostTab) -> impl IntoView {
             </div></div>
             <h3>"Rework windows"</h3>
             <p aria-label="cost-rework-count">
-                "Rework windows: " <span class="mono">{tab.rework.len()}</span>
+                "Rework windows: " <span class="mono">{tab.rework_windows}</span>
             </p>
             {rework_none}
             <div class="lib"><div class="scroll">

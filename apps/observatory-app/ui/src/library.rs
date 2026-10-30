@@ -85,6 +85,9 @@ pub fn Library(
                                             <td class="n" aria-label="library-tokens">{h.tokens_total}</td>
                                             <td class="n" aria-label="library-cost">
                                                 {format!("{:.2} {} ({})", h.cost, h.currency, h.price_table)}
+                                                <span class="mono" aria-label="library-overhead" title="mission overhead, apart">
+                                                    {format!(" + {:.2} overhead", h.overhead_cost)}
+                                                </span>
                                             </td>
                                         }
                                         .into_any()

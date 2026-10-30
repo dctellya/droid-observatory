@@ -1,7 +1,8 @@
 use leptos::prelude::*;
-use observatory_core::model::CycleTemplate;
+use observatory_core::model::{CycleTemplate, Event, MissionId};
 use observatory_core::view::{BoardView, PanelMetrics};
 
+use crate::export::ExportControl;
 use crate::panel_charts::{CostSparkline, TimelineChart, WasteBarsChart};
 use crate::panel_usage::UsageBlock;
 use crate::perf;
@@ -10,7 +11,13 @@ use crate::perf;
 /// usage block (tokens and cost per role and lane, tokens burnt in waste, `throttled` apart, the
 /// budget meter, the model comparison) and the drift against the declared models.
 #[component]
-pub fn Panel(board: Memo<BoardView>, metrics: Memo<Option<PanelMetrics>>) -> impl IntoView {
+pub fn Panel(
+    board: Memo<BoardView>,
+    metrics: Memo<Option<PanelMetrics>>,
+    events: ArcRwSignal<Vec<Event>>,
+    name: String,
+    mission: MissionId,
+) -> impl IntoView {
     // Runs once the Panel's rows are in the DOM; the measure it closes was opened by the request
     // that produced this board, so live batches add none.
     Effect::new(move |_| {
@@ -28,6 +35,7 @@ pub fn Panel(board: Memo<BoardView>, metrics: Memo<Option<PanelMetrics>>) -> imp
                         .map_or_else(|| "n/a".to_owned(), |ms| format!("{} s", ms / 1000))
                 }}
             </p>
+            <ExportControl events=events name=name mission=mission />
             <div class="chart-grid" aria-label="panel-charts" data-testid="panel-charts">
                 <WasteBarsChart metrics=metrics />
                 <TimelineChart metrics=metrics />

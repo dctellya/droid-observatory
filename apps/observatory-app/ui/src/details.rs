@@ -6,7 +6,7 @@ use observatory_core::view::{
 };
 
 use crate::capture::Capture;
-use crate::ctx::BoardCtx;
+use crate::ctx::{BoardCtx, PriceTableText};
 use crate::gate::GateGroupBox;
 use crate::raw::RawLine;
 use crate::tabs::commits::CommitsTabView;
@@ -64,7 +64,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
     let ctx = expect_context::<BoardCtx>();
     let (gate, worktrees) = (ctx.gate, ctx.worktrees.clone());
     let template = expect_context::<RwSignal<CycleTemplate>>();
-    let prices = PriceTable::parse(PRICES).ok();
+    let price_text = expect_context::<PriceTableText>();
     let events = capture.events.clone();
     let branch = capture.branch.clone();
     let model = Memo::new({
@@ -82,7 +82,7 @@ pub fn DetailsView(capture: Capture, milestone: RwSignal<Option<MilestoneId>>) -
             template.with(|template| {
                 events.with(|events| match tab {
                     Tab::Timeline => ().into_any(),
-                    Tab::Cost => match &prices {
+                    Tab::Cost => match &price_text.0.with(|text| PriceTable::parse(text).ok()) {
                         Some(prices) => {
                             let tab = cost_tab(events, milestone, template, prices, &notes);
                             view! { <CostTabView tab=tab /> }.into_any()
