@@ -102,3 +102,23 @@ fn no_report_is_made_when_only_turn_usage_is_held() {
     assert!(report_at_last_event(&only_turn, &setup).is_none());
     assert!(report_at_last_event(&[], &setup).is_none());
 }
+
+#[test]
+fn switching_format_swaps_an_export_extension_and_leaves_other_paths_alone() {
+    assert_eq!(
+        ExportFormat::Json.with_extension("/a/b-metrics.csv"),
+        "/a/b-metrics.json"
+    );
+    assert_eq!(
+        ExportFormat::Csv.with_extension("/a/b-metrics.json"),
+        "/a/b-metrics.csv"
+    );
+    assert_eq!(
+        ExportFormat::Csv.with_extension("/a/b-metrics.csv"),
+        "/a/b-metrics.csv"
+    );
+    assert_eq!(
+        ExportFormat::Json.with_extension("/a/notes.txt"),
+        "/a/notes.txt"
+    );
+}
