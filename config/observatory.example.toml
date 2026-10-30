@@ -126,18 +126,20 @@ overhead_apportionment = "separate"
 budget = 0.0
 
 [telemetry]
-# OTLP export of the app's own traces/metrics and of lane-9 mission metrics to Grafana Cloud
-# (docs/decisions/D-004, contract in D-010). Off by default: the observatory must work fully
-# offline. Also stays off, with a visible UI state, when the keychain item below is missing.
+# OTLP export of the lane-9 mission metrics to a local OpenTelemetry Collector (D-046, which
+# supersedes the Grafana Cloud default of D-004/D-010; the series contract of D-010 stays). The
+# collector holds the sink (a local stack, Grafana Cloud or any provider); the app never names a
+# provider and holds no provider credential. Off by default: the observatory must work fully offline.
 enabled = false
-# Protocol Grafana Cloud's OTLP gateway accepts.
+# Protocol the collector's OTLP receiver accepts.
 protocol = "http/protobuf"
-# The owner's stack gateway (D-010). Not a secret. Signals go to /v1/metrics, /v1/traces, /v1/logs.
-endpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
-# The Authorization header value ("Authorization=Basic ...") is read at runtime from the macOS
-# keychain item with this service name and the current user as account. It is never written
-# to config, the store or logs. No environment fallback in the app (CI uses B-002's secret).
-keychain_service = "droid-observatory/otlp-headers"
+# The local collector's OTLP/HTTP receiver (D-046). Not a secret. Metrics go to <endpoint>/v1/metrics.
+endpoint = "http://localhost:4318"
+# Optional. The keychain service of an item holding one header as "name=value" (split on the first
+# "="), for a collector that wants one. Empty (the default) means no header and no keychain access.
+# A configured item that is absent keeps export off with a visible state. The value is never written
+# to config, the store or logs, and OTEL_EXPORTER_OTLP_HEADERS is never read.
+headers_keychain_item = ""
 # Value of the service.name resource attribute (D-010).
 service_name = "droid-observatory"
 # Resource attributes are fixed by D-010: service.name (above) and service.version (crate

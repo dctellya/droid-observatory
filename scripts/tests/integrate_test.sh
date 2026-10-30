@@ -120,7 +120,7 @@ mkbranch() { # mkbranch <branch> <feature> [red]
   printf '# Staging: %s-none\n\n## SPEC §9\n\nNone.\n\n## BACKLOG\n\nNone.\n' "$2" > "reports/staging/$2-none.md"
   git add -A
   git commit -q -m "feat: $2"
-  git commit -q --allow-empty -m "docs: second commit on $1"
+  git commit -q --allow-empty -m "docs: second commit on $1 [skip ci]"
 }
 validate() { # run the gate on the branch and commit the record
   make -s check > /dev/null 2>&1
@@ -154,6 +154,8 @@ check "hit: merge subject names milestone and branch" [ "$(git log -1 --format=%
 check "hit: merge subject is short" subject_short "$merge"
 check "hit: merge trailer parses and ends the message" trailer_ok "$merge"
 check "hit: merge body lists the merged subjects" sh -c "git log -1 --format=%B $merge | grep -qF 'feat: m9-feat'"
+check "hit: merge body lists a subject that carried [skip ci], without the marker" sh -c "git log -1 --format=%B $merge | grep -qx -- '- docs: second commit on wt/m9'"
+check "hit: merge message carries no CI skip marker" sh -c "! git log -1 --format=%B $merge | grep -qiE '\\[(skip ci|ci skip|no ci|skip actions|actions skip)\\]'"
 check "hit: gate printed the cache hit" grep -q '^cached, proven at ' "$tmp/hit.out"
 check "hit: summary says gate HIT" grep -q 'gate: HIT' "$tmp/hit.out"
 check "hit: the gate command did not run again" [ "$(runs)" = "$((runs_before))" ]

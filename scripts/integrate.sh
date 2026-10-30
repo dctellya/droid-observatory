@@ -88,7 +88,9 @@ for b in $branches; do
     echo "integrate: $b already merged into $mission, skipping the merge"
     continue
   fi
-  git log --format='- %s' "HEAD..$b" > "$tmp/commits"
+  # GitHub skips the push run when the head commit's message holds a skip marker, and this message lists subjects that
+  # carry one (docs commits): the listed subjects lose it, or the merge's push run never starts (B-178).
+  git log --format='- %s' "HEAD..$b" | sed -E 's/ *\[(skip ci|ci skip|no ci|skip actions|actions skip)\]//g' > "$tmp/commits"
   render "$here/templates/integrate-commit.txt" "$b" "$tmp/commits" > "$tmp/merge.msg"
   add_trailers "$tmp/merge.msg"
   if ! git merge --no-ff --no-edit -F "$tmp/merge.msg" "$b"; then

@@ -39,31 +39,35 @@ fn a_store_holding_the_turns_gives_the_plain_replay_digest() {
     let dir = tempfile::tempdir().expect("scratch directory");
     let mut store = Store::open(&dir.path().join("observatory.db")).expect("store opens");
     let root = streams_dir().join("2026-10-22-observatory-v1-m0.jsonl");
-    let plain = store
+    let replayed = store
         .replay_file(&root, &IngestConfig::default())
         .expect("the capture replays");
-    let plain_digest = digest_of(&plain.events, &plain.summary.name);
-    assert_eq!(plain.events.len(), 1279);
+    assert_eq!(
+        replayed.events.len(),
+        1279 + 1115,
+        "the replay reads the usage log the capture header names"
+    );
 
-    let turns: Vec<Event> = golden()
+    let plain: Vec<Event> = golden()
         .into_iter()
-        .filter(|event| matches!(event.kind, EventKind::TurnUsage { .. }))
+        .filter(|event| !matches!(event.kind, EventKind::TurnUsage { .. }))
         .collect();
-    assert_eq!(store.insert_events(&turns).expect("turns are stored"), 1115);
+    assert_eq!(plain.len(), 1279);
+    assert_eq!(
+        digest_of(&replayed.events, &replayed.summary.name),
+        digest_of(&plain, &replayed.summary.name),
+        "the board command's digest does not see the turns"
+    );
 
     let opened = store
-        .open_mission(&plain.summary.mission_id)
+        .open_mission(&replayed.summary.mission_id)
         .expect("the mission opens");
     assert_eq!(
         opened.events.len(),
         1279 + 1115,
         "the store holds the turns"
     );
-    assert_eq!(
-        digest_of(&opened.events, &opened.summary.name),
-        plain_digest,
-        "the board command's digest does not see them"
-    );
+    assert_eq!(replayed.summary.event_count, 1279);
     assert_eq!(opened.summary.event_count, 1279);
     let rows = store.missions().expect("the library reads");
     assert_eq!(rows[0].event_count, 1279);

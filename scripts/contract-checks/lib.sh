@@ -67,7 +67,8 @@ head_ref() {
   fi
 }
 # The commits a branch adds: from the merge base with the mission branch, or from the pinned baseline when the head is
-# the mission branch itself.
+# the mission branch itself. The pin is git-baseline.txt,
+# the boundary tip; demo-base-cut.txt is a different commit and belongs to g7-demo-base.
 range_base() {
   m=$(mission_ref) || return 1
   h=$(head_ref)

@@ -152,6 +152,25 @@ fn replay_order_is_time_then_session_then_offset() {
     );
 }
 
+#[test]
+fn latency_bounds_widen_only_under_coverage_instrumentation() {
+    let plain = Duration::from_millis(450);
+    assert_eq!(common::scaled_latency_bound(plain, false), plain);
+    let widened = common::scaled_latency_bound(plain, true);
+    assert_eq!(widened, plain * common::INSTRUMENTED_LATENCY_FACTOR);
+    assert!(
+        common::scaled_latency_bound(Duration::from_secs(1), true) > Duration::from_millis(3200),
+        "the slowest instrumented line measured so far (3.198 s) must fit the widened one-second bound"
+    );
+}
+
+#[test]
+fn the_coverage_runner_is_detected_from_its_environment() {
+    assert!(common::instrumented_from(Some("1".into())));
+    assert!(!common::instrumented_from(None));
+    assert!(!common::instrumented_from(Some("".into())));
+}
+
 #[cfg(all(feature = "watch", feature = "store"))]
 mod live {
     use std::collections::BTreeMap;
@@ -269,11 +288,12 @@ mod live {
             percentile(&deltas, 95),
             *deltas.last().unwrap(),
         );
+        let bound = common::latency_bound(Duration::from_secs(1));
         println!(
-            "append to flush over {total} lines at {} ms gap in {batches} batches: p50={p50:?} p95={p95:?} max={max:?}",
+            "append to flush over {total} lines at {} ms gap in {batches} batches: p50={p50:?} p95={p95:?} max={max:?} bound={bound:?}",
             APPEND_GAP.as_millis()
         );
-        assert!(max < Duration::from_secs(1), "slowest line took {max:?}");
+        assert!(max < bound, "slowest line took {max:?}, bound {bound:?}");
         assert!(
             batches < received.len(),
             "events are batched, not sent one by one"
@@ -339,16 +359,14 @@ mod live {
             .collect();
         deltas.sort();
         let max = *deltas.last().unwrap();
+        let bound = common::latency_bound(Duration::from_millis(450));
         println!(
-            "open handle, {} events: p50={:?} p95={:?} max={max:?}",
+            "open handle, {} events: p50={:?} p95={:?} max={max:?} bound={bound:?}",
             deltas.len(),
             percentile(&deltas, 50),
             percentile(&deltas, 95),
         );
-        assert!(
-            max < Duration::from_millis(450),
-            "slowest line took {max:?}"
-        );
+        assert!(max < bound, "slowest line took {max:?}, bound {bound:?}");
     }
 
     #[test]

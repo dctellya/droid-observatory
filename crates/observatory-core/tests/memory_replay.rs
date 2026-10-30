@@ -67,7 +67,12 @@ fn the_m0_files_replay_from_memory_to_the_golden_events() {
     assert_eq!(summary.record_count, 8735);
     assert_eq!(summary.session_count, 56);
     assert_eq!(summary.mapping_version, "v1");
-    assert_eq!(summary.warning, None);
+    // The header names a usage-log extract that this selection does not hold.
+    let warning = summary
+        .warning
+        .as_deref()
+        .expect("the missing extract is named");
+    assert!(warning.contains("usage-log.jsonl"), "{warning}");
     assert_eq!(summary.started_at, "2026-10-23T09:21:59Z");
 }
 

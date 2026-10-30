@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::capture::CaptureHeader;
+use super::capture::missing_usage_log_warning;
 use super::sessions::{Files, Head, Transcript, feature_id_in, scan};
 use super::sidecar::{Sidecar, sidecar_path};
-use super::{IngestError, RawRecord, SessionTree, capture_path};
+use super::{IngestError, RawRecord, SessionTree, UsageLogSource, capture_path};
 use crate::config::IngestConfig;
 use crate::mapping::{TreeMapper, select_version};
 use crate::model::{Event, EventKind, ModelId, Role, SessionId, SourcePtr};
@@ -134,6 +135,22 @@ pub fn replay_files_with(
     let header = capture_header(&files, &roots[0])?;
     let (version, version_warning) =
         select_version(header.as_ref().and_then(|h| h.droid_version.as_deref()));
+    // The extract is a `.jsonl` too, but holds log lines, not a session.
+    let usage_name = header
+        .as_ref()
+        .and_then(|h| h.usage_log.as_ref())
+        .map(|info| info.file.clone());
+    let usage_key = usage_name.as_deref().and_then(|name| {
+        let name = Path::new(name).file_name()?;
+        files
+            .keys()
+            .find(|path| path.file_name() == Some(name))
+            .cloned()
+    });
+    let sessions_files: Vec<PathBuf> = sessions_files
+        .into_iter()
+        .filter(|path| Some(path) != usage_key.as_ref())
+        .collect();
     let mut best: Option<SessionTree> = None;
     for root in &roots {
         let candidates = sessions_files.clone();
@@ -157,6 +174,16 @@ pub fn replay_files_with(
         }
     }
     events.extend(mapper.finish());
+    let mut warnings: Vec<String> = version_warning.iter().map(ToString::to_string).collect();
+    match (&usage_name, &usage_key) {
+        (Some(_), Some(key)) => {
+            let mut log = UsageLogSource::in_memory(&IngestConfig::default());
+            let turns = log.read_bytes(key, source.bytes(key));
+            events.extend(turns.iter().filter_map(|turn| mapper.map_usage(turn)));
+        }
+        (Some(name), None) => warnings.push(missing_usage_log_warning(name)),
+        _ => {}
+    }
     events.sort_by_key(order_key);
 
     let unknown = events
@@ -174,7 +201,6 @@ pub fn replay_files_with(
         .and_then(|h| h.captured_at.clone())
         .or_else(|| events.first().map(|event| event.at.to_rfc3339_millis()))
         .unwrap_or_default();
-    let mut warnings: Vec<String> = version_warning.iter().map(ToString::to_string).collect();
     if roots.len() > 1 {
         warnings.push(format!(
             "{} root sessions in the selection: opened the one with the most sessions",

@@ -20,6 +20,12 @@ mechanical clause instead of grading it (owner item 14).
   until the row is flipped to `yes`, after which the test must match its body patterns and read `ok` in the gate log.
 - `skip (no network)`: the `g7-*` checks need `GH_TOKEN` or `GITHUB_TOKEN`. Locally use
   `GH_TOKEN=$(gh auth token) make check-contract`; CI passes none.
+- `git-baseline.txt`: the range base of the history checks (`range_base` in `lib.sh`: `g5-metrics-untouched`, `g6-shared-files`,
+  `g6-commit-format`) when the head is the mission branch itself. It is a commit on the mission branch and moves to the
+  boundary tip at each boundary, so the checks stop covering older commits.
+- `demo-base-cut.txt`: the mission-branch commit `demo/base` was cut from. `g7-demo-base` requires `demo/base` to be ahead of or
+  identical to it. It never moves with a boundary; it changes only when the pair is cut again. The two files held one value
+  until the M4 boundary, which made a boundary step on `git-baseline.txt` fail VAL-GATE-001 (B-184).
 - `exceptions.txt`: reviewed commits that predate a git-history check (`<check> <sha7> <reason>`); the list only shrinks.
 
 ## Environment

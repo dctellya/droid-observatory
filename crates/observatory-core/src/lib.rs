@@ -4,9 +4,11 @@ pub mod config;
 pub mod control;
 pub mod ingest;
 pub mod mapping;
+pub mod metrics;
 pub mod model;
 #[cfg(feature = "secrets")]
 pub mod secrets;
 #[cfg(feature = "store")]
 pub mod store;
+pub mod telemetry;
 pub mod view;

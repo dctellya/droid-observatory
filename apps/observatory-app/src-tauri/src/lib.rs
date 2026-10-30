@@ -15,6 +15,7 @@ mod logging;
 mod merge;
 mod process;
 mod stall;
+pub mod telemetry;
 
 use std::sync::{Arc, Mutex};
 
@@ -80,6 +81,8 @@ pub fn run() {
         status: status.clone(),
     };
 
+    let telemetry = Arc::new(telemetry::Telemetry::start(&cfg, shell.template.clone()));
+    let ingest_telemetry = telemetry.clone();
     let template = shell.template.clone();
     let git_template = template.clone();
     let (exclude, excluded) = std::sync::mpsc::channel();
@@ -93,6 +96,7 @@ pub fn run() {
         .manage(github::GateCache::default())
         .manage(git::GitCache::default())
         .manage(merge::MergeDesk::default())
+        .manage(telemetry)
         .setup(move |app| {
             app.manage(ingest::spawn(
                 app.handle().clone(),
@@ -100,6 +104,7 @@ pub fn run() {
                 store_path,
                 status,
                 excluded,
+                ingest_telemetry,
             ));
             app.manage(github::spawn(
                 app.handle().clone(),
@@ -137,6 +142,11 @@ pub fn run() {
             #[cfg(feature = "e2e")]
             e2e_gate::e2e_gate_poll,
             commands::panel_rendered,
+            commands::telemetry_status,
+            commands::metrics,
+            commands::price_table,
+            commands::export,
+            commands::export_default_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -151,6 +161,7 @@ pub fn run() {
                 app.state::<github::Github>().stop();
                 app.state::<git::Git>().stop();
                 app.state::<ingest::Ingest>().stop();
+                app.state::<Arc<telemetry::Telemetry>>().stop();
             }
             _ => {}
         });

@@ -155,6 +155,7 @@ impl Store {
                 started_at: row.get(3)?,
                 completed_at: row.get(4)?,
                 event_count: u64::try_from(row.get::<_, i64>(5)?).unwrap_or(0),
+                headline: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)

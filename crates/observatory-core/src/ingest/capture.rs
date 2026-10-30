@@ -82,3 +82,11 @@ pub fn select_mapping_of(
             .and_then(|header| header.droid_version.as_deref()),
     ))
 }
+
+/// What a replay says when the capture header names a usage-log extract that it cannot read.
+pub fn missing_usage_log_warning(file: &str) -> String {
+    format!(
+        "the usage log {file} named by the capture header was not found: no turn.usage events, \
+         the Panel's token columns read 0"
+    )
+}

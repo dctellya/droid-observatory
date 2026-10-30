@@ -10,7 +10,8 @@ use super::read::from_wire;
 use super::{EventScope, Store, StoreError, TimeRange};
 use crate::config::IngestConfig;
 use crate::ingest::{
-    JsonlSource, OpenedMission, SessionInfo, SessionTree, Source, read_sidecar, select_mapping_of,
+    JsonlSource, OpenedMission, SessionInfo, SessionTree, Source, UsageLogSource,
+    missing_usage_log_warning, read_capture, read_sidecar, select_mapping_of,
 };
 use crate::mapping::{MappingVersion, TreeMapper};
 use std::sync::Arc;
@@ -75,11 +76,26 @@ impl Store {
                 break;
             }
         }
+        let mut warnings: Vec<String> = warning.iter().map(ToString::to_string).collect();
+        if let Some(info) = read_capture(&root)?.and_then(|header| header.usage_log) {
+            let path = root.with_file_name(&info.file);
+            if path.is_file() {
+                let mut log = UsageLogSource::open_files(&[path], cfg)?;
+                let turns = log.read_all()?;
+                let events: Vec<_> = turns
+                    .iter()
+                    .filter_map(|turn| mapper.map_usage(turn))
+                    .collect();
+                self.insert_events(&events)?;
+            } else {
+                warnings.push(missing_usage_log_warning(&info.file));
+            }
+        }
         self.mark_tailed(tree.mission_id())?;
 
         let mut opened = self.open_mission(tree.mission_id())?;
         opened.summary.record_count = records;
-        opened.summary.warning = warning.map(|warning| warning.to_string());
+        opened.summary.warning = (!warnings.is_empty()).then(|| warnings.join("; "));
         Ok(opened)
     }
 

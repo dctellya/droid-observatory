@@ -24,7 +24,7 @@ COVERAGE_MIN ?= 80
 GATE := sh scripts/gate.sh $(if $(FORCE),--force)
 
 .PHONY: help doctor hooks check check-docs check-links check-workflows check-file-size \
-        check-all check-kit check-kit-lint check-contract check-contract-checks check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check \
+        check-all check-kit check-kit-lint check-contract check-contract-checks check-scripts check-gate-cache check-integrate check-integrate-long integrate integrate-long usage check-todos check-decisions-index decisions-index check-secrets redact-check check-wasm \
         fmt fmt-check lint test deny machete coverage replay-fixtures build ui-serve app-dev app-build e2e clean
 
 help: ## List targets
@@ -42,7 +42,7 @@ check: ## All light checks (= mission-branch CI), cached by the code paths throu
 	@$(GATE) check -- $(MAKE) --no-print-directory check-all
 	@CONTRACT_REQUIRE_TESTLOG=1 $(MAKE) --no-print-directory check-contract
 
-check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-kit check-scripts fmt-check lint test deny machete replay-fixtures
+check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-wasm check-kit check-scripts fmt-check lint test deny machete replay-fixtures
 
 check-scripts: check-gate-cache check-integrate check-integrate-long check-contract-checks check-kit-lint ## Shell tests of the repository scripts
 	@sh scripts/tests/compile-share.sh
@@ -55,6 +55,7 @@ check-scripts: check-gate-cache check-integrate check-integrate-long check-contr
 	@python3 scripts/tests/usage_e2e_test.py
 	@python3 scripts/tests/e2e_run_test.py
 	@python3 scripts/tests/usage_rewrites_test.py
+	@python3 scripts/tests/usage_ratios_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }
@@ -119,6 +120,15 @@ redact-check: ## Fixtures are redacted: a second redaction pass changes nothing
 	@sh scripts/check-redaction-idempotent.sh
 
 # --- Rust (active once Cargo.toml exists) ---
+
+# The host lint and test compile the UI crate for the host only; a break behind a wasm32 cfg (trunk's build) went unseen from
+# 716f610 to d63f4cc (F-274). This is a check, no codegen.
+check-wasm: ## The UI crate compiles for wasm32-unknown-unknown (cargo check, no codegen)
+ifneq (,$(HAS_UI))
+	@cargo check -p observatory-ui --target wasm32-unknown-unknown
+else
+	@echo "check-wasm: no UI yet, skipped"
+endif
 
 fmt: ## Format Rust code
 ifneq (,$(HAS_CARGO))

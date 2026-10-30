@@ -16,6 +16,28 @@ use observatory_core::model::{Event, MissionId, SessionId, SourcePtr};
 
 const M0_ROOT: &str = "2026-10-22-observatory-v1-m0.jsonl";
 
+/// Instrumented binaries run the watcher and the other live tests several times slower; the slowest
+/// line of a coverage run measured 3.198 s against the 1 s plain bound, so 4 keeps 1 s above it.
+pub const INSTRUMENTED_LATENCY_FACTOR: u32 = 4;
+
+/// `cargo llvm-cov` exports `CARGO_LLVM_COV=1` to everything it runs.
+pub fn instrumented_from(var: Option<std::ffi::OsString>) -> bool {
+    var.is_some_and(|value| !value.is_empty())
+}
+
+pub fn scaled_latency_bound(plain: Duration, instrumented: bool) -> Duration {
+    if instrumented {
+        plain * INSTRUMENTED_LATENCY_FACTOR
+    } else {
+        plain
+    }
+}
+
+/// A wall-time bound that holds in a plain run and, widened, under `cargo llvm-cov`.
+pub fn latency_bound(plain: Duration) -> Duration {
+    scaled_latency_bound(plain, instrumented_from(std::env::var_os("CARGO_LLVM_COV")))
+}
+
 pub fn m0_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/streams")

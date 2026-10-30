@@ -17,6 +17,7 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 pub use error::StoreError;
+pub use forge::GateWindowCheck;
 pub use hosted::HostedRun;
 pub use human::{HumanActionRow, RecordedAction};
 pub use read::{EventScope, TimeRange};

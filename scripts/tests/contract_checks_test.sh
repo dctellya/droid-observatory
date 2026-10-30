@@ -334,8 +334,10 @@ expect_skip g5-metrics-untouched "$r" "not on wt/m4"
 
 expect_ok g9-check-target-list '' "g9-check-target-list on the real tree"
 d=$(fresh tl1)
-put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures'
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check check-wasm fmt-check lint test deny machete replay-fixtures'
 expect_ok g9-check-target-list "$d" "all named targets listed"
+put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index check-secrets redact-check fmt-check lint test deny machete replay-fixtures'
+expect_red g9-check-target-list "$d" "check-wasm dropped from check-all (F-274)"
 put "$d" Makefile 'check-all: check-docs check-links check-workflows check-file-size check-todos check-decisions-index fmt-check lint test deny machete replay-fixtures'
 expect_red g9-check-target-list "$d" "check-secrets dropped from check-all"
 
@@ -473,6 +475,24 @@ gh_check g7-demo-base FAIL "demo/base diverged from the baseline"
 gh_clear
 gh_rule 1 'branches/demo/base' ''
 gh_check g7-demo-base FAIL "demo/base answers nothing"
+
+# B-184: `git-baseline.txt` is the range base of the history checks (it moves to the boundary tip) and
+# `demo-base-cut.txt` is the commit `demo/base` was cut from (it never moves); g7-demo-base reads only the second.
+cut=1111111111111111111111111111111111111111
+tip=2222222222222222222222222222222222222222
+sc=$(fresh split-checks)
+cp "$checks/lib.sh" "$checks/g7-demo-base.sh" "$sc/"
+put "$sc" git-baseline.txt "$tip"
+put "$sc" demo-base-cut.txt "$cut"
+gh_clear
+gh_rule 1 'branches/demo/base' 'demo/base'
+gh_rule 2 "compare/$cut...demo/base" 'ahead'
+out=$(PATH="$gs/bin:$PATH" GH_STUB="$gs/rules" GH_TOKEN=stub-token CONTRACT_REPO=o/r CONTRACT_ROOT="$root" sh "$sc/g7-demo-base.sh" 2> "$tmp/err")
+case "$out" in "g7-demo-base ok"*) ;; *) fail "g7-demo-base does not read demo-base-cut.txt: '$out' ($(cat "$tmp/err"))" ;; esac
+[ -s "$checks/demo-base-cut.txt" ] || fail "scripts/contract-checks/demo-base-cut.txt is missing or empty"
+[ -s "$checks/git-baseline.txt" ] || fail "scripts/contract-checks/git-baseline.txt is missing or empty"
+grep -q 'demo-base-cut.txt' "$checks/README.md" || fail "the contract-checks README does not document demo-base-cut.txt"
+grep -q 'git-baseline.txt' "$checks/README.md" || fail "the contract-checks README does not document git-baseline.txt"
 
 gh_clear
 gh_rule 1 'rulesets/42' '{"name":"demo-gate","conditions":{"ref_name":{"include":["refs/heads/demo/base"],"exclude":[]}},"rules":[{"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"demo-gate"}]}},{"type":"non_fast_forward"}]}'
@@ -664,8 +684,8 @@ m3 "$header$nl$good_row1$nl$good_row2" "$(printf '%s' "$good_json" | sed 's/"ove
 m3_expect FAIL "overhead line null under the default config"
 m3 "$header$nl$good_row1$nl$good_row2" 'not json'
 m3_expect FAIL "JSON that does not parse"
-expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command not landed: pending)"
-case "$out" in *pending*) ;; *) fail "g3: the real tree has no metrics command yet, wanted pending: $out" ;; esac
+expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command landed)"
+case "$out" in *pending*) fail "g3: the real tree has the metrics command, wanted no pending: $out" ;; esac
 
 # --- wiring: make check-contract, make check, the mission-branch CI -----------------------------------------------------
 

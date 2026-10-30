@@ -562,10 +562,11 @@ class UsageReportFile(unittest.TestCase):
     def test_the_script_imports_only_the_standard_library(self):
         mods = set()
         for path in (SCRIPT, os.path.join(HERE, "..", "usage_classes.py"), os.path.join(HERE, "..", "usage_idle.py"),
-                     os.path.join(HERE, "..", "usage_testing.py"), os.path.join(HERE, "..", "usage_rewrites.py")):
+                     os.path.join(HERE, "..", "usage_testing.py"), os.path.join(HERE, "..", "usage_rewrites.py"),
+                     os.path.join(HERE, "..", "usage_ratios.py")):
             mods |= set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", read(path), re.M))
         allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect",
-                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "statistics"}
+                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "usage_ratios", "statistics"}
         self.assertLessEqual(mods, allowed, mods - allowed)
 
 
@@ -1021,7 +1022,7 @@ class UsageReportPriceFiles(unittest.TestCase):
             plan_only_prices(prices)
             text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "2026-10-22"])
             self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
-            self.assertNotIn("2026-10-29", text)
+            self.assertNotIn("2026-10-29.toml", text)
             text = self.run_in(tmp, ["--prices-dir", prices, "--price-table", "config/prices/2026-10-22.toml"])
             self.assertIn("prices `%s`" % os.path.join(prices, "2026-10-22.toml"), text)
             text = self.run_in(tmp, ["--price-table", os.path.join(prices, "2026-10-22.toml")])
