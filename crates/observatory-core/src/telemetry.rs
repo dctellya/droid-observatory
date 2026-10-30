@@ -3,7 +3,6 @@
 //! checks before it starts. Pure: the exporter that sends the series lives in the app.
 
 use std::collections::BTreeSet;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -247,12 +246,6 @@ impl TelemetryStatus {
             enabled: false,
             reason: reason.into(),
         }
-    }
-}
-
-impl fmt::Display for TelemetryStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.reason)
     }
 }
 
