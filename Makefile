@@ -55,6 +55,7 @@ check-scripts: check-gate-cache check-integrate check-integrate-long check-contr
 	@python3 scripts/tests/usage_e2e_test.py
 	@python3 scripts/tests/e2e_run_test.py
 	@python3 scripts/tests/usage_rewrites_test.py
+	@python3 scripts/tests/usage_ratios_test.py
 
 usage: ## Write the tables of reports/usage/$(M).md between the usage markers (M=<milestone>, CAPS='orchestrator=30', OBSERVATORY_MISSION_DIR)
 	@test -n "$(M)" || { echo "usage: make usage M=<milestone> [CAPS='role=USD ...'] [USAGE_ARGS='--from <ts> --to <ts>']" >&2; exit 2; }

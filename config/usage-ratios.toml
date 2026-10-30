@@ -1,0 +1,27 @@
+# Constants and recorded rows of the usage report's Ratios section (scripts/usage_ratios.py).
+
+# Worker turns one assertion costs on the mission's record: M3's measurement (23.3 worker turns per assertion; M1 20.3, M2 29.9).
+# A feature's `turnBudget` divided by this is the number of standard assertions it plans, which weights the raw cost per assertion
+# by the size of the work instead of counting every assertion alike (owner item 10 of the M4 boundary, 2026-10-29 23:40).
+standard_assertion_turns = 23.3
+
+# Rows read by hand before the script existed. They are the owner's own derivation (owner item 10), kept as the first data rows so
+# a later milestone compares with them; the script's own row of the same milestone is shown next to them where both exist. Every
+# field but `milestone` and `source` is optional and shows as `-` when absent.
+[[recorded]]
+milestone = "m3"
+coordination = 0.9
+validation = 1.4
+source = "owner item 10: coordination about 0.9, validation about 1.4"
+
+[[recorded]]
+milestone = "m4"
+assertions = 33
+worker_usd = 35.0
+worker_per_assertion = 1.06
+coordination = 2.86
+validation = 1.30
+tooling = 0.85
+all_in = 6.7
+kinds = { mechanical = 12, behavioural = 15, mixed = 6 }
+source = "owner item 10: worker cost on contract features 35 USD-eq, 1.06 per assertion; all-in 6.7"

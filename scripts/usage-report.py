@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import usage_classes
 import usage_idle
+import usage_ratios
 import usage_rewrites
 import usage_testing
 
@@ -439,7 +440,8 @@ def load_transcript(path):
             if not kinds & {"text", "tool_use"}:
                 continue
             names, text, bg = tool_names(content)
-            recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg})
+            calls = sum(1 for b in content if b.get("type") == "tool_use")
+            recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg, "calls": calls})
             for b in content:
                 if b.get("type") == "tool_use" and b.get("name") == "WaitForScript":
                     inp = b.get("input") or {}
@@ -1027,7 +1029,8 @@ def build(args):
                  if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
     usage_rewrites.rewrite_lines(emit, md_table, args.milestone, lead_turns, usd,
                                  boundaries=[ts for t, ts in in_window if t == "worker_completed"],
-                                 resumes=[ts for t, ts in in_window if t == "mission_resumed"])
+                                 resumes=[ts for t, ts in in_window if t == "mission_resumed"],
+                                 calls=[r["calls"] for r in recs or () if sec(start) <= sec(r["ts"]) <= sec(end)])
 
     # User testing
     usage_testing.user_testing_lines(emit, md_table, win, clf, sidecars, args.sessions_dir,
@@ -1165,6 +1168,16 @@ def build(args):
 
     usage_rewrites.allowance_line(emit, args.milestone, window_total.usd, fulfilled, features, args.next_milestone)
 
+    ratios_path = args.ratios_config or os.path.join(repo_root, "config", "usage-ratios.toml")
+    if not os.path.isfile(ratios_path):
+        fail("ratios config %s not found" % ratios_path)
+    contract_path = args.validation_contract or os.path.join(mission_dir, "validation-contract.md")
+    usage_ratios.ratio_lines(
+        emit, md_table, usd, args.milestone, usage_ratios.load_config(ratios_path),
+        [(role, (by_role.get(role) or Agg()).turns, (by_role.get(role) or Agg()).usd) for role in ROLES], window_total.usd,
+        [(f, skills.get(f, "-"), v[1], feat_usd[f]) for f, v in sorted(feats.items()) if v[1]], features, budgets, fulfilled,
+        usage_ratios.read_kinds(contract_path))
+
     # Mission to date
     emit("### Mission to date by role")
     emit("")
@@ -1278,6 +1291,8 @@ def main(argv=None):
     ap.add_argument("--price-table", help="a dated price file to read instead of the newest: a date (2026-10-22), a file name or a "
                     "path such as the `price_table` of the config")
     ap.add_argument("--validation-state", help="validation-state.json for the cost per assertion; default <mission-dir>/validation-state.json")
+    ap.add_argument("--validation-contract", help="validation-contract.md for the kind of each assertion; default <mission-dir>/validation-contract.md")
+    ap.add_argument("--ratios-config", help="constants and recorded rows of the Ratios section; default config/usage-ratios.toml")
     ap.add_argument("--e2e-dir", default=os.path.join(repo_root, "reports", "e2e"),
                     help="reports/e2e: the record.json of each `make e2e` run, listed in the testing section")
     ap.add_argument("--gate-dir", default=os.path.join(repo_root, "reports", "gate"))

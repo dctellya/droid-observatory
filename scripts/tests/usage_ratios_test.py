@@ -94,13 +94,13 @@ class RatiosSection(unittest.TestCase):
         m4 = rows[1]
         self.assertEqual([m4[k] for k in ("Assertions fulfilled", "Worker cost per assertion", "Coordination ratio", "Validation ratio",
                                           "Tooling ratio", "Cost per assertion", "All-in cost per assertion")],
-                         ["33", "1.06", "2.86", "1.30", "0.85", "6.37", "6.7"])
+                         ["33", "1.06", "2.86", "1.30", "0.85", "6.37", "6.70"])
         self.assertIn("owner item 10", m4["Source"])
 
     def test_the_m3_row_carries_only_the_two_ratios_the_owner_read(self):
         m3 = table(self.text, "Ratios")[1][0]
         self.assertEqual([m3[k] for k in ("Worker cost per assertion", "Coordination ratio", "Validation ratio", "Tooling ratio",
-                                          "Cost per assertion")], ["-", "0.9", "1.4", "-", "-"])
+                                          "Cost per assertion")], ["-", "0.90", "1.40", "-", "-"])
 
     def test_the_buckets_reconcile_to_the_window_total(self):
         header, rows = table(self.text, "Cost by bucket")

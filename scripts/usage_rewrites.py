@@ -43,11 +43,25 @@ def compaction_marker(hits, resumes):
     return ts, kind
 
 
-def boundary_lines(emit, turns, hits, boundaries, resumes, usd):
+def single_call_line(calls):
+    """The `single-call share` line: lead turns with exactly one tool call over lead turns with at least one (B-176)."""
+    with_calls = [n for n in calls if n >= 1]
+    if not with_calls:
+        return "single-call share: n/a (no orchestrator transcript turn with a tool call in the window)"
+    one = sum(1 for n in with_calls if n == 1)
+    multi, none = len(with_calls) - one, len(calls) - len(with_calls)
+    plural = lambda n: "turn" if n == 1 else "turns"  # noqa: E731
+    return ("single-call share: %d / %d = %.1f %% (turns with exactly one tool call over turns with at least one; "
+            "%d %s with two or more calls, %d %s with none)" % (one, len(with_calls), 100.0 * one / len(with_calls),
+                                                                  multi, plural(multi), none, plural(none)))
+
+
+def boundary_lines(emit, turns, hits, boundaries, resumes, usd, calls=()):
     """The `orchestrator turns per feature boundary` line, and the before/after split when a compaction marker is in the window.
 
     `turns` are the lead turns of the rewrite table; `boundaries` are the progress_log times of the `worker_completed` entries
-    of the window (the runner's feature returns); `resumes` are the window's `mission_resumed` times.
+    of the window (the runner's feature returns); `resumes` are the window's `mission_resumed` times; `calls` are the tool-call counts of
+    the orchestrator transcript's assistant records in the window.
     """
     emit("orchestrator turns per feature boundary: %d / %d = %s (target %d)"
          % (len(turns), len(boundaries), ratio(len(turns), len(boundaries)), BOUNDARY_TARGET))
@@ -63,9 +77,11 @@ def boundary_lines(emit, turns, hits, boundaries, resumes, usd):
         emit("")
         emit("before compaction: %s; after: %s (marker: %s %s)" % (sides[0], sides[1], kind, at))
     emit("")
+    emit(single_call_line(calls))
+    emit("")
 
 
-def rewrite_lines(emit, md_table, milestone, turns, usd, boundaries=(), resumes=()):
+def rewrite_lines(emit, md_table, milestone, turns, usd, boundaries=(), resumes=(), calls=()):
     """Writes Lead context rewrites, Lead context rewrites per milestone and the summary line.
 
     `turns` are dicts {ts, cr, cw, usd} of the orchestrator's log turns in the window.
@@ -98,7 +114,7 @@ def rewrite_lines(emit, md_table, milestone, turns, usd, boundaries=(), resumes=
         emit("context rewrites: none (no lead turn with a cache read in the window)" if not context
              else "context rewrites: none in %d lead turns" % len(turns))
     emit("")
-    boundary_lines(emit, turns, hits, boundaries, resumes, usd)
+    boundary_lines(emit, turns, hits, boundaries, resumes, usd, calls)
     emit("A rewrite is a lead turn whose cache-write tokens exceed its cache-read tokens by at least the context size: the turn "
          "wrote a new cache of roughly the whole conversation instead of extending the old one (a compaction, a cache expiry "
          "after a long wait, or a resume). The context size is measured per window from the lead's own turns, not fixed; the "
@@ -109,6 +125,10 @@ def rewrite_lines(emit, md_table, milestone, turns, usd, boundaries=(), resumes=
          "mission's progress_log.jsonl in the window (one per worker hand-off returned to the orchestrator; `worker_failed` is "
          "not one). The before/after line appears only when the window holds a compaction marker, a `mission_resumed` entry of "
          "the progress_log or a lead context rewrite above, and splits at the earliest one.")
+    emit("")
+    emit("The single-call share counts the assistant records of the orchestrator transcript in the window: a turn with exactly one `tool_use` "
+         "block (a Script is one call) over the turns with at least one; a turn with none is a closing text and counts in neither, and "
+         "parallel calls in one turn are what the share is meant to raise a call to.")
     emit("")
 
 
