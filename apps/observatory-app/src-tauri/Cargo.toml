@@ -1,0 +1,47 @@
+[package]
+name = "observatory-app"
+description = "Tauri 2 shell of droid-observatory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "observatory_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+e2e = ["dep:tauri-plugin-wdio-webdriver"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+observatory-core.workspace = true
+tracing.workspace = true
+serde.workspace = true
+tracing-subscriber = { workspace = true, features = ["json"] }
+tauri = { version = "2.12.5", features = [] }
+# Embedded W3C WebDriver server for the end-to-end suite. Its README: never in a production build, so it
+# is optional and only the `e2e` feature (make e2e) turns it on.
+tauri-plugin-wdio-webdriver = { version = "1.5.1", optional = true }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "process", "macros", "time", "sync", "io-util"] }
+# The metrics exporter to the local collector (architecture §10, D-046). The SDK's own blocking
+# reqwest client is not used: `LoggedClient` over ureq (already built for the forge) logs each POST's
+# status and sends only the headers the app chose. Verified on crates.io 2026-10-30.
+opentelemetry = { version = "0.33.1", default-features = false, features = ["metrics"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["metrics"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "metrics"] }
+opentelemetry-http = { version = "0.33.1", default-features = false }
+async-trait = "0.1.92"
+ureq.workspace = true
+
+[dev-dependencies]
+tauri = { version = "2.12.5", features = ["test"] }
+serde_json.workspace = true
+toml.workspace = true
+tempfile.workspace = true
+# Decode the exporter's request body in the wire tests.
+opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic-messages", "metrics"] }
+prost = "0.14.4"

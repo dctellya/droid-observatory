@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "droid-observatory",
+  "version": "0.1.0",
+  "identifier": "dev.ellya.droid-observatory",
+  "build": {
+    "devUrl": "http://localhost:3141",
+    "frontendDist": "../ui/dist",
+    "beforeDevCommand": "trunk serve --config ui/Trunk.toml --port 3141 --open false",
+    "beforeBuildCommand": "trunk build --release --config ui/Trunk.toml"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      { "title": "droid-observatory", "width": 1600, "height": 1000 }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "fmt-check",
+  "tree": "254cbbbb665b55817e641ed379e48082ccac6102",
+  "code_tree": "45f1feb8eea81ae0a31ab577d5d1e325c0bf6ea5",
+  "fingerprint": "fdb11f1ffc71f2f40425d65a76d54c689ca750b4",
+  "tool": "rustc 1.99.1 (58cf8f9c3 2026-10-13) | cargo 1.99.1 (5f94df478 2026-08-27)",
+  "command": "cargo fmt --all -- --check",
+  "exit_code": 0,
+  "summary": "(no output)",
+  "seconds": 2.133,
+  "started_at": "2026-10-29T09:50:11Z",
+  "finished_at": "2026-10-29T09:50:13Z",
+  "session": "d32e6dc8-f448-4647-96c9-8017ee7674b9",
+  "session_source": "DROID_SESSION_ID"
+}

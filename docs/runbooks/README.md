@@ -9,6 +9,7 @@ milestone that delivers them; until then the equivalent CLI command is given.
 |---|---|
 | [red-gate.md](red-gate.md) | The `gate` check on the mission PR is red |
 | [fix-cycle.md](fix-cycle.md) | CI red after the orchestrator finished; reopen the mission on its branch |
+| [integrate-long.md](integrate-long.md) | A milestone boundary: coverage, timings and the CI wait as one background job |
 | [stalled-mission.md](stalled-mission.md) | No progress on a feature for longer than `stall_threshold_min` |
 | [hooks-disabled.md](hooks-disabled.md) | Git or Factory hooks are not running |
 | [release.md](release.md) | Cutting a release from `main` |

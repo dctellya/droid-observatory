@@ -1,0 +1,57 @@
+{
+  "milestone": "m5",
+  "code_tree": "f0f20497765673f723b7fa1cbca672ce80056224",
+  "fingerprint": "fc45af485b38e37e020ec4e242ab81630484db28",
+  "tool": "rustc 1.99.1 (58cf8f9c3 2026-10-13) | cargo 1.99.1 (5f94df478 2026-08-27)",
+  "started_at": "2026-10-30T11:03:50Z",
+  "finished_at": "2026-10-30T11:12:00Z",
+  "seconds": 490.451,
+  "exit_code": 0,
+  "jobs": [
+    {
+      "name": "coverage",
+      "lane": "cargo",
+      "command": "make --no-print-directory coverage",
+      "exit_code": 0,
+      "seconds": 197.772,
+      "log": "reports/integrate-long/f0f20497765673f723b7fa1cbca672ce80056224.logs/coverage.log",
+      "hit": false
+    },
+    {
+      "name": "timing-check",
+      "lane": "cargo",
+      "command": "cargo check -p observatory-core",
+      "exit_code": 0,
+      "seconds": 12.412,
+      "log": "reports/integrate-long/f0f20497765673f723b7fa1cbca672ce80056224.logs/timing-check.log",
+      "hit": false
+    },
+    {
+      "name": "timing-test",
+      "lane": "cargo",
+      "command": "cargo test -p observatory-core",
+      "exit_code": 0,
+      "seconds": 249.629,
+      "log": "reports/integrate-long/f0f20497765673f723b7fa1cbca672ce80056224.logs/timing-test.log",
+      "hit": false
+    },
+    {
+      "name": "timing-trunk",
+      "lane": "cargo",
+      "command": "trunk build --config apps/observatory-app/ui/Trunk.toml",
+      "exit_code": 0,
+      "seconds": 29.582,
+      "log": "reports/integrate-long/f0f20497765673f723b7fa1cbca672ce80056224.logs/timing-trunk.log",
+      "hit": false
+    },
+    {
+      "name": "ci",
+      "lane": "network",
+      "command": "sh scripts/integrate-long.sh --ci-wait",
+      "exit_code": 0,
+      "seconds": 237.090,
+      "log": "reports/integrate-long/f0f20497765673f723b7fa1cbca672ce80056224.logs/ci.log",
+      "hit": false
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "check",
+  "tree": "dc3351b40cdd79dbdcff98c8f7616c1884f5c01b",
+  "code_tree": "afe896087bb1fd07e52b2b95f550086ddc7dbda5",
+  "fingerprint": "1e9fe03ce21c74c3f64e3f9426870206805c0432",
+  "tool": "rustc 1.99.1 (58cf8f9c3 2026-10-13) | cargo 1.99.1 (5f94df478 2026-08-27)",
+  "command": "/Applications/Xcode.app/Contents/Developer/usr/bin/make --no-print-directory check-all",
+  "exit_code": 2,
+  "summary": "FAILED (failures=1)",
+  "seconds": 142.342,
+  "started_at": "2026-10-30T10:33:04Z",
+  "finished_at": "2026-10-30T10:35:27Z",
+  "session": "cb505f95-01d5-44cb-b9d5-0d6a7d19e259",
+  "session_source": "newest-settings-mtime"
+}

@@ -2,27 +2,46 @@
 
 A Rust desktop app that watches a Factory Mission build a business feature: which agent is on
 what, whether each milestone is validated, where time and tokens go, and the one gate that
-ships it. Lanes are the mission's orchestrated states; cards are milestones; the last lane is
-the pull request into `main`.
+ships it. It is a mission watcher: it measures the waste and effectiveness (cycle time, cost)
+of the engineering cycle from the spec to the pull request's checks going green. Lanes are the
+mission's seven phases; cards are milestones; roles are colour; the human's interventions are
+overlays; time, waste, cost and model drift are the Panel. What happens after the merge
+(release, observe, deploys, flags) belongs to the delivery platform and is out of scope: the
+last event the app records is `handed_to_cd`.
 
-**Status:** pre-mission. The repository holds the PRD, the rules, the CI gate and the
-configuration contract. No application code yet: the walking skeleton is the mission's first
-integration (ai/RULES.md rule 2). Rust targets in the `Makefile` activate the moment a
-`Cargo.toml` lands.
+**Status:** mission in progress. The walking skeleton (S), the stream capture and mapping milestone (M0), the
+board in replay and attach (M1, ai/RULES.md rule 2, SPEC §3) and the host (M2: launch form, hosted `droid exec` over
+stream-jsonrpc with pause, message and answer, live output per agent, D-033, D-034) and the controls (M3: the six human
+actions, the stall flag, the cycle template as data D-035, the end-to-end harness D-037, the gate cache and `make usage` /
+`make integrate`) are integrated on `mission/observatory-v1`: a Cargo
+workspace, the canonical `Event`, mapping v1 with its golden file (seven phase lanes, D-024), a SQLite pointer
+store, `observatory-cli replay` and `inspect`, view models, the attach watcher, the usage-log source (D-029), a
+Leptos board with Details and agents views and a Tauri host that attaches to live sessions. The Leptos go/no-go at
+M1 is **go** (D-030). Dogfooding started at the M1 integration: `make app-dev` from this checkout lists this
+mission's own orchestrator session on the board (`reports/usage/m1.md`, session log entry 35). The mission branch, gate and fix loop (M4, D-040) and time, waste and cost (M5: stage times, the eight waste causes shown as five groups,
+cost on the four-class formula, the metrics report and its export, the telemetry series plan D-047) are integrated too; the single pull request
+to `main` follows and the owner merges it. Money ran under notify-and-ask lines the owner moved (D-038, D-048, D-049: line 1700, M5 cap 200). What was left out is
+stated in the table below and in `reports/process/2026-10-30-process-record.md`: the owner's screenshots and the attended window (VAL-PROC-019 and VAL-E2E-004, handed to QA by the owner's word at M6), the historical process
+failures kept on the record (VAL-PROC-003, 016, 029, 032, 047 to 050), the readiness json of M3 and M4 (VAL-PROC-013) and a warm CI run for M5.
+The reference CSV oracle (VAL-METRIC-001, 003 and 026) closed in M6 with the corrected reference.
 
 ## What it will show
 
 | Lane | Holds |
 |---|---|
-| 1 Intent | prompt, spec, acceptance criteria, re-prompts |
-| 2 Orchestrator | plan, milestones, task assignment, replans |
-| 3 Workers | one sub-lane per worker: files, tests, commits |
-| 4 Validators, scrutiny | findings, blocking vs non-blocking, rework |
-| 5 Validators, user testing | QA scenarios against the built thing |
-| 6 Integration | worktree landings on `mission/<name>`, fast checks |
-| 7 Human | approvals, answers, the review, the merge |
-| 8 Outside | the PR, CI, attestations, deploys |
-| 9 Time, waste, cost, models | tokens per role, waste by cause, budget |
+| 1 Plan | prompt, plan, milestones, task assignment, replans, the human's answers |
+| 2 Contract | the validation contract and the spec versions |
+| 3 Build | one sub-lane per worker: files, tests, commits |
+| 4 Scrutiny | findings, blocking vs non-blocking, rework |
+| 5 User testing | QA scenarios against the built thing |
+| 6 Integrate | worktree landings on `mission/<name>`, gate commands, the PR opened |
+| 7 Gate | the PR's checks and attestations, the review, `handed_to_cd` |
+| Panel (above the lanes, not a lane) | engineering cycle time, waste (8 causes, shown as 5 groups), cost per role, drift against the declared models |
+
+Human interventions (and, later, an officer's actions (D-035)) are overlay markers on these lanes. Two
+clocks are named and never confused: the engineering cycle time (`feature.defined` to
+`handed_to_cd`) is the app's; the lead time to production is the delivery platform's, starting at
+the same merge sha.
 
 Full definition: [ai/prd/droid-observatory-prd.md](ai/prd/droid-observatory-prd.md).
 Spec: [SPEC.md](SPEC.md) (approved 2026-10-22; the mission plans from it).
@@ -37,11 +56,40 @@ git clone git@github.com:dctellya/droid-observatory.git
 cd droid-observatory
 make doctor      # which tools are missing and how to install them
 make hooks       # enable the git hooks (once)
+git config commit.template .gitmessage   # commit message shape (once; local config, not cloned)
 make check       # every light check the mission-branch CI runs
+cargo run -p observatory-cli -- replay fixtures/streams/2026-10-22-observatory-v1-m0.jsonl
+                 # root file and its child sessions: 1279 events over 8735 records, ends with `unknown events: 0`
+                 # (the S fixture gives 661 events); `--root-only` replays the root file alone (M0 474, S 364)
 ```
 
 `make help` lists all targets. The same targets run in CI, so a documented command is a
 command the gate runs.
+
+### The board (UI)
+
+The Leptos UI is a Trunk/WASM build in `apps/observatory-app/ui`. From a clean clone, with the
+toolchain above and `trunk` installed (`make doctor` lists it):
+
+```sh
+cd apps/observatory-app && trunk build --config ui/Trunk.toml
+                 # writes apps/observatory-app/ui/dist/: index.html, one *_bg.wasm, one *.js
+                 # (M1 go/no-go, D-030: 56.95 s on a clean clone with its own target directory)
+```
+
+Two ways to see the board (SPEC §6):
+
+- Browser host: `make ui-serve` (or `trunk serve --config apps/observatory-app/ui/Trunk.toml --port 3141
+  --open false` from the repository root), then open <http://localhost:3141> and pick the M0 capture
+  `fixtures/streams/2026-10-22-observatory-v1-m0.jsonl` (the root file; its `.children/` come with it)
+  in the file picker: seven phase lanes, the Panel, the unmapped tray and Details. The browser host
+  replays files only.
+- Tauri window: `make app-dev`. The window replays the same way and adds Attach: at start it scans
+  `~/.factory/sessions` (the files that grew in the last `[ingest].startup_scan_hours`, 24) and tails
+  them, so a mission running in a terminal appears on the board within a second. A session is
+  named by the first `--tag` you gave it, else by its session id. The library has an open-by-path
+  field for a replay file (there is no native file dialog yet, B-044). Events go to the SQLite
+  index at `[store].path` (`~/.droid-observatory/observatory.sqlite` by default), pointers only.
 
 ## Commands
 
@@ -55,9 +103,10 @@ command the gate runs.
 | `make check-todos` | debt markers must cite `#issue` or `B-nnn` | mission branch, gate |
 | `make check-decisions-index` | `docs/decisions/README.md` is generated and current | mission branch, gate |
 | `make check-secrets` | gitleaks over the repository | mission branch, gate |
-| `make fmt-check` / `make lint` / `make test` / `make deny` | rustfmt, clippy `-D warnings`, tests, cargo-deny | once `Cargo.toml` exists |
-| `make replay-fixtures` | every `fixtures/streams/*.jsonl` through `observatory-cli replay` | once fixtures exist |
-| `make app-dev` / `make app-build` | Tauri dev window / macOS bundle | once the app exists |
+| `make fmt-check` / `make lint` / `make test` / `make deny` / `make machete` | rustfmt, clippy `-D warnings`, tests, cargo-deny, unused dependencies | mission branch, gate |
+| `make replay-fixtures` | every `fixtures/streams/*.jsonl` through `observatory-cli replay`, child sessions included | mission branch, gate |
+| `make coverage` | line coverage of `observatory-core` (run alone); floor 80 % from M0 | mission branch (job `coverage`) |
+| `make app-dev` / `make app-build` | Tauri dev window / macOS `.app` bundle | local |
 
 ## Configuration
 
@@ -65,8 +114,35 @@ command the gate runs.
   `~/.droid-observatory/config.toml`.
 - `config/prices/<date>.toml`: the dated price table that turns tokens into money. Each cost on
   the board names the table it used.
-- `.env.example`: environment variables, including the Grafana Cloud OTLP contract. Secrets go
+- `.env.example`: environment variables (`GITHUB_TOKEN`, `FORGE_LIVE`, the CI-only OTLP variables). Secrets go
   in the OS keychain on the desktop; the environment is the fallback and what CI uses.
+
+## Environment and secrets
+
+See `.env.example`. Secrets come from the OS keychain (`droid-observatory/<name>` entries) or the environment, never from the
+repository, the store or logs. The forge (the Gate lane's GitHub source) is off unless `GITHUB_TOKEN` is set or the owner starts the
+app with `FORGE_LIVE=1`, which lets it read the keychain item `droid-observatory/github-token` (`FORGE_LIVE=1 make app-dev`, or
+`GITHUB_TOKEN="$(gh auth token)" make app-dev` for the token without the keychain). `FORGE_LIVE=1` is the owner's launch from his
+own terminal: no process a worker starts reads the keychain (F-218, F-219). The token is a read-only fine-grained PAT, so the
+Merge button surfaces the `403` and the owner merges by hand (D-014).
+
+## Demo branch pair (test infrastructure)
+
+The Gate lane is exercised against a branch pair in this repository (D-040): `demo/base` is long-lived test infrastructure and
+stays; it carries the ruleset `demo-gate` (PR required, required check `demo-gate`, no force push) and the workflow
+`.github/workflows/demo-gate.yml`, which fails while the label `demo:red` is on the pull request. PRs come from `demo/*` into
+`demo/base`; every `demo/*` branch other than `demo/base` is deleted after its run (a `gh` step, not an observed event).
+After the M4 validation, on 2026-10-29T22:20:16Z:
+
+```sh
+gh api repos/dctellya/droid-observatory/branches --paginate --jq '.[].name' | grep '^demo/'
+```
+
+```text
+demo/base
+```
+
+Pair PRs of the M4 validation: #29, #32, #33 and #34 (merge `0a853d9`).
 
 ## Running it as a mission
 
@@ -85,6 +161,27 @@ droid exec --mission --auto high \
 Reasoning effort per role is `high` for all three (SPEC §2). The mission works on
 `mission/<name>`, one worktree per milestone, and ends in one pull request into `main`.
 
+## Running a boundary
+
+The integrator lands a finished milestone with one target, from the mission branch checkout with a clean tree
+(only `build-log/` may differ):
+
+```sh
+make integrate M=m3 FROM=wt/m3       # FROM takes several branches, separated by spaces
+```
+
+`scripts/integrate.sh` does, in order: a `git merge --no-ff` of each branch with the message rendered from
+`scripts/templates/integrate-commit.txt` and the trailers of `.git-trailers` added by `git interpret-trailers`; the final
+gate through `make check` (`scripts/gate.sh`: a printed cache hit when the merged tree is the tree a worker or validator
+already proved, a real run on a miss, an abort with the summary when red, never a rerun); `make usage M=m3`
+(`CAPS` and `USAGE_ARGS` pass through); the merge of every `reports/staging/<feature>.md` into `SPEC.md` §9 (next free
+`F-NNN` rows), `BACKLOG.md` (next `B-NNN` rows) and the decision files (an addendum per amendment), after which the
+staging files are deleted and `make decisions-index` runs; the boundary report
+`reports/readiness/<date>-<milestone>.md` (merges, the gate numbers copied from `reports/gate/<tree>/*.json`, deferred
+clauses, library notes); one boundary commit; and the boundary summary the integrator pastes. A failed step leaves the
+merges in place: fix with a new commit and run the target again (a merged branch is skipped). Judgement edits
+(`SPEC.md` §10, `README.md`, the Honest time table) stay by hand. `make check-integrate` is the self-test.
+
 ## The gate
 
 Two workflows, one required check:
@@ -102,14 +199,16 @@ Two workflows, one required check:
   (`.github/release.yml`, D-009). Runbook: `docs/runbooks/release.md`.
 
 Branch rules on `main`: pull request required, `gate` required, no force pushes, no admin
-bypass, zero required approvals (the human in lane 7 merges by hand, the gate is the review).
+bypass, zero required approvals (the human merges by hand, the gate is the review; the merge is
+the app's last event, `handed_to_cd`).
 
 ## Observability
 
-Grafana Cloud over OTLP is the telemetry backend (D-004): the app's own traces and metrics,
-and the lane-9 mission series (`observatory.*`). Off by default; the app works fully offline.
-Endpoint and credentials come from `OTEL_EXPORTER_OTLP_*` or the keychain, never from the
-repository.
+The app exports the Panel's mission series (`observatory.*`) over OTLP to a local collector
+(`[telemetry].endpoint`, default `http://localhost:4318`, D-046); the collector is configured for the sink (Grafana Cloud, a local
+Grafana stack or any provider), so the app holds no provider credential. Off by default; the app works fully offline. An optional
+header comes from the keychain item named by `[telemetry].headers_keychain_item`, never from the repository. CI telemetry
+(B-002) stays deferred.
 
 ## Repository layout
 
@@ -122,6 +221,7 @@ ai/            PRD, rules, spec template, session logs (the human-agent record)
 config/        example config and dated price tables
 docs/decisions/ one file per decision; README.md is generated
 docs/runbooks/  red gate, fix cycle, stalled mission, hooks disabled, release
+docs/spec/     SPEC §9 rows F-001 to F-266 (S to M4), archived verbatim
 build-log/     one JSON line per agent tool call, by day and session
 reports/       readiness reports, usage and waste per milestone (pasted from the tool)
 scripts/       the checks the Makefile calls
@@ -136,9 +236,17 @@ Rule 10: real time and usage per milestone, stated here as the work lands.
 |---|---|---|---|
 | Ideation → PRD v0.2 | ~1 h 40 m | 1 Droid session | two review rounds; log in `ai/session/2026-10-22-session.md` |
 | Repo readiness | ~2 h | same session | readiness Level 1 (5/65) → Level 3 (31/65); see `reports/readiness/` |
+| S walking skeleton | 63.9 min of assistant time in 8 parent sessions (first worker 2026-10-22 16:49Z, scrutiny done 17:39Z, user testing finished 2026-10-23 06:40Z after an overnight usage limit) | 6 workers, scrutiny and user-testing validators with their 10 children | 13.21 USD-eq of the 40 cap on workers and validators; the orchestrator's share is not exposed (`reports/usage/s.md`) Left out (handoff `2c04bd42`, `m0-integrate-s`): a green CI (the `rust` job's clippy failed on Linux because the Tauri shell needs the GTK and WebKit libraries; fixed in M0 by `m0-ci-rust-job-linux`, D-022); a `/readiness-report` run (`reports/readiness/2026-10-23-s.json` is a hand re-evaluation, 42 of 66); the owner's screenshot `reports/screenshots/2026-10-23-s.png`. |
+| M0 capture and mapping | 162.9 min of assistant time in 14 parent sessions (first worker 2026-10-23 07:41Z, user testing round 1 finished 12:50Z; a 5-hour usage limit paused the mission at 11:03Z) | 11 workers, scrutiny (two rounds) and user-testing validators with their children | 49.05 USD-eq of the 60 cap priced so far (workers, validators, orchestrator subagents); the orchestrator's own delta is 66.87 USD-eq against its cap of 32 (`reports/usage/m0.md`) Wall time source: this row at the M0 boundary (`a606f43`), also in the `reports/usage/m0.md` addendum of 2026-10-30. Left out (handoff `b57208e3`, `m1-integrate-m0`): the third CI run on `6e22a6f` was not awaited (the two before it were green); the owner's screenshot `reports/screenshots/2026-10-23-m0.png`; the VAL-PROC-039 exception stayed open until the user-testing re-run. |
+| M1 board, replay, attach | 342.0 min of assistant time in 23 parent sessions (first worker 2026-10-23 12:29Z, last validator finished 2026-10-24 04:08Z; a 4 h 13 min owner pause and two 5-hour usage limits, 255.4 min in total, are inside that wall time) | 17 workers (this integration included), scrutiny and user-testing validators with their 25 children | 110.38 USD-eq of the 110 cap on workers, validators and orchestrator subagents; the orchestrator's own delta is 115.74 USD-eq against its cap of 22 (`reports/usage/m1.md`) Wall time source: this row at the M1 boundary and handoff `cbdcd8ef` (`m2-integrate-m1`), also in the `reports/usage/m1.md` addendum of 2026-10-30. Left out (same handoff): the screenshot `reports/screenshots/2026-10-24-m1.png` (`screencapture` returned a locked display; the owner adds it); the CI result of the last commit `bf2f137` was not awaited (the runs for `add7b7c` and `37d7e81` were green). |
+| M2 host | 871.95 min of wall clock from the first worker (2026-10-24 05:04:43Z) to the report time 19:36:40Z, of which 121.3 min are one `unrecoverable_usage_402` throttle; episode 4 (Model-Router fallback to `kimi-k3`, SPEC §9 F-046) voided the sessions listed in that row | 9 workers (this integration included), validators in five scrutiny and four user-testing rounds | 120.61 USD-eq of the 50 cap on workers, validators and orchestrator subagents; the orchestrator's own M2 spend is over its 30 USD-eq stop (118.84 USD-eq on the log's fable turns); record mission-to-date 694.66 USD-eq, 110.3 % of the 630 hard stop (`reports/usage/m2.md`) Left out (handoff `4b1e0a29`, `m3-integrate-m2`): the F-041 cycle-template decision D-035 and code (assigned to `m3-cycle-template-refactor`); the owner's screenshot `reports/screenshots/2026-10-24-m2.png`; the M2 cap, orchestrator cap and 630 hard-stop questions were open and went to the owner at the boundary. |
+| M3 controls | 620.1 min of wall clock from the first worker (2026-10-25 07:59:07Z) to the end of the usage window 18:19:14Z, of which 15.64 min are one `unrecoverable_usage_402` throttle (the F-057 verification, SPEC §9 F-132) | 19 workers (this integration included), two scrutiny rounds and three user-testing rounds (a fourth session, `1653b1f7`, was stopped by the 402) | 210.98 USD-eq in the window against the cap 110 (over); the orchestrator's own 68.81 USD-eq against 30 (over); mission to date 990.09 USD-eq, past the 950 stop-and-decide line (`reports/usage/m3.md`) Left out (handoff `2c5d2bb3`, `m4-integrate-m3`): VAL-E2E-004 (awaits the owner's attended locked-display run); the second consecutive warm CI run (F-068) and the B-056 trim (the only warm run, 221 s, was over 3 min and a second needed a code push); the owner's screenshots; owner questions Q1 to Q7 and the write-token question stayed open, so M4 was not dispatched at the boundary. |
+| M4 mission branch, gate, fix loop | the window is 2026-10-25T18:19:15Z to 2026-10-29T22:05:24Z (4.1 days), of which 4 usage-limit gaps (1893 min) and 13 owner gaps (3067 min) are idle; the first M4 worker started 2026-10-29 09:25Z and the last implementation feature ended 21:10Z | 38 worker sessions (1662 turns, this integration excluded), scrutiny in three rounds (32, 3 and 2 review subagents) and user testing in two rounds, 48 validator sessions | 253.73 USD-eq in the window against the cap 200 (over); the orchestrator's own 111.86 USD-eq against 30 (over); 7.93 USD-eq per assertion fulfilled against M3's 4.75; mission to date 1260.74 USD-eq of the 1350 notify-and-ask line (`reports/usage/m4.md`, D-043) Left out (handoff `daa7ad2b`, `m5-integrate-m4`): VAL-METRIC-001 and the VAL-METRIC assertions after it (the reference CSV was missing, stall flag, B-008); the wasm `cargo check` in `make check` and the `event_batches` flake fix (code, M5 work, B-183, B-181); the `.github` CI telemetry (deferred); a warm CI measurement (none existed at the boundary). |
+| M5 time, waste, cost | the window is 2026-10-29T22:30:00Z to 2026-10-30T11:12:26Z, 762.4 min, of which one 143.0 min pause (the first usage limit of the night and a `kimi-k3` fallback, resumed on the owner's word; not a throttle, `reports/usage/m5.md`) is idle; the first M5 worker started 2026-10-29 22:47Z (`m5-infra-gate-and-flake-fixes`) | 25 worker sessions (962 turns), 32 validator sessions (799 turns) in scrutiny round 2 and user-testing rounds 1 to 4, 13 self-check sessions | 186.13 USD-eq in the window against the cap 200 (under; measured 2026-10-30 12:15:25Z, SPEC §9 F-346; D-048, D-049); the orchestrator's own 81.83 USD-eq against 30 (over, SPEC §9 F-337); 4.77 USD-eq per assertion fulfilled (186.13 / 39) against M4's 7.93; mission to date 1446.87 USD-eq of the 1700 notify-and-ask line (D-049; the committed `reports/usage/m5.md` reads 163.57, 71.27 and 1424.31 and stays as written). Left out: VAL-METRIC-001 and 003 (the reference CSV is not in the repository), the owner's screenshots, the m3 and m4 readiness json, a warm CI run (the only M5 run is cold, 228 s) |
+| M6 oracle, model guard, release gate | the window is 2026-10-30T12:15:25Z to 20:40:00Z, 504.58 min, of which 157.55 min are owner waits (rulings, no usage-limit stop in the window) and 347.03 min are system time (`reports/usage/m6.md` Clocks); no worktree, the work ran in the main checkout on `mission/observatory-v1` (owner ruling D, a rule-13 deviation) and every commit ran the PR gate | 12 worker sessions (479 turns), 14 validator sessions (428 turns, all in unit 1: one scrutiny run, two user-testing rounds), 29 orchestrator-subagent sessions, 1 self-check session | 97.52 USD-eq in the window (unit 1 48.34 of 49, then 49.18 more; 40.43 since the 16:09Z cut against the cap by role of 94, role caps opened by the owner's word at 20:59); the orchestrator's own 53.93; validation 14.48 = 14.8 % of the window; mission to date 1544.39 USD-eq of the 1700 notify-and-ask line (D-049). Done: the reference CSV is the corrected one (copied on the owner's word, `cmp` exit 0, the oracle test passes, 6 tests, 9.844 s), four engine defects fixed test first, the M3 usage sources, the usage report's heartbeat and idle-by-cause tables, the model guard hook (D-050), live measurements, `limit-severities-for-sarif: true` (B-272). Left out: VAL-PROC-019 and VAL-E2E-004 are handed to QA by the owner's word (no screenshots, attended window); VAL-PROC-003, 016, 029, 032 and 047 to 050 stay failed on the record (`reports/process/2026-10-30-process-record.md`); `tauri-plugin-dialog` and the lead-plus-seats refinement are in BACKLOG (B-287, B-288) |
 
-Token usage for these sessions is recorded by Factory, not by this repository yet; the
-observatory's first job is to make that number visible.
+Token usage is pasted from the session sidecars into `reports/usage/<milestone>.md` at each
+integration; the observatory's first job is to make that number visible.
 
 ## Licence
 

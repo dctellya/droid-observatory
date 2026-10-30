@@ -1,0 +1,7 @@
+# The reference CSV is a derived draft: classify the 102 deviations before any engine change
+
+Source: owner's delegate (pre-roci), 30-oct-2026 17:48, on the hand-off of m6-reference-csv-commit (e57aaed; oracle test metrics_match_reference_spreadsheet_within_tolerance now runs and fails with 102 deviations). Behaviour rule for the oracle-parity slice, no new slice.
+
+Fact. reports/reference/2026-10-22-observatory-v1-m0.csv was derived by the delegate from the M0 capture with resume/roci/oracle-draft/oracle.py and METHOD.md (22-name header, correction note of 00:45 on the header). It is the owner's reference by his ruling A, but its values are a derivation, not hand measurements. A deviation can therefore be an engine defect or a reference error.
+
+Rule for m6-reference-csv-oracle-parity. (1) Before any engine change, list the 102 deviations by metric and classify each as engine defect, reference error or tolerance, with the evidence line for each (the capture event or count it rests on). (2) Engine defects are fixed in the engine. (3) Reference errors are not fixed by changing the engine to match; they go to the owner as one list with the proposed corrected values, and the CSV is corrected on his word in one commit. (4) Tolerance questions go to the owner with the proposed tolerance. (5) METRIC-001/003/026 are graded after the two files agree, not before. A slice that changes the engine to match a derived number without the classification is the dismissal-as-claim pattern the M6 rules forbid (inbox 1319 rule 4).

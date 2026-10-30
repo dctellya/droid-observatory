@@ -1,0 +1,7 @@
+Integrate {{milestone}}: {{branch}}
+
+Merged on {{date}} by `make integrate`. The final gate record is reports/gate/<code tree>/check.json,
+the usage report reports/usage/{{milestone}}.md.
+
+Commits:
+{{commits}}

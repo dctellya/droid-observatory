@@ -1,0 +1,20 @@
+secrets:
+  - id: github-pat
+    paths:
+      - "build-log/2026-10-30/50c8af83-bca8-4346-bcee-5cc5baf73589.jsonl"
+    statement: >-
+      Lines 218 and 219 hold a run-time-built placeholder token (an `ghp_` prefix plus filler) that the hook logged
+      with a Bash command, masked as asterisks in the tool output. build-log/ is the append-only hook log; history
+      is never rewritten (ai/RULES.md rule 12). The value was never a credential.
+
+vulnerabilities:
+  - id: GHSA-wrw7-89jp-8q8g
+    paths:
+      - "Cargo.lock"
+    expired_at: 2027-01-28
+    statement: >-
+      glib 0.18.5 (MEDIUM, VariantStrIter unsoundness, fixed in 0.20.0) is reached only through tauri's Linux GTK3
+      stack (cargo tree -i glib@0.18.5: atk, gtk 0.18.2, muda, tao). The app ships on macOS and nothing in the
+      repository uses glib::VariantStrIter. Moving to glib 0.20 needs a tauri update, not a change here. The gate
+      action reports every severity to SARIF and fails on any finding, so this MEDIUM advisory fails fs-scan;
+      re-check by the expiry date.

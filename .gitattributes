@@ -11,3 +11,5 @@ Cargo.lock -diff merge=binary
 *.webp binary
 *.mp4 binary
 *.jsonl text -diff
+# Append-only; two worktrees that each logged hits merge by keeping both sets of lines.
+reports/gate/hits.log text merge=union

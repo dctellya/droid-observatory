@@ -1,0 +1,4 @@
+# Known violations of UI kit rule 2 (identifier-, timestamp- and number-shaped text in the mono face) that
+# `make check-kit` tolerates until a feature fixes them. One key per line: `<file> <tag>[<aria-label>]` or
+# `<file> <tag> `<expression>``, as the lint prints it in square brackets. The list must be exact: a line whose
+# violation is fixed turns the lint red until the line is deleted, and a violation that is not listed is red.

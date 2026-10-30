@@ -1,0 +1,139 @@
+//! The human side of the store: one `human_actions` row and one event per control, written
+//! together. A row holds the kind, the state, the target feature and the id of the event the
+//! action points at; it has no column for text (PRD §11.2).
+
+use rusqlite::params;
+
+use std::collections::HashSet;
+
+use super::{EventScope, Store, StoreError, TimeRange, insert_events_in};
+use crate::control::{self, HumanAction};
+use crate::model::{CycleTemplate, Event, EventId, EventKind, MissionId, Timestamp};
+
+/// What `Store::record_human_action` wrote.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordedAction {
+    pub action_id: u64,
+    pub event: Event,
+}
+
+/// A row of `human_actions`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HumanActionRow {
+    pub id: u64,
+    pub mission_id: String,
+    pub kind: String,
+    pub target: Option<String>,
+    pub at: String,
+    pub state: String,
+    pub payload_ptr: Option<String>,
+}
+
+impl Store {
+    /// Records `action`: the row and the human-overlay event (`control::record`) in one
+    /// transaction, the event pointing at the row. `about` is as for `control::record`.
+    pub fn record_human_action(
+        &mut self,
+        action: &HumanAction,
+        mission: &MissionId,
+        at: Timestamp,
+        template: &CycleTemplate,
+        about: Option<&Event>,
+    ) -> Result<RecordedAction, StoreError> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO human_actions (mission_id, kind, target, at, state, payload_ptr) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                mission.to_string(),
+                action.kind(),
+                action.target_text(),
+                at.to_rfc3339_millis(),
+                action.state(),
+                action.payload_ptr().map(ToString::to_string),
+            ],
+        )?;
+        let action_id = u64::try_from(tx.last_insert_rowid()).unwrap_or_default();
+        let event = control::record(action, mission, at, action_id, template, about);
+        insert_events_in(&tx, std::slice::from_ref(&event))?;
+        tx.commit()?;
+        Ok(RecordedAction { action_id, event })
+    }
+
+    /// Moves the row of a control to the state its outcome gave it (a merge goes from
+    /// `requested` to `merged`, `refused` or `failed`).
+    pub fn set_human_action_state(
+        &mut self,
+        action_id: u64,
+        state: &str,
+    ) -> Result<(), StoreError> {
+        let id = i64::try_from(action_id).unwrap_or(i64::MAX);
+        self.conn.execute(
+            "UPDATE human_actions SET state = ?1 WHERE id = ?2",
+            params![state, id],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes the ack-derived `mission.paused` rows of `mission` that the stream reports too
+    /// (`control::dedupe_paused`), so one hosted Pause stays one row. The ack is stored before
+    /// the stream's own line arrives, so this runs after a stream `mission.paused` is stored.
+    /// Returns the ids deleted; the `human_actions` rows and the action's own event stay.
+    pub fn retract_echoed_pauses(
+        &mut self,
+        mission: &MissionId,
+    ) -> Result<Vec<EventId>, StoreError> {
+        let events: Vec<Event> = self
+            .events(&EventScope::Mission(mission.clone()), TimeRange::ALL)?
+            .into_iter()
+            .filter(|event| {
+                matches!(
+                    event.kind,
+                    EventKind::MissionPaused | EventKind::MissionResumed
+                )
+            })
+            .collect();
+        let ack_ids: HashSet<EventId> = events
+            .iter()
+            .filter(|event| control::is_ack(&event.id))
+            .map(|event| event.id.clone())
+            .collect();
+        let kept: HashSet<EventId> = control::dedupe_paused(events, &ack_ids)
+            .into_iter()
+            .map(|event| event.id)
+            .collect();
+        let dropped: Vec<EventId> = ack_ids.difference(&kept).cloned().collect();
+        let tx = self.conn.transaction()?;
+        for id in &dropped {
+            tx.execute(
+                "DELETE FROM usage WHERE event_id = ?1",
+                params![id.to_string()],
+            )?;
+            tx.execute("DELETE FROM events WHERE id = ?1", params![id.to_string()])?;
+        }
+        tx.commit()?;
+        Ok(dropped)
+    }
+
+    /// The controls of `mission`, oldest first.
+    pub fn human_actions(&self, mission: &MissionId) -> Result<Vec<HumanActionRow>, StoreError> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, mission_id, kind, target, at, state, payload_ptr FROM human_actions \
+             WHERE mission_id = ?1 ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map(params![mission.to_string()], |row| {
+                Ok(HumanActionRow {
+                    id: u64::try_from(row.get::<_, i64>(0)?).unwrap_or_default(),
+                    mission_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    target: row.get(3)?,
+                    at: row.get(4)?,
+                    state: row.get(5)?,
+                    payload_ptr: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}

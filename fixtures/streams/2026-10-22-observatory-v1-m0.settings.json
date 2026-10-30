@@ -1,0 +1,502 @@
+{
+  "assistantActiveTimeMs": 26948242,
+  "model": "claude-fable-5.1",
+  "reasoningEffort": "high",
+  "interactionMode": "mission",
+  "autonomyLevel": "high",
+  "autonomyMode": "auto-high",
+  "compactionThresholdCheckEnabled": true,
+  "allowSubagentsInScripts": false,
+  "toolExecutionMode": "script_only",
+  "toolExecutionModeModelId": "claude-fable-5.1",
+  "tokenUsage": {
+    "inputTokens": 814845,
+    "outputTokens": 558767,
+    "cacheCreationTokens": 5059936,
+    "cacheReadTokens": 38166855,
+    "thinkingTokens": 129408,
+    "factoryCredits": 41178549
+  },
+  "childInclusiveTokenUsageBySessionId": {
+    "59ee8736-e49e-4091-9ade-536696563973": {
+      "inputTokens": 12,
+      "outputTokens": 1804,
+      "cacheCreationTokens": 32945,
+      "cacheReadTokens": 64990,
+      "thinkingTokens": 166,
+      "factoryCredits": 42772
+    },
+    "e2e3d113-d82b-4548-8809-4ebd269d1629": {
+      "inputTokens": 12,
+      "outputTokens": 3399,
+      "cacheCreationTokens": 37485,
+      "cacheReadTokens": 56766,
+      "thinkingTokens": 20,
+      "factoryCredits": 53363
+    },
+    "cef762e9-5544-40a6-a9fa-0b9b3593f743": {
+      "inputTokens": 18,
+      "outputTokens": 2341,
+      "cacheCreationTokens": 38736,
+      "cacheReadTokens": 127992,
+      "thinkingTokens": 117,
+      "factoryCredits": 53238
+    },
+    "777c6203-0e4b-45db-8064-21ba6f1e9a51": {
+      "inputTokens": 21,
+      "outputTokens": 3456,
+      "cacheCreationTokens": 45268,
+      "cacheReadTokens": 195599,
+      "thinkingTokens": 60,
+      "factoryCredits": 66936
+    },
+    "d1083556-f835-4f44-a0cf-c907eb18e1ab": {
+      "inputTokens": 24,
+      "outputTokens": 12746,
+      "cacheCreationTokens": 125316,
+      "cacheReadTokens": 787179,
+      "thinkingTokens": 4718,
+      "factoryCredits": 960318
+    },
+    "b19ddede-7907-444a-a16d-28ac6d1c122e": {
+      "inputTokens": 12,
+      "outputTokens": 5883,
+      "cacheCreationTokens": 29923,
+      "cacheReadTokens": 154334,
+      "thinkingTokens": 233,
+      "factoryCredits": 282758
+    },
+    "b82fb5f0-0e21-47d5-b3ae-fd37b86e9116": {
+      "inputTokens": 10,
+      "outputTokens": 6276,
+      "cacheCreationTokens": 41391,
+      "cacheReadTokens": 119551,
+      "thinkingTokens": 129,
+      "factoryCredits": 344472
+    },
+    "12af01f5-f1d7-4487-8595-767298110266": {
+      "inputTokens": 32,
+      "outputTokens": 15413,
+      "cacheCreationTokens": 72964,
+      "cacheReadTokens": 901948,
+      "thinkingTokens": 2127,
+      "factoryCredits": 763408
+    },
+    "82ad1581-fe75-4436-ac9c-9bc1e20a789b": {
+      "inputTokens": 56,
+      "outputTokens": 25222,
+      "cacheCreationTokens": 52360,
+      "cacheReadTokens": 1255960,
+      "thinkingTokens": 2549,
+      "factoryCredits": 892071
+    },
+    "9b0e8fc9-8828-4ef3-8d63-ab3d05dc733d": {
+      "inputTokens": 46,
+      "outputTokens": 26663,
+      "cacheCreationTokens": 74124,
+      "cacheReadTokens": 1130686,
+      "thinkingTokens": 2344,
+      "factoryCredits": 1017143
+    },
+    "9d874ce8-7d72-4d9b-8c98-5f176e7ebd30": {
+      "inputTokens": 28,
+      "outputTokens": 14695,
+      "cacheCreationTokens": 54728,
+      "cacheReadTokens": 637566,
+      "thinkingTokens": 555,
+      "factoryCredits": 631413
+    },
+    "05820c7d-bd0e-4fe8-b869-cebb72727faa": {
+      "inputTokens": 28,
+      "outputTokens": 46209,
+      "cacheCreationTokens": 137675,
+      "cacheReadTokens": 1006551,
+      "thinkingTokens": 10158,
+      "factoryCredits": 1713327
+    },
+    "7be541b9-cee5-4643-b588-ae6c1f31c74c": {
+      "inputTokens": 14,
+      "outputTokens": 20422,
+      "cacheCreationTokens": 67479,
+      "cacheReadTokens": 257509,
+      "thinkingTokens": 6210,
+      "factoryCredits": 771645
+    },
+    "2abf7f4f-100f-4c9c-b12d-78675596ee0f": {
+      "inputTokens": 18,
+      "outputTokens": 23288,
+      "cacheCreationTokens": 73722,
+      "cacheReadTokens": 387598,
+      "thinkingTokens": 7912,
+      "factoryCredits": 873206
+    },
+    "e5cb8077-02f7-4d30-acb4-349e8ee0abea": {
+      "inputTokens": 24,
+      "outputTokens": 25509,
+      "cacheCreationTokens": 95349,
+      "cacheReadTokens": 708518,
+      "thinkingTokens": 6042,
+      "factoryCredits": 1057876
+    },
+    "44e19307-7533-41a1-8f66-1234a1386401": {
+      "inputTokens": 18,
+      "outputTokens": 26846,
+      "cacheCreationTokens": 79426,
+      "cacheReadTokens": 407454,
+      "thinkingTokens": 12594,
+      "factoryCredits": 974870
+    },
+    "c911e77f-129c-45d7-bcb4-6a0136a28cb6": {
+      "inputTokens": 16,
+      "outputTokens": 28354,
+      "cacheCreationTokens": 82825,
+      "cacheReadTokens": 342389,
+      "thinkingTokens": 9033,
+      "factoryCredits": 1015510
+    },
+    "101b9e5d-3e26-424c-bb8d-6c5ad1d1e356": {
+      "inputTokens": 18,
+      "outputTokens": 28838,
+      "cacheCreationTokens": 90253,
+      "cacheReadTokens": 424232,
+      "thinkingTokens": 11673,
+      "factoryCredits": 1070523
+    },
+    "35fca0ab-5f7e-4924-9d1a-8bf250e785af": {
+      "inputTokens": 24,
+      "outputTokens": 34814,
+      "cacheCreationTokens": 117623,
+      "cacheReadTokens": 794613,
+      "thinkingTokens": 10504,
+      "factoryCredits": 1363957
+    },
+    "d7960fc7-c0a0-4f02-b8cf-408b7a8d3b92": {
+      "inputTokens": 196784,
+      "outputTokens": 141699,
+      "cacheCreationTokens": 350333,
+      "cacheReadTokens": 3639221,
+      "thinkingTokens": 29042,
+      "factoryCredits": 5736716
+    },
+    "82070292-f272-4110-8a74-ef2b31236e67": {
+      "inputTokens": 20,
+      "outputTokens": 13486,
+      "cacheCreationTokens": 49138,
+      "cacheReadTokens": 245334,
+      "thinkingTokens": 2409,
+      "factoryCredits": 540028
+    },
+    "8ca62365-1d34-4e94-9473-df95d2229445": {
+      "inputTokens": 16,
+      "outputTokens": 4247,
+      "cacheCreationTokens": 34520,
+      "cacheReadTokens": 168451,
+      "thinkingTokens": 208,
+      "factoryCredits": 274453
+    },
+    "3d385317-7e9b-45de-b116-6ebc278d6ec0": {
+      "inputTokens": 14,
+      "outputTokens": 6256,
+      "cacheCreationTokens": 19667,
+      "cacheReadTokens": 146054,
+      "thinkingTokens": 464,
+      "factoryCredits": 238119
+    },
+    "0b1286d9-4bf0-41ff-a14a-67ca7852ddc4": {
+      "inputTokens": 50,
+      "outputTokens": 58857,
+      "cacheCreationTokens": 163440,
+      "cacheReadTokens": 2168797,
+      "thinkingTokens": 12422,
+      "factoryCredits": 2211429
+    },
+    "6d6f7721-055e-4571-83e9-23ec160693fe": {
+      "inputTokens": 8,
+      "outputTokens": 3001,
+      "cacheCreationTokens": 23141,
+      "cacheReadTokens": 39354,
+      "thinkingTokens": 90,
+      "factoryCredits": 179693
+    },
+    "4162070f-576b-49e0-b1e4-7ed0d84027b2": {
+      "inputTokens": 16,
+      "outputTokens": 16529,
+      "cacheCreationTokens": 54543,
+      "cacheReadTokens": 292746,
+      "thinkingTokens": 4836,
+      "factoryCredits": 632636
+    }
+  },
+  "inclusiveTokenUsage": {
+    "inputTokens": 1012184,
+    "outputTokens": 1155020,
+    "cacheCreationTokens": 7104310,
+    "cacheReadTokens": 54628247,
+    "thinkingTokens": 266023,
+    "factoryCredits": 64940429
+  },
+  "providerLock": "anthropic",
+  "providerLockTimestamp": "2026-10-22T18:01:02.013Z",
+  "lastCallTokenUsage": {
+    "inputTokens": 5546,
+    "outputTokens": 829,
+    "cacheReadTokens": 86948
+  },
+  "apiProviderLock": "bedrock_anthropic",
+  "enabledToolIds": [
+    "store_agent_readiness_report"
+  ],
+  "artifacts": [
+    {
+      "id": "github:github.com/dctellya/droid-observatory#1",
+      "url": "https://github.com/dctellya/droid-observatory/pull/1",
+      "externalId": "dctellya/droid-observatory#1",
+      "provider": "github",
+      "kind": "pull_request",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T12:12:04.311Z",
+      "toolCallId": "eb9b8a20-03a2-408d-aee1-eb50dc84c47e-4"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#2",
+      "url": "https://github.com/dctellya/droid-observatory/pull/2",
+      "externalId": "dctellya/droid-observatory#2",
+      "provider": "github",
+      "kind": "pull_request",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T12:30:05.665Z",
+      "toolCallId": "1e1fec1b-873c-4880-8fc2-58a8fe08939c-9"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#3",
+      "url": "https://github.com/dctellya/droid-observatory/pull/3",
+      "externalId": "dctellya/droid-observatory#3",
+      "provider": "github",
+      "kind": "pull_request",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T12:48:59.796Z",
+      "toolCallId": "a8ecf135-022c-4751-af11-828e9b0649e5-11"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#4",
+      "url": "https://github.com/dctellya/droid-observatory/pull/4",
+      "externalId": "dctellya/droid-observatory#4",
+      "provider": "github",
+      "kind": "pull_request",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:02:56.805Z",
+      "toolCallId": "42bd090e-c345-46ec-81b2-db71457c7c47-13"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#5",
+      "url": "https://github.com/dctellya/droid-observatory/issues/5",
+      "externalId": "dctellya/droid-observatory#5",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:11:52.237Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-3"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#6",
+      "url": "https://github.com/dctellya/droid-observatory/issues/6",
+      "externalId": "dctellya/droid-observatory#6",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:11:57.698Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-5"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#7",
+      "url": "https://github.com/dctellya/droid-observatory/issues/7",
+      "externalId": "dctellya/droid-observatory#7",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:00.200Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-6"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#8",
+      "url": "https://github.com/dctellya/droid-observatory/issues/8",
+      "externalId": "dctellya/droid-observatory#8",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:02.196Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-7"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#9",
+      "url": "https://github.com/dctellya/droid-observatory/issues/9",
+      "externalId": "dctellya/droid-observatory#9",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:07.219Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-9"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#10",
+      "url": "https://github.com/dctellya/droid-observatory/issues/10",
+      "externalId": "dctellya/droid-observatory#10",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:09.283Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-10"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#11",
+      "url": "https://github.com/dctellya/droid-observatory/issues/11",
+      "externalId": "dctellya/droid-observatory#11",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:12.042Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-11"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#12",
+      "url": "https://github.com/dctellya/droid-observatory/issues/12",
+      "externalId": "dctellya/droid-observatory#12",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:14.429Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-12"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#13",
+      "url": "https://github.com/dctellya/droid-observatory/issues/13",
+      "externalId": "dctellya/droid-observatory#13",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:21.822Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-13"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#14",
+      "url": "https://github.com/dctellya/droid-observatory/issues/14",
+      "externalId": "dctellya/droid-observatory#14",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:24.451Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-14"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#15",
+      "url": "https://github.com/dctellya/droid-observatory/issues/15",
+      "externalId": "dctellya/droid-observatory#15",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:26.586Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-15"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#16",
+      "url": "https://github.com/dctellya/droid-observatory/issues/16",
+      "externalId": "dctellya/droid-observatory#16",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:31.131Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-17"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#17",
+      "url": "https://github.com/dctellya/droid-observatory/issues/17",
+      "externalId": "dctellya/droid-observatory#17",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:36.442Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-19"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#18",
+      "url": "https://github.com/dctellya/droid-observatory/issues/18",
+      "externalId": "dctellya/droid-observatory#18",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:43.011Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-21"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#19",
+      "url": "https://github.com/dctellya/droid-observatory/issues/19",
+      "externalId": "dctellya/droid-observatory#19",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:45.436Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-22"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#20",
+      "url": "https://github.com/dctellya/droid-observatory/issues/20",
+      "externalId": "dctellya/droid-observatory#20",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:49.701Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-23"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#21",
+      "url": "https://github.com/dctellya/droid-observatory/issues/21",
+      "externalId": "dctellya/droid-observatory#21",
+      "provider": "github",
+      "kind": "issue",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:12:51.874Z",
+      "toolCallId": "aa6f7c28-5e2f-4f30-a02f-67702feb4a28-24"
+    },
+    {
+      "id": "github:github.com/dctellya/droid-observatory#22",
+      "url": "https://github.com/dctellya/droid-observatory/pull/22",
+      "externalId": "dctellya/droid-observatory#22",
+      "provider": "github",
+      "kind": "pull_request",
+      "action": "create",
+      "source": "tool",
+      "createdAt": "2026-10-22T13:20:50.163Z",
+      "toolCallId": "01494834-b41b-403a-b526-09e38fd637b1-7"
+    }
+  ],
+  "tags": [
+    {
+      "name": "mission-session",
+      "metadata": {
+        "role": "orchestrator",
+        "missionId": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c"
+      }
+    }
+  ]
+}

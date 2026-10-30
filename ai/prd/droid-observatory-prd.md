@@ -72,6 +72,8 @@ Running missions without that view means managing agents blind on the two dimens
 
 ## 7. Lanes
 
+> **Superseded by F-028 / D-024 (2026-10-23):** the lanes are the seven mission phases (Plan, Contract, Build, Scrutiny, User testing, Integrate, Gate), human and commander actions are overlays, the old lane 9 is the Panel, and `handed_to_cd` replaces `pr.merged_by_human`, `pr.merged_by_policy` and `deploy.completed`; the spec (SPEC.md §5.2) and [D-024](../../docs/decisions/D-024-phase-lanes.md) are the authority. The text below is kept as written.
+
 The board has nine lanes. Lanes 1–6 are fed by the mission stream, 7–8 by GitHub and human actions, 9 by session metadata. Each event carries `session_id`, `role`, `model`, `timestamp`, `duration`, and a pointer to its raw JSONL line.
 
 | # | Lane | What it holds | Source | Event kinds |
@@ -93,6 +95,8 @@ Lane 9 is rendered as a panel that doubles as the mission's budget meter. It is 
 `context.compacted` is kept in lane 2 because it explains sudden quality drops in the sessions that follow it. `hook.blocked` is the write guard firing; it is counted under retry and failure.
 
 ## 8. Board model
+
+> **Superseded by F-028 / D-024 (2026-10-23):** the gate group sits in the Gate lane (7), the fix loop returns from Gate to Build and is counted as rework, mission completion is observed at `handed_to_cd` (merge sha, PR number, attestation ids) and nothing after the merge is observed; the spec (SPEC.md §1, §3 M4, §5.2) is the authority. The text below is kept as written.
 
 **Card = one milestone.** The milestone is the spec phase: the orchestrator plans it, workers build its features in a worktree, validators judge it, and it integrates into `mission/<name>`. Each card lists its features with their individual state, and metrics roll up feature → milestone → mission.
 
@@ -214,6 +218,7 @@ Each feature, at every instant, is in exactly one time state:
 | **Retry and failure** | Time in tool errors, `hook.blocked`, re-runs of the same command, and conflict resolution. |
 | **Idle, queued** | Feature is planned and ready but blocked behind another feature (WIP limit, dependency, no free worker). A bottleneck signal. |
 | **Idle, unscheduled** | Feature exists but nothing is scheduled and nothing is blocking it. Not a bottleneck signal. |
+| **Throttled** *(Added by F-033 (2026-10-23))* | The platform stopped the work: a usage window was exhausted or the platform paused the mission. Measured from `mission_paused` to `mission_resumed`, with the reason recorded. Not idle and not waiting on a human; reported per milestone and per run, separately from the other causes (SPEC §5.6, D-028). |
 
 Rework is not a separate time state. It is a window (10.2) that overlays active, retry, and waiting time.
 
@@ -358,6 +363,8 @@ Reasoning: the hard part of this product is `observatory-core` (ingest, mapping,
 **Go/no-go criterion (evaluated at M1 completion):** the board renders the M0 replay (all nine lanes, cards positioned correctly, Details timeline open) with **at most 3 worker sessions of rework** after the first scrutiny pass, and the Trunk/WASM build succeeds from a clean checkout with the documented command. If either fails, switch to Option C for M2 onward, keeping `observatory-core` unchanged; the Tauri command boundary is designed to make that swap possible. (Threshold of 3 agreed 2026-10-22; may be adjusted at planning time.)
 
 ## 13. Milestones (seed of the mission plan)
+
+> **Superseded by F-028 / D-024 (2026-10-23):** the M1, M3, M4 and M5 rows name lanes 6 to 9 and a gate that ends at a merge badge; the spec (SPEC.md §3) is the authority: seven phase lanes plus the Panel, human-overlay events, M4 ending at `handed_to_cd` without deploys or branch-deletion detection, and an M5 Panel with cycle time, waste measured as 8 and shown as 5, cost per role and drift. The text below is kept as written.
 
 **One mission, six milestones, one branch `mission/observatory-v1`, one PR at the end.** Each milestone runs in its own worktree and integrates into the mission branch with fast checks. M0 must complete before the orchestrator plans M1 onward in detail, because the stream schema is unknown until the capture exists.
 

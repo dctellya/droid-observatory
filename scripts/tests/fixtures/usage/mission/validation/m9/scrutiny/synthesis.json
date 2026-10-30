@@ -1,0 +1,12 @@
+{
+ "milestone": "m9",
+ "round": 1,
+ "validatorModel": "claude-opus-5-5",
+ "subagents": [
+  {
+   "sessionId": "55555555-5555-4555-8555-555555555555",
+   "model": "claude-opus-5-5",
+   "purpose": "scrutiny review of m9-alpha"
+  }
+ ]
+}

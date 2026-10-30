@@ -1,0 +1,31 @@
+{
+ "assertions": {
+  "VAL-A-001": {
+   "status": "passed",
+   "validatedAtMilestone": "m9"
+  },
+  "VAL-A-002": {
+   "status": "passed",
+   "validatedAtMilestone": "m9"
+  },
+  "VAL-A-003": {
+   "status": "passed",
+   "validatedAtMilestone": "m9",
+   "note": "reopened in round 2"
+  },
+  "VAL-A-004": {
+   "status": "passed",
+   "validatedAtMilestone": "m8"
+  },
+  "VAL-A-005": {
+   "status": "pending"
+  },
+  "VAL-A-006": {
+   "status": "handed_to_qa"
+  },
+  "VAL-A-007": {
+   "status": "failed",
+   "validatedAtMilestone": "m9"
+  }
+ }
+}

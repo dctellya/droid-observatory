@@ -1,0 +1,1129 @@
+//! `GitHubSource` behind the `Forge` trait (architecture §4.6, FR-G3): PR detection for the
+//! mission branch, the target branch from config, the two read endpoints for checks, and a log
+//! that carries method, URL and status and never the token. Responses are recorded
+//! (`fixtures/github/demo-smoke-1/`, taken with `gh api` on the demo pair); no test calls GitHub.
+#![cfg(feature = "github")]
+
+use std::cell::{Cell, RefCell};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Mutex;
+use std::time::Duration;
+
+use observatory_core::config::GithubConfig;
+use observatory_core::ingest::forge::{CheckConclusion, CheckSource, Forge, ForgeError, PrState};
+use observatory_core::ingest::github::{
+    GitHubClient, GitHubSource, HttpResponse, HttpTransport, UreqTransport,
+};
+use observatory_core::model::{
+    CycleTemplate, EventKind, MilestoneId, MissionId, Role, SourcePtr, Timestamp,
+};
+use observatory_core::secrets::Secret;
+use observatory_core::store::{EventScope, Store, TimeRange};
+use observatory_core::view::{BoardState, Filter, GateBadge, ViewConfig, WorkerGrouping};
+use serde::Deserialize;
+
+const REPO: &str = "dctellya/droid-observatory";
+const BRANCH: &str = "demo/smoke-1";
+const API: &str = "https://api.github.com";
+const HEAD_SHA: &str = "1d994af00fb141466e46021e9c6f8adbf314db55";
+/// The shape of a fine-grained PAT, built at run time: a literal would trip secret scanners on push.
+fn fake_token() -> String {
+    ["github", "pat", &"x".repeat(82)].join("_")
+}
+
+fn fixture_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/github/demo-smoke-1")
+}
+
+#[derive(Deserialize)]
+struct Route {
+    path: String,
+    status: u16,
+    body: String,
+}
+
+#[derive(Deserialize)]
+struct Routes {
+    routes: Vec<Route>,
+}
+
+fn recorded_routes() -> Vec<(String, u16, String)> {
+    let text = std::fs::read_to_string(fixture_dir().join("routes.json")).unwrap();
+    let routes: Routes = serde_json::from_str(&text).unwrap();
+    routes
+        .routes
+        .into_iter()
+        .map(|route| {
+            let body = std::fs::read_to_string(fixture_dir().join(&route.body)).unwrap();
+            (route.path, route.status, body)
+        })
+        .collect()
+}
+
+/// Answers from the recorded routes and remembers every URL it was asked for. A pulls query
+/// the recording does not hold lists nothing, as GitHub does.
+#[derive(Clone)]
+struct Replay {
+    routes: Rc<Vec<(String, u16, String)>>,
+    asked: Rc<RefCell<Vec<String>>>,
+    /// False until the PR "exists": the recorded empty list answers the pulls query.
+    pr_visible: Rc<Cell<bool>>,
+    overrides: Rc<RefCell<Vec<(String, HttpResponse)>>>,
+}
+
+impl Replay {
+    fn new() -> Self {
+        Self {
+            routes: Rc::new(recorded_routes()),
+            asked: Rc::default(),
+            pr_visible: Rc::new(Cell::new(true)),
+            overrides: Rc::default(),
+        }
+    }
+
+    fn answer(&self, path: &str, status: u16, body: &str) {
+        self.overrides.borrow_mut().push((
+            path.to_owned(),
+            HttpResponse {
+                status,
+                body: body.to_owned(),
+                rate_limit_remaining: None,
+                rate_limit_reset: None,
+            },
+        ));
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.borrow().clone()
+    }
+}
+
+impl HttpTransport for Replay {
+    fn get(&self, url: &str) -> Result<HttpResponse, String> {
+        let path = url.strip_prefix(API).expect("the client asks the API host");
+        self.asked.borrow_mut().push(path.to_owned());
+        if let Some((_, response)) = self
+            .overrides
+            .borrow()
+            .iter()
+            .find(|(candidate, _)| candidate == path)
+        {
+            return Ok(response.clone());
+        }
+        let hit = |wanted: &str| self.routes.iter().find(|route| route.0 == wanted);
+        let found = if path.contains("/pulls?") && !self.pr_visible.get() {
+            hit(&format!(
+                "/repos/{REPO}/pulls?head=dctellya:demo/none-yet&base=demo/base&state=all"
+            ))
+        } else {
+            hit(path)
+        };
+        let (status, body) = match found {
+            Some((_, status, body)) => (*status, body.clone()),
+            None if path.contains("/pulls?") => (200, "[]".to_owned()),
+            None => (404, r#"{"message":"Not Found"}"#.to_owned()),
+        };
+        Ok(HttpResponse {
+            status,
+            body,
+            rate_limit_remaining: None,
+            rate_limit_reset: None,
+        })
+    }
+}
+
+fn config(target: &str) -> GithubConfig {
+    GithubConfig {
+        target_branch: target.into(),
+        repo: REPO.into(),
+        poll_interval_s: 30,
+        ..GithubConfig::default()
+    }
+}
+
+fn mission() -> MissionId {
+    MissionId("mission-demo".into())
+}
+
+fn source(replay: &Replay, target: &str) -> GitHubSource<GitHubClient<Replay>> {
+    GitHubSource::new(
+        GitHubClient::new(replay.clone(), REPO),
+        mission(),
+        BRANCH,
+        &config(target),
+        CycleTemplate::engineering(),
+    )
+}
+
+fn at(base: Timestamp, seconds: i64) -> Timestamp {
+    Timestamp(base.0 + time::Duration::seconds(seconds))
+}
+
+fn store_with_mission(dir: &Path) -> (Store, rusqlite::Connection) {
+    let path = dir.join("o.sqlite");
+    let store = Store::open(&path).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute(
+        "INSERT INTO missions (id, name, state, started_at) VALUES ('mission-demo', 'demo', 'at_gate', '2026-10-29T09:00:00Z')",
+        [],
+    )
+    .unwrap();
+    (store, conn)
+}
+
+#[test]
+fn pr_for_mission_branch_is_detected_within_poll_interval() {
+    let replay = Replay::new();
+    replay.pr_visible.set(false);
+    let mut source = source(&replay, "demo/base");
+    let created = Timestamp::parse("2026-10-29T09:58:30Z").unwrap();
+
+    // A one-second test clock starts 20 s before the PR exists; the source decides when it is due.
+    let mut found = None;
+    for second in -20..120 {
+        let now = at(created, second);
+        if second == 0 {
+            replay.pr_visible.set(true);
+        }
+        if let Some(poll) = source.poll_if_due(now).unwrap()
+            && poll.pr.is_some()
+        {
+            found = Some((now, poll));
+            break;
+        }
+    }
+    let (observed, poll) = found.expect("the PR is found");
+    let delay = observed.0 - created.0;
+    assert!(
+        delay <= time::Duration::seconds(30),
+        "detected {delay} after it was opened, interval is 30 s"
+    );
+    assert!(delay >= time::Duration::ZERO);
+
+    let pr = poll.pr.as_ref().unwrap();
+    assert_eq!(
+        (pr.number, pr.head.as_str(), pr.base.as_str()),
+        (24, BRANCH, "demo/base")
+    );
+    assert_eq!(pr.head_sha, HEAD_SHA);
+    assert_eq!(
+        pr.state,
+        PrState::Closed,
+        "the recorded PR was closed unmerged"
+    );
+
+    let template = CycleTemplate::engineering();
+    let kinds: Vec<&EventKind> = poll.events.iter().map(|event| &event.kind).collect();
+    assert_eq!(
+        kinds,
+        [&EventKind::PrOpened, &EventKind::CheckPassed],
+        "the recorded PR opened, and its last run had passed"
+    );
+    let opened = &poll.events[0];
+    assert_eq!(opened.kind, EventKind::PrOpened);
+    assert_eq!(
+        opened.lane,
+        template.lane_of(&EventKind::PrOpened, opened.role)
+    );
+    assert_eq!(
+        opened.at, created,
+        "the event is stamped with the PR's creation time"
+    );
+    assert_eq!(opened.mission_id, mission());
+    assert!(matches!(&opened.source, SourcePtr::GitHub { url } if url.ends_with("/pulls/24")));
+
+    // not due again before the interval; due after it; the PR opens once
+    assert!(source.poll_if_due(at(observed, 10)).unwrap().is_none());
+    let again = source.poll_if_due(at(observed, 30)).unwrap().expect("due");
+    assert!(again.events.is_empty(), "pr.opened is emitted once per PR");
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &poll).unwrap();
+    let (head, base, state, observed_at, url): (String, String, String, String, String) = conn
+        .query_row(
+            "SELECT head, base, state, observed_at, url FROM prs WHERE number = 24",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        (head.as_str(), base.as_str(), state.as_str()),
+        (BRANCH, "demo/base", "closed")
+    );
+    assert_eq!(Timestamp::parse(&observed_at).unwrap(), observed);
+    assert!(url.ends_with("/pulls/24"));
+    let (kind, lane, src, event_url): (String, String, String, String) = conn
+        .query_row(
+            "SELECT kind, lane, source, url FROM events WHERE kind = 'pr.opened'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!((kind.as_str(), src.as_str()), ("pr.opened", "github"));
+    assert_eq!(lane, opened.lane.as_str());
+    assert!(event_url.ends_with("/pulls/24"));
+}
+
+#[test]
+fn recording_a_poll_twice_keeps_one_pr_row_and_its_first_observation() {
+    let replay = Replay::new();
+    let mut source = source(&replay, "demo/base");
+    let first_at = Timestamp::parse("2026-10-29T10:00:00Z").unwrap();
+    let first = source.poll_if_due(first_at).unwrap().unwrap();
+    let second = source.poll_if_due(at(first_at, 30)).unwrap().unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &first).unwrap();
+    store.record_poll(&mission(), &second).unwrap();
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM prs", [], |r| r.get(0))
+        .unwrap();
+    let opened: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'pr.opened'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let observed: String = conn
+        .query_row("SELECT observed_at FROM prs WHERE number = 24", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let checks: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM checks WHERE pr_number = 24",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!((rows, opened, checks), (1, 1, 1));
+    assert_eq!(Timestamp::parse(&observed).unwrap(), first_at);
+    assert_eq!(store.unknown_count(&mission()).unwrap(), 0);
+}
+
+#[test]
+fn target_branch_is_read_from_config_not_hardcoded() {
+    for target in ["demo/base", "release/2026"] {
+        let replay = Replay::new();
+        let mut source = source(&replay, target);
+        source
+            .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
+            .unwrap();
+        let asked = replay.asked();
+        let lookup = asked
+            .iter()
+            .find(|path| path.contains("/pulls?"))
+            .expect("a pull request lookup");
+        assert!(
+            lookup.contains(&format!("base={target}")),
+            "{lookup} names the configured target"
+        );
+        assert!(
+            lookup.contains("head=dctellya:demo/smoke-1"),
+            "{lookup} names the owner and the mission branch"
+        );
+        assert!(
+            asked.iter().all(|path| !path.contains("base=main")),
+            "no request targets main: {asked:?}"
+        );
+    }
+
+    for file in ["forge.rs", "github.rs"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/ingest")
+            .join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("\"main\""), "{file} holds no literal main");
+    }
+}
+
+fn comment_free(text: &str) -> Vec<(usize, String)> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim_start().starts_with("//"))
+        .map(|(index, line)| (index + 1, line.to_owned()))
+        .collect()
+}
+
+fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            rust_files(&path, out);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn check_runs_api_is_never_called() {
+    let replay = Replay::new();
+    let mut source = source(&replay, "demo/base");
+    source
+        .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
+        .unwrap();
+
+    let asked = replay.asked();
+    let prefix = format!("/repos/{REPO}");
+    assert_eq!(
+        asked.len(),
+        8,
+        "pulls, runs, status, then the runs again for the attestations, their artifacts, the reviews, \
+         the rules and the ruleset names: {asked:?}"
+    );
+    assert!(
+        asked[0].starts_with(&format!("{prefix}/pulls?")),
+        "{asked:?}"
+    );
+    assert_eq!(
+        asked[1],
+        format!("{prefix}/actions/runs?head_sha={HEAD_SHA}")
+    );
+    assert_eq!(asked[2], format!("{prefix}/commits/{HEAD_SHA}/status"));
+    assert_eq!(asked[5], format!("{prefix}/pulls/24/reviews"));
+    assert_eq!(asked[6], format!("{prefix}/rules/branches/demo/base"));
+    assert!(
+        asked
+            .iter()
+            .all(|path| !path.contains("check-runs") && !path.contains("check-suites")),
+        "{asked:?}"
+    );
+
+    // the client has no function for it either
+    let mut files = Vec::new();
+    rust_files(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        for (number, line) in comment_free(&text) {
+            assert!(
+                !line.contains("check-runs") && !line.contains("check-suites"),
+                "{}:{number}: {line}",
+                file.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn checks_come_from_actions_runs_and_commit_statuses() {
+    let replay = Replay::new();
+    let client = GitHubClient::new(replay.clone(), REPO);
+    let pr = client.pr(BRANCH, "demo/base").unwrap().expect("the PR");
+    let checks = client.checks(&pr).unwrap();
+    let [check] = checks.as_slice() else {
+        panic!("the latest run of demo-gate only: {checks:?}");
+    };
+    assert_eq!(check.name, "demo-gate");
+    assert_eq!(
+        check.source,
+        CheckSource::ActionsRun {
+            run_id: 40_853_894_595
+        }
+    );
+    assert_eq!(
+        check.conclusion,
+        CheckConclusion::Passed,
+        "run 3 passed after run 2 failed"
+    );
+    assert!(check.url.contains("/actions/runs/40853894595"));
+
+    let path = format!("/repos/{REPO}/commits/{HEAD_SHA}/status");
+    replay.answer(
+        &path,
+        200,
+        r#"{"state":"failure","statuses":[
+            {"context":"ci/lint","state":"success","target_url":"https://ci.example.invalid/1"},
+            {"context":"ci/unit","state":"failure","target_url":"https://ci.example.invalid/2"},
+            {"context":"ci/slow","state":"pending","target_url":null}]}"#,
+    );
+    let checks = client.checks(&pr).unwrap();
+    let status = |name: &str| {
+        checks
+            .iter()
+            .find(|check| check.name == name)
+            .unwrap_or_else(|| panic!("{name} in {checks:?}"))
+    };
+    assert_eq!(status("ci/lint").conclusion, CheckConclusion::Passed);
+    assert_eq!(status("ci/unit").conclusion, CheckConclusion::Failed);
+    assert_eq!(status("ci/slow").conclusion, CheckConclusion::Running);
+    assert_eq!(
+        status("ci/unit").source,
+        CheckSource::CommitStatus {
+            context: "ci/unit".into()
+        }
+    );
+}
+
+#[test]
+fn http_errors_become_forge_errors_with_the_status_and_url() {
+    let replay = Replay::new();
+    let client = GitHubClient::new(replay.clone(), REPO);
+
+    let missing =
+        format!("/repos/{REPO}/pulls?head=dctellya:demo/smoke-1&base=demo/base&state=all");
+    replay.answer(&missing, 404, r#"{"message":"Not Found"}"#);
+    match client.pr(BRANCH, "demo/base") {
+        Err(ForgeError::Http { status: 404, url }) => assert!(url.ends_with("state=all"), "{url}"),
+        other => panic!("404 is an Http error: {other:?}"),
+    }
+
+    let limited = HttpResponse {
+        status: 403,
+        body: r#"{"message":"API rate limit exceeded"}"#.into(),
+        rate_limit_remaining: Some(0),
+        rate_limit_reset: Some(1_793_000_000),
+    };
+    let client = GitHubClient::new(Limited(limited), REPO);
+    assert!(matches!(
+        client.pr(BRANCH, "demo/base"),
+        Err(ForgeError::RateLimited {
+            reset_at: Some(1_793_000_000)
+        })
+    ));
+}
+
+struct Limited(HttpResponse);
+
+impl HttpTransport for Limited {
+    fn get(&self, _url: &str) -> Result<HttpResponse, String> {
+        Ok(self.0.clone())
+    }
+}
+
+/// Everything the process logs. A global subscriber, not `with_default`: tracing caches a
+/// callsite's interest per process, and a test that ran first without a subscriber would
+/// silence the callsite for a scoped one.
+static LOG: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+
+struct Capture;
+
+impl Write for Capture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        LOG.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Serves the recorded routes over loopback HTTP and keeps each request's header block.
+fn serve(connections: usize) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let routes = recorded_routes();
+    let handle = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for stream in listener.incoming().take(connections) {
+            let mut stream = stream.unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            let target = head
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or_default()
+                .to_owned();
+            let (status, body) = routes
+                .iter()
+                .find(|route| route.0 == target)
+                .map_or((404, "{}".to_owned()), |route| (route.1, route.2.clone()));
+            write!(
+                stream,
+                "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            let mut rest = Vec::new();
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
+            let _ = reader.read_to_end(&mut rest);
+            seen.push(head);
+        }
+        seen
+    });
+    (base, handle)
+}
+
+#[test]
+fn token_is_redacted_from_logs() {
+    let (base, server) = serve(8);
+    let transport = UreqTransport::new(Some(Secret::new(fake_token())), Duration::from_secs(5));
+    let client = GitHubClient::new(transport, REPO).with_base_url(&base);
+    let mut source = GitHubSource::new(
+        client,
+        mission(),
+        BRANCH,
+        &config("demo/base"),
+        CycleTemplate::engineering(),
+    );
+
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(|| Capture)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    let poll = source
+        .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
+        .unwrap()
+        .expect("due");
+    let requests = server.join().unwrap();
+
+    assert_eq!(
+        poll.pr.as_ref().map(|pr| pr.number),
+        Some(24),
+        "the loopback server answered"
+    );
+    assert_eq!(requests.len(), 8);
+    for head in &requests {
+        let lower = head.to_ascii_lowercase();
+        assert!(
+            lower.contains(&format!(
+                "authorization: bearer {}",
+                fake_token().to_ascii_lowercase()
+            )),
+            "the token is sent to the API: {head}"
+        );
+    }
+
+    let log = String::from_utf8(LOG.lock().unwrap().clone()).unwrap();
+    let lines: Vec<&str> = log
+        .lines()
+        .filter(|line| line.contains("github.request") && line.contains(&base))
+        .collect();
+    assert_eq!(lines.len(), 8, "one line per request: {log}");
+    assert!(
+        lines[0].contains("GET") && lines[0].contains("status=200"),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[0].contains(&format!(
+            "{base}/repos/{REPO}/pulls?head=dctellya:demo/smoke-1&base=demo/base&state=all"
+        )),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[1].contains("/actions/runs?head_sha="), "{}", lines[1]);
+    assert!(lines[2].contains("/status"), "{}", lines[2]);
+    let lower = log.to_ascii_lowercase();
+    let token = fake_token();
+    for needle in [token.as_str(), "github_pat_", "authorization", "bearer"] {
+        assert!(
+            !lower.contains(&needle.to_ascii_lowercase()),
+            "the log holds {needle}"
+        );
+    }
+    assert!(!format!("{poll:?}").contains("github_pat_"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, _conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &poll).unwrap();
+    drop(store);
+    let bytes = std::fs::read(dir.path().join("o.sqlite")).unwrap();
+    let wal = std::fs::read(dir.path().join("o.sqlite-wal")).unwrap_or_default();
+    for file in [bytes, wal] {
+        assert!(!file.windows(11).any(|window| window == b"github_pat_"));
+    }
+}
+
+#[test]
+fn the_role_of_a_pr_event_is_the_forge_not_a_person() {
+    let replay = Replay::new();
+    let mut source = source(&replay, "demo/base");
+    let poll = source
+        .poll_if_due(Timestamp::parse("2026-10-29T10:00:00Z").unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(poll.events.iter().all(|event| event.role == Role::External));
+    assert!(poll.events.iter().all(|event| event.overlay.is_none()));
+}
+
+#[test]
+fn an_https_request_builds_its_tls_connector_instead_of_panicking() {
+    // A peer that accepts and hangs up: the client reaches the TLS handshake, where it needs
+    // root certificates (the system store, since webpki-roots is not a dependency) and fails
+    // with an error rather than a panic.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("https://{}/", listener.local_addr().unwrap());
+    let peer = std::thread::spawn(move || drop(listener.accept()));
+    let transport = UreqTransport::new(None, Duration::from_secs(5));
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transport.get(&url)));
+    peer.join().unwrap();
+    let result = outcome.expect("no panic");
+    assert!(
+        result.is_err(),
+        "a peer that is not TLS is an error: {result:?}"
+    );
+}
+
+// --- the fix cycle: a red required check and the green one that closes it ---------------------
+
+const RED_RUN: u64 = 40_853_828_900;
+const GREEN_RUN: u64 = 40_853_894_595;
+const CARD: &str = "m4";
+
+fn runs_path() -> String {
+    format!("/repos/{REPO}/actions/runs?head_sha={HEAD_SHA}")
+}
+
+/// The recorded runs of PR 24 as they stood while the label was on: the green run 3 had not
+/// happened yet, run 2 had failed and run 1 had been cancelled.
+fn runs_while_red() -> String {
+    let text = std::fs::read_to_string(fixture_dir().join("runs.json")).unwrap();
+    let mut runs: serde_json::Value = serde_json::from_str(&text).unwrap();
+    runs["workflow_runs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|run| run["id"].as_u64() != Some(GREEN_RUN));
+    runs.to_string()
+}
+
+fn gate_source(replay: &Replay) -> GitHubSource<GitHubClient<Replay>> {
+    let mut source = source(replay, "demo/base");
+    source.set_affected_milestone(Some(MilestoneId(CARD.into())));
+    source
+}
+
+fn all_events(store: &Store) -> Vec<observatory_core::model::Event> {
+    store
+        .events(&EventScope::Mission(mission()), TimeRange::ALL)
+        .unwrap()
+}
+
+fn board(store: &Store) -> BoardState {
+    BoardState::fold(
+        &all_events(store),
+        &ViewConfig {
+            filter: Filter::default(),
+            grouping: WorkerGrouping::PerWorker,
+            at: None,
+        },
+        &CycleTemplate::engineering(),
+    )
+}
+
+type Window = (String, String, String, Option<String>, String, i64);
+
+fn windows(conn: &rusqlite::Connection) -> Vec<Window> {
+    let mut statement = conn
+        .prepare(
+            "SELECT feature_id, cause, opened_by, closed_by, check_name, pr_number \
+             FROM rework_windows ORDER BY id",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+fn mission_state(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT state FROM missions WHERE id = 'mission-demo'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn red_required_check_opens_a_fix_cycle_on_the_affected_card() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let poll = source
+        .poll(Timestamp::parse("2026-10-29T09:59:00Z").unwrap())
+        .unwrap();
+
+    let template = CycleTemplate::engineering();
+    let failed: Vec<_> = poll
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::CheckFailed)
+        .collect();
+    let [failed] = failed.as_slice() else {
+        panic!("one check.failed: {:?}", poll.events);
+    };
+    assert_eq!(failed.lane, *template.final_lane());
+    assert_eq!(failed.role, Role::External);
+    assert_eq!(failed.milestone_id, Some(MilestoneId(CARD.into())));
+    assert_eq!(
+        failed.at,
+        Timestamp::parse("2026-10-29T09:58:41Z").unwrap(),
+        "stamped with the run's own time"
+    );
+    assert!(
+        matches!(&failed.source, SourcePtr::GitHub { url } if url.contains(&RED_RUN.to_string())),
+        "{:?}",
+        failed.source
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &poll).unwrap();
+
+    assert_eq!(
+        windows(&conn),
+        vec![(
+            CARD.to_owned(),
+            "gate".to_owned(),
+            failed.id.to_string(),
+            None,
+            "demo-gate".to_owned(),
+            24
+        )],
+        "one open gate window, opened by the check.failed event"
+    );
+    assert_eq!(mission_state(&conn), "fixing");
+    let check: (String, String, String) = conn
+        .query_row(
+            "SELECT name, source, conclusion FROM checks WHERE pr_number = 24",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        check,
+        ("demo-gate".into(), "actions_run".into(), "failed".into())
+    );
+
+    let stored: (String, String, String) = conn
+        .query_row(
+            "SELECT lane, source, url FROM events WHERE kind = 'check.failed'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(stored.0, template.final_lane().as_str());
+    assert_eq!(stored.1, "github");
+    assert!(stored.2.contains(&RED_RUN.to_string()), "{}", stored.2);
+
+    let board = board(&store);
+    assert_eq!(board.gate.badge, GateBadge::CiRed);
+    let card = board
+        .cards
+        .iter()
+        .find(|card| card.milestone.0 == CARD)
+        .expect("the affected card");
+    assert_eq!(
+        card.lane,
+        *template.home(Role::Worker),
+        "the card loops back to the build lane"
+    );
+    assert_eq!(card.cycle, 1);
+}
+
+#[test]
+fn green_check_closes_the_rework_window_and_the_badge_turns_green() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let red = source.poll(red_at).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &red).unwrap();
+
+    replay.overrides.borrow_mut().clear();
+    let green = source.poll(at(red_at, 30)).unwrap();
+    let passed: Vec<_> = green
+        .events
+        .iter()
+        .filter(|event| event.kind == EventKind::CheckPassed)
+        .collect();
+    let [passed] = passed.as_slice() else {
+        panic!("one check.passed: {:?}", green.events);
+    };
+    assert!(
+        matches!(&passed.source, SourcePtr::GitHub { url } if url.contains(&GREEN_RUN.to_string())),
+        "{:?}",
+        passed.source
+    );
+    store.record_poll(&mission(), &green).unwrap();
+
+    let rows = windows(&conn);
+    let [(_, cause, opened_by, closed_by, ..)] = rows.as_slice() else {
+        panic!("still one window: {rows:?}");
+    };
+    assert_eq!(cause, "gate");
+    assert_eq!(closed_by.as_deref(), Some(passed.id.to_string().as_str()));
+    assert_ne!(opened_by, &passed.id.to_string());
+    assert_eq!(mission_state(&conn), "at_gate");
+
+    let template = CycleTemplate::engineering();
+    let board = board(&store);
+    assert_eq!(board.gate.badge, GateBadge::CiGreen);
+    let card = &board.cards[0];
+    assert_eq!(card.cycle, 1, "the closed window still counts as one cycle");
+    assert_eq!(
+        card.lane,
+        *template.final_lane(),
+        "the card is back at the gate"
+    );
+}
+
+#[test]
+fn fix_cycle_keeps_the_same_pr() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let mut source = gate_source(&replay);
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let red = source.poll(red_at).unwrap();
+    replay.overrides.borrow_mut().clear();
+    let green = source.poll(at(red_at, 30)).unwrap();
+
+    assert_eq!(red.pr.as_ref().map(|pr| pr.number), Some(24));
+    assert_eq!(green.pr.as_ref().map(|pr| pr.number), Some(24));
+    assert!(
+        green
+            .events
+            .iter()
+            .all(|event| event.kind != EventKind::PrOpened),
+        "no second pr.opened for the same PR: {:?}",
+        green.events
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    store.record_poll(&mission(), &red).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+
+    let prs: Vec<(i64, String)> = {
+        let mut statement = conn
+            .prepare("SELECT number, head FROM prs WHERE head = ?1")
+            .unwrap();
+        statement
+            .query_map([BRANCH], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(
+        prs,
+        vec![(24, BRANCH.to_owned())],
+        "one PR row for the branch"
+    );
+    let opened: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'pr.opened'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(opened, 1);
+    let rows: Vec<i64> = windows(&conn).iter().map(|window| window.5).collect();
+    assert_eq!(rows, vec![24], "the window belongs to the same PR");
+    assert!(
+        replay
+            .asked()
+            .iter()
+            .filter(|path| path.contains("/pulls?"))
+            .all(|path| path.contains(&format!("head=dctellya:{BRANCH}"))),
+        "every lookup names the one mission branch"
+    );
+}
+
+#[test]
+fn a_restarted_source_opens_no_second_window_and_still_closes_the_first() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    let red_at = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+
+    let first = gate_source(&replay).poll(red_at).unwrap();
+    store.record_poll(&mission(), &first).unwrap();
+    // The app restarted: a new source knows nothing of what the old one announced.
+    let again = gate_source(&replay).poll(at(red_at, 30)).unwrap();
+    store.record_poll(&mission(), &again).unwrap();
+    assert_eq!(windows(&conn).len(), 1);
+    let failed: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE kind = 'check.failed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(failed, 1, "the same run is the same event");
+
+    replay.overrides.borrow_mut().clear();
+    let green = gate_source(&replay).poll(at(red_at, 60)).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+    store.record_poll(&mission(), &green).unwrap();
+    let rows = windows(&conn);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].3.is_some(), "closed by the green run: {rows:?}");
+}
+
+#[test]
+fn a_second_red_after_green_opens_a_second_window_on_the_same_pr() {
+    let replay = Replay::new();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, conn) = store_with_mission(dir.path());
+    let mut source = gate_source(&replay);
+    let start = Timestamp::parse("2026-10-29T09:59:00Z").unwrap();
+
+    replay.answer(&runs_path(), 200, &runs_while_red());
+    store
+        .record_poll(&mission(), &source.poll(start).unwrap())
+        .unwrap();
+    replay.overrides.borrow_mut().clear();
+    store
+        .record_poll(&mission(), &source.poll(at(start, 30)).unwrap())
+        .unwrap();
+    let text = std::fs::read_to_string(fixture_dir().join("runs.json")).unwrap();
+    let mut runs: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let list = runs["workflow_runs"].as_array_mut().unwrap();
+    let mut again = list[1].clone();
+    again["id"] = 40_853_999_999_u64.into();
+    again["run_number"] = 4.into();
+    again["updated_at"] = "2026-10-29T10:05:00Z".into();
+    again["html_url"] =
+        "https://github.com/dctellya/droid-observatory/actions/runs/40853999999".into();
+    list.insert(0, again);
+    replay.answer(&runs_path(), 200, &runs.to_string());
+    store
+        .record_poll(&mission(), &source.poll(at(start, 60)).unwrap())
+        .unwrap();
+
+    let rows = windows(&conn);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows[0].3.is_some() && rows[1].3.is_none(), "{rows:?}");
+    assert_eq!((rows[0].5, rows[1].5), (24, 24));
+    assert_eq!(mission_state(&conn), "fixing");
+    assert_eq!(board(&store).cards[0].cycle, 2);
+}
+
+fn merge_event(id: &str, milestone: Option<&str>, second: i64) -> observatory_core::model::Event {
+    let template = CycleTemplate::engineering();
+    observatory_core::model::Event {
+        id: observatory_core::model::EventId(id.into()),
+        mission_id: mission(),
+        milestone_id: milestone.map(|m| MilestoneId(m.into())),
+        feature_id: None,
+        lane: template.lane_of(&EventKind::IntegrationMerged, Role::Orchestrator),
+        overlay: None,
+        kind: EventKind::IntegrationMerged,
+        role: Role::Orchestrator,
+        session_id: None,
+        model: None,
+        at: at(Timestamp::parse("2026-10-29T09:00:00Z").unwrap(), second),
+        duration: None,
+        usage: None,
+        source: SourcePtr::Git {
+            repo: "r".into(),
+            sha: id.into(),
+        },
+        mapping_version: observatory_core::mapping::MappingVersion::LATEST,
+    }
+}
+
+#[test]
+fn the_affected_card_is_the_milestone_integrated_last() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, _conn) = store_with_mission(dir.path());
+    assert_eq!(store.affected_milestone(&mission()).unwrap(), None);
+
+    store
+        .insert_events(&[
+            merge_event("aaa", Some("m1"), 1),
+            merge_event("bbb", Some("m2"), 2),
+            merge_event("ccc", None, 3),
+        ])
+        .unwrap();
+    assert_eq!(
+        store.affected_milestone(&mission()).unwrap(),
+        Some(MilestoneId("m2".into())),
+        "the last merge that names a milestone"
+    );
+}
+
+#[test]
+fn a_failed_commit_status_is_a_check_failed_event_and_a_pending_one_is_not() {
+    let replay = Replay::new();
+    replay.answer(&runs_path(), 200, r#"{"workflow_runs":[]}"#);
+    replay.answer(
+        &format!("/repos/{REPO}/commits/{HEAD_SHA}/status"),
+        200,
+        r#"{"state":"failure","statuses":[
+            {"context":"ci/unit","state":"failure","target_url":null,"updated_at":"2026-10-29T09:57:00Z"},
+            {"context":"ci/slow","state":"pending","target_url":"https://ci.example.invalid/3"}]}"#,
+    );
+    let mut source = gate_source(&replay);
+    let now = Timestamp::parse("2026-10-29T10:00:00Z").unwrap();
+    let poll = source.poll(now).unwrap();
+
+    let failed: Vec<_> = poll
+        .events
+        .iter()
+        .filter(|event| matches!(event.kind, EventKind::CheckFailed | EventKind::CheckPassed))
+        .collect();
+    let [failed] = failed.as_slice() else {
+        panic!("only the failed status is an event: {:?}", poll.events);
+    };
+    assert_eq!(failed.kind, EventKind::CheckFailed);
+    assert_eq!(
+        failed.id.to_string(),
+        format!("github:check:24:{HEAD_SHA}:ci/unit:failed")
+    );
+    assert_eq!(failed.at, Timestamp::parse("2026-10-29T09:57:00Z").unwrap());
+    assert!(
+        matches!(&failed.source, SourcePtr::GitHub { url } if url.ends_with(&format!("/commits/{HEAD_SHA}/status"))),
+        "a status without a target URL points at the status API: {:?}",
+        failed.source
+    );
+    let [open] = poll.windows.as_slice() else {
+        panic!("one window opens: {:?}", poll.windows);
+    };
+    assert!(matches!(
+        open,
+        observatory_core::ingest::forge::WindowChange::Open { check, .. } if check == "ci/unit"
+    ));
+
+    // a status still running has no time of its own and makes no event
+    let slow = poll
+        .checks
+        .iter()
+        .find(|check| check.name == "ci/slow")
+        .unwrap();
+    assert_eq!(slow.at, None);
+    assert_eq!(slow.conclusion, CheckConclusion::Running);
+}

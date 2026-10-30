@@ -1,0 +1,51 @@
+{
+  "assistantActiveTimeMs": 256418,
+  "model": "claude-fable-5.1",
+  "reasoningEffort": "medium",
+  "interactionMode": "auto",
+  "autonomyLevel": "high",
+  "autonomyMode": "auto-high",
+  "compactionThresholdCheckEnabled": true,
+  "allowSubagentsInScripts": false,
+  "systemPrompt": "You are a general-purpose worker. You may use all available tools needed to complete the task.\n\nSubagent contract:\n- Treat parent-supplied context as authoritative; do not repeat completed exploration without a reason.\n- Re-read a file when the parent asks for a fresh read, when its contents may have changed, or to validate a result; always read a file fresh before editing it.\n- Complete only the assigned work, then stop. Do not pursue tangents.\n- If blocked or uncertain, report the concrete gap instead of guessing or expanding scope.\n- Return exactly what the caller requested, in the requested format.\n- Use absolute paths when reporting paths.\n- Make the final response self-sufficient: include the exact code, rules, values, findings, actions, outcomes, paths written, and required follow-ups the caller requested.\n- Return findings directly; do not create standalone report, summary, findings, or analysis markdown files unless explicitly requested.\n- Avoid emojis.\n- Never run destructive rm -rf commands except against paths wholly under /tmp.",
+  "tags": [
+    {
+      "name": "subagent",
+      "metadata": {
+        "callingSessionId": "e194b9e3-6a67-42b9-bfc9-dd4e1ac23b0c",
+        "callingToolUseId": "toolu_bdrk_019wZjTYVyUhahwm7nViGk8o"
+      }
+    }
+  ],
+  "disabledToolIds": [
+    "ask-user",
+    "propose-workstream"
+  ],
+  "toolExecutionMode": "script_only",
+  "toolExecutionModeModelId": "claude-fable-5.1",
+  "tokenUsage": {
+    "inputTokens": 16,
+    "outputTokens": 16529,
+    "cacheCreationTokens": 54543,
+    "cacheReadTokens": 292746,
+    "thinkingTokens": 4836,
+    "factoryCredits": 632636
+  },
+  "childInclusiveTokenUsageBySessionId": {},
+  "inclusiveTokenUsage": {
+    "inputTokens": 16,
+    "outputTokens": 16529,
+    "cacheCreationTokens": 54543,
+    "cacheReadTokens": 292746,
+    "thinkingTokens": 4836,
+    "factoryCredits": 632636
+  },
+  "providerLock": "anthropic",
+  "providerLockTimestamp": "2026-10-23T08:21:40.711Z",
+  "lastCallTokenUsage": {
+    "inputTokens": 1157,
+    "outputTokens": 2284,
+    "cacheReadTokens": 68846
+  },
+  "apiProviderLock": "bedrock_anthropic"
+}

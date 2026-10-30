@@ -1,0 +1,439 @@
+{
+  "repoUrl": "https://github.com/dctellya/droid-observatory",
+  "report": {
+    "large_file_detection": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "scripts/check-file-size.sh (200 KB limit, fixtures exempt) runs in .githooks/pre-commit and in the docs job of mission-branch.yml and gate.yml."
+    },
+    "tech_debt_tracking": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "scripts/check-todos.sh enforces TODO(#issue) or TODO(B-nnn) in source files, in pre-commit and CI; BACKLOG.md tracks B-001..B-016 with reasons, earliest milestone and done dates (B-001, B-004, B-011, B-012, B-013 closed 2026-10-22)."
+    },
+    "build_cmd_doc": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "README \"Commands\" table and AGENTS.md document make build/test/lint/check targets; same targets run in CI."
+    },
+    "deps_pinned": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "Cargo.lock is committed (workspace of four packages); Rust toolchain pinned 1.99.1 in rust-toolchain.toml; crate versions pinned in the workspace Cargo.toml and verified on the day (rule 3); actions pinned to digests."
+    },
+    "vcs_cli_tools": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "gh authenticated as dctellya with admin on the repository."
+    },
+    "automated_pr_review": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "PRs #1-#3 have 0 review comments from automation; code scanning posts status checks and annotations, not a generated review."
+    },
+    "agentic_development": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "All non-initial commits co-authored by factory-droid[bot]; .factory/hooks.json and settings.json configure agent hooks and mission models; ai/ holds the session logs."
+    },
+    "fast_ci_feedback": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "mission-checks run 39953923391 on f66a9f5: created 12:31:11Z, updated 12:32:56Z (1 min 45 s); longest jobs rust 87 s, coverage 77 s, deny 46 s. Well under 10 minutes."
+    },
+    "build_performance_tracking": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "The tool-call hook (.factory/hooks/log-tool-call.sh, D-021 addendum) records call_id, ts_ms and duration_ms in build-log/, scripts/compile-share.sh sums compile time over a window, and every milestone report pastes build times (reports/readiness/2026-10-24-m2.md, reports/usage/m2.md 'Compile share'). The build-log sum is a lower bound (nested Script calls are not timed, BACKLOG B-038)."
+    },
+    "deployment_frequency": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "release.yml exists (tags on main, D-009) but no tag has been pushed; zero releases. The gate never deploys by design."
+    },
+    "single_command_setup": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "README \"From a clean clone\": git clone, make doctor, make hooks, make check. Documented sequence to the only runnable target that exists today."
+    },
+    "feature_flag_infrastructure": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No feature flag system."
+    },
+    "release_notes_automation": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".github/release.yml groups generated notes by repository labels (type:feature, type:bug/fix-cycle, type:security, type:decision, area:deps); release.yml runs gh release create --generate-notes (D-009). Not yet exercised by a tag."
+    },
+    "progressive_rollout": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: not an infrastructure repository."
+    },
+    "rollback_automation": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: not an infrastructure repository."
+    },
+    "monorepo_tooling": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: single application, no build modules yet."
+    },
+    "version_drift_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: zero build modules."
+    },
+    "release_automation": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".github/workflows/release.yml on v* tags: verifies the tag is semver and an ancestor of main, builds the macOS bundle via the reusable bundle.yml (provenance + cosign), creates the GitHub release with assets. actionlint clean; not yet exercised by a tag."
+    },
+    "dead_feature_flag_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: prerequisite feature_flag_infrastructure fails."
+    },
+    "agents_md": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "AGENTS.md at root (~6 KB): setup, build, test, QA path, layout, conventions, git rules, decisions, mission setup, env, do-nots."
+    },
+    "readme": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "README.md documents purpose, status, clean-clone setup, commands, configuration, mission command, gate, observability, layout, honest time."
+    },
+    "automated_doc_generation": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "docs/decisions/README.md is generated by scripts/gen-decisions-index.sh (make decisions-index); CI fails if it is stale (make check-decisions-index)."
+    },
+    "skills": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No .factory/skills/ directory yet."
+    },
+    "documentation_freshness": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "README.md, AGENTS.md, BACKLOG.md, docs/runbooks/, docs/decisions/D-009 all modified 2026-10-22 (PR #3)."
+    },
+    "service_flow_documented": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "PRD v0.4 \u00a711 data sources (attach primary, replay, host) and component diagram; README repository layout and gate; D-003 CI flow; D-004 telemetry flow; D-009 release flow; docs/runbooks/."
+    },
+    "agents_md_validation": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "AGENTS.md commands are Makefile targets; mission-branch.yml and gate.yml run those same targets on every push/PR, so a broken documented command fails CI."
+    },
+    "devcontainer": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".devcontainer/devcontainer.json: mcr.microsoft.com/devcontainers/rust:1-1-bookworm pinned by digest, node and github-cli features; post-create.sh installs actionlint 1.7.12, lychee 0.24.2, gitleaks 8.30.1, cargo-deny 0.20.2, markdownlint-cli2 0.24.0 and the Debian Tauri 2 libraries, then make hooks and make doctor."
+    },
+    "env_template": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".env.example documents GITHUB_TOKEN, FACTORY_API_KEY, OTEL_EXPORTER_OTLP_* (Grafana Cloud), OBSERVATORY_CONFIG, OBSERVATORY_LOG with keychain guidance."
+    },
+    "local_services_setup": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no external services required locally."
+    },
+    "devcontainer_runnable": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Container not built in this session (no Docker available). post-create.sh passes sh -n and asset names were checked against each release; a successful build is unverified."
+    },
+    "runbooks_documented": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "docs/runbooks/: README index plus red-gate, fix-cycle, stalled-mission, hooks-disabled, release. Each gives symptom, confirmation commands, fix table and the stop-and-involve-human conditions; app-dependent steps name the milestone that delivers them."
+    },
+    "branch_protection": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "Ruleset main-gate (id 25636994) active on refs/heads/main: pull_request (0 approvals, require_extra_approval_for_unattributed_changes=false), required_status_checks gate strict, non_fast_forward, deletion; no bypass actors. Verified via API 2026-10-22."
+    },
+    "secret_scanning": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "GitHub secret scanning enabled (API 200); gitleaks in pre-commit, mission-branch.yml and gate.yml; Semgrep p/secrets in gate."
+    },
+    "codeowners": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".github/CODEOWNERS assigns @dctellya to all paths."
+    },
+    "automated_security_review": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "GitHub code scanning default setup state=configured (languages: actions); gate.yml uploads Semgrep and Trivy SARIF via github/codeql-action/upload-sarif. PR #3 shows CodeQL, Semgrep OSS and Trivy as code-scanning checks; code-scanning/analyses lists all three tools."
+    },
+    "dependency_update_automation": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "renovate.json validated with renovate@44 (grouped Cargo, pinned action digests, 7-day release age, weekly schedule, regex managers for rust-toolchain.toml, workflow images and devcontainer tool versions). Owner reports the Renovate GitHub App installed on 2026-10-22; first scheduled run (Monday before 06:00 Europe/Madrid) has not happened yet, so no Dependency Dashboard issue is visible."
+    },
+    "gitignore_comprehensive": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".gitignore excludes .env (keeps .env.example), target/, dist/, node_modules/, .idea/, .vscode/, .DS_Store, local tool state."
+    },
+    "privacy_compliance": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: developer tool with no end-user data collection."
+    },
+    "secrets_management": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "Keychain-first policy (AGENTS.md, config), .env gitignored with .env.example, workflows use secrets.GITHUB_TOKEN only, gitleaks enforced. No hardcoded secrets."
+    },
+    "min_release_age": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "renovate.json: minimumReleaseAge \"7 days\" with internalChecksFilter strict; security advisories exempt (D-005)."
+    },
+    "issue_templates": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".github/ISSUE_TEMPLATE/ with bug.yml, feature.yml, decision.yml and config.yml (blank issues disabled)."
+    },
+    "issue_labeling_system": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "29 labels (gh label list): type:* (bug, feature, chore, decision, security), priority:P0-P3, area:* (core, ingest, metrics, ui, gate, ci, docs, deps), needs-triage, fix-cycle, plus GitHub defaults."
+    },
+    "backlog_health": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No GitHub issues exist; the backlog lives in BACKLOG.md by design (16 items, each with reason, earliest milestone, done dates). Nothing to evaluate against the issue-based criterion."
+    },
+    "pr_templates": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".github/pull_request_template.md with mission, what ships, evidence, decisions, deviations, left out, checklist."
+    },
+    "lint_config": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "clippy configured: clippy.toml thresholds, make lint runs cargo clippy -D warnings -W clippy::cognitive_complexity in CI once Cargo.toml exists."
+    },
+    "type_check": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "rustc type-checks every crate in make lint (clippy -D warnings) and make test; the wasm32 check of observatory-core with no default features passes (s-workspace-scaffold handoff)."
+    },
+    "formatter": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "rustfmt.toml committed; make fmt / fmt-check in pre-commit and CI; .editorconfig for all files."
+    },
+    "pre_commit_hooks": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": ".githooks/pre-commit (gitleaks, file size, debt markers, decisions index, rustfmt, markdownlint), commit-msg, pre-push; enabled via make hooks."
+    },
+    "strict_typing": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: Rust has no distinct strict mode."
+    },
+    "naming_consistency": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "AGENTS.md \"Conventions\" documents Rust naming, event kind mapping from PRD names, test function naming, fixture file naming."
+    },
+    "cyclomatic_complexity": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "clippy.toml cognitive-complexity-threshold = 25; make lint enables -W clippy::cognitive_complexity under -D warnings in CI."
+    },
+    "dead_code_detection": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "RUSTFLAGS=-D warnings in both workflows turns rustc dead_code/unused warnings into build failures; cargo-udeps/machete deferred (B-014)."
+    },
+    "duplicate_code_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No duplicate code detection tooling."
+    },
+    "code_modularization": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: Rust codebase (compiler-enforced visibility)."
+    },
+    "n_plus_one_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no database/ORM."
+    },
+    "heavy_dependency_detection": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application."
+    },
+    "unused_dependencies_detection": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "cargo machete 0.9.2 in make check and in the machete job of mission-branch.yml (D-017, B-014)."
+    },
+    "unit_tests_exist": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "72 unit tests in the observatory-core lib at 7385b62 (cargo test -p observatory-core, first result line); cargo test --workspace: 347 passed in total, 1 ignored (make check, 33 result lines)."
+    },
+    "integration_tests_exist": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "crates/observatory-core/tests (rpc 27 tests, mapping 31, store 22, view 32, resync 6, launch 9, hosted 5 and others over the redacted S and M0 fixtures, the golden file and hand-made rpc envelopes), crates/observatory-cli/tests/cli.rs and the other crates' tests; cargo test --workspace passes 347 tests in total, 1 ignored (the hosted live check, run by hand)."
+    },
+    "unit_tests_runnable": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "cargo test --workspace --all-features runs from make test and passes: 347 passed, 0 failed, 1 ignored at 7385b62 (make check exit 0, real 1m58.050s)."
+    },
+    "test_performance_tracking": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No tests; no timing tracked."
+    },
+    "flaky_test_detection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No retry configuration or flaky tracking; PR #3 shows no duplicate check names."
+    },
+    "test_coverage_thresholds": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "The coverage job (cargo-llvm-cov 0.9.1) runs in mission-branch.yml with COVERAGE_MIN \"80\" and --fail-under-lines; locally at 7385b62 cargo llvm-cov alone reported TOTAL lines 94.20 % on observatory-core (exit 0, real 2m13.599s); CI run 40121391298 passed (D-016)."
+    },
+    "test_naming_conventions": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "AGENTS.md: unit tests in #[cfg(test)] mod tests, integration tests in crates/<crate>/tests/<topic>.rs, sentence-style test names, fixture naming."
+    },
+    "test_isolation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No tests configured yet."
+    },
+    "interactive_qa_exists": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "AGENTS.md documents the future QA path (replay CLI, make app-dev, load fixture), but no application exists to bring to an interactive state today."
+    },
+    "interactive_qa_runnable": {
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "observatory-cli replay over fixtures/streams/2026-10-22-observatory-v1-s.jsonl ends with `unknown events: 2027`; make app-dev opens the Tauri window with nine empty lanes (VAL-SKEL-017..020 passed)."
+    },
+    "api_schema_docs": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop app without HTTP API."
+    },
+    "database_schema": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: SQLite index planned, not implemented."
+    },
+    "structured_logging": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No code; tracing planned (D-004)."
+    },
+    "distributed_tracing": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No code; OTLP tracing contract defined in D-004 and config, not implemented."
+    },
+    "metrics_collection": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No code; observatory.* metric names contracted in D-004, not instrumented."
+    },
+    "code_quality_metrics": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Code scanning is enabled and receives Semgrep/Trivy/CodeQL results, but no code quality metric (coverage, duplication, complexity trend) is collected; coverage is B-005."
+    },
+    "error_tracking_contextualized": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "None; span-event approach decided in D-004, Sentry/Faro deferred (B-003)."
+    },
+    "alerting_configured": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No alerting rules; Grafana Alerting intended once metrics flow."
+    },
+    "deployment_observability": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "No deployments; Grafana Cloud documented as the backend but no dashboards or deploy annotations exist."
+    },
+    "health_checks": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application."
+    },
+    "circuit_breakers": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no application code with external calls yet."
+    },
+    "profiling_instrumentation": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: no application code."
+    },
+    "dast_scanning": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: desktop application."
+    },
+    "pii_handling": {
+      "numerator": null,
+      "denominator": 1,
+      "rationale": "Skipped: developer utility without personal data."
+    },
+    "log_scrubbing": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "Deferred: BACKLOG B-006. Hooks avoid logging tool responses, but no redaction utility exists."
+    },
+    "product_analytics_instrumentation": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "None."
+    },
+    "error_to_insight_pipeline": {
+      "numerator": 0,
+      "denominator": 1,
+      "rationale": "None."
+    }
+  },
+  "apps": {
+    ".": {
+      "description": "droid-observatory at the M2 integration: Cargo workspace, canonical Event, mapping v1 (seven phase lanes, turn.usage, scrutiny and user-testing feature.defined in their lanes) with golden file, SQLite pointer store, observatory-cli replay and inspect (hosted spool), view-models, attach watcher, usage-log source, hosted RpcSource, launch form and live output, Leptos board, Tauri host with attach and hosted launch"
+    }
+  },
+  "commitHash": "7385b6295c20f7833c18fc58ba518e7101efd886",
+  "branch": "mission/observatory-v1",
+  "hasLocalChanges": false,
+  "hasNonRemoteCommits": false,
+  "droidVersion": "0.247.0",
+  "reportId": "99d980ed-a866-482e-9606-41570ad634e9",
+  "createdAt": 1792875884000,
+  "sourceSessionId": "4b1e0a29-b8bf-4b57-9567-12aa8ac33aa8",
+  "method": "Not produced by /readiness-report (a slash command a worker cannot run). Copied from 2026-10-24-m1.json; only the criteria that M2 changes (unit_tests_exist, integration_tests_exist, unit_tests_runnable, test_coverage_thresholds, build_performance_tracking) were re-evaluated by hand against the evidence named in each rationale. Re-run /readiness-report at the boundary to replace this file."
+}

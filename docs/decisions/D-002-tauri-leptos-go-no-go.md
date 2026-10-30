@@ -1,7 +1,7 @@
 # D-002: Tauri 2 + Leptos, with an explicit go/no-go at M1
 
 **Date:** 2026-10-22
-**Status:** accepted (provisional until M1)
+**Status:** accepted; resolved at the M1 integration: go (see [D-030](D-030-leptos-go.md))
 
 ## Context
 

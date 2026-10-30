@@ -35,3 +35,13 @@ input_per_m = 1.0
 output_per_m = 5.0
 cache_read_per_m = 0.10
 cache_write_per_m = 1.25
+
+# Cost multiplier per role (observatory metrics, architecture §9): cost = tokens x the model's rate x
+# the role's multiplier. 1.0 for every role: the rates above are what a token of the role costs, no
+# discount or surcharge is applied; a role missing here also counts as 1.0. Not a price: it is the
+# one knob that lets the owner weight a role (for example a plan discount) without editing rates.
+[roles]
+orchestrator = 1.0
+worker = 1.0
+scrutiny_validator = 1.0
+user_testing_validator = 1.0

@@ -1,0 +1,12 @@
+type(scope): subject of at most 72 characters, imperative
+
+Why the change exists, then what it does. Wrap at 72. One blank line
+above this paragraph and one above the trailer block.
+
+# Agents: do not rely on this template. Write the message to a file
+# without '#' lines (git keeps them under -F), commit with
+# `git commit -F <file>`, then add the trailers from the file:
+#   git interpret-trailers --in-place --if-exists addIfDifferent \
+#     --trailer "$(cat .git-trailers)" <file>
+# and commit afterwards. The trailer block is the last paragraph;
+# a stray heredoc tail breaks its parsing (8ab88e2).

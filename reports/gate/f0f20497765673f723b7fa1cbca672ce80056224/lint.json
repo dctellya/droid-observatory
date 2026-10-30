@@ -1,0 +1,15 @@
+{
+  "name": "lint",
+  "tree": "4916477cc6d058e781863f78e4fa34886ce0b861",
+  "code_tree": "f0f20497765673f723b7fa1cbca672ce80056224",
+  "fingerprint": "102bb460d6433f6aedbdb12fcae81eb3c59a9ef1",
+  "tool": "rustc 1.99.1 (58cf8f9c3 2026-10-13) | cargo 1.99.1 (5f94df478 2026-08-27)",
+  "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity",
+  "exit_code": 0,
+  "summary": "    Finished `dev` profile [optimized + debuginfo] target(s) in 3m 16s",
+  "seconds": 197.286,
+  "started_at": "2026-10-30T10:52:45Z",
+  "finished_at": "2026-10-30T10:56:02Z",
+  "session": "d37634de-d7b1-4ff7-8903-af770ee8c4e7",
+  "session_source": "FACTORY_SESSION_ID"
+}

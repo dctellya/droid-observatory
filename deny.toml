@@ -3,11 +3,15 @@
 
 [graph]
 all-features = true
+# The app ships for macOS only and its UI compiles to wasm. Linux-only GTK crates that Tauri
+# pulls in on other targets are not part of anything shipped (D-011).
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "wasm32-unknown-unknown"]
 
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# paste is a proc-macro used at build time by Leptos; no safe upgrade exists (D-011).
+ignore = [{ id = "RUSTSEC-2024-0436", reason = "unmaintained build-time proc-macro in leptos, no upgrade available" }]
 
 [licenses]
 version = 2
@@ -26,6 +30,7 @@ allow = [
   "CC0-1.0",
   "MPL-2.0",
   "OpenSSL",
+  "BSL-1.0", # xxhash-rust, via leptos server_fn (D-011)
 ]
 confidence-threshold = 0.9
 

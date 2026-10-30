@@ -2,8 +2,9 @@
 # Every value has a default and a reason (ai/RULES.md rule 4). Secrets never live here:
 # they come from the OS keychain or the environment (see .env.example).
 #
-# Status: contract for the mission to implement. Keys may be added by decision file;
-# none are read by any code yet.
+# Loaded by core::config (crates/observatory-core/src/config.rs). Config::default() equals
+# this file; a test enforces it. Keys may be added by decision file, with their reason, in the
+# same commit that reads them.
 
 [mission]
 # Default models per role, mirrored in .factory/settings.json and the mission command
@@ -11,12 +12,42 @@
 orchestrator_model = "claude-fable-5.1"
 worker_model = "claude-sonnet-5-5"
 validator_model = "claude-opus-5-5"
+# Reasoning effort per role, as the launch screen pre-fills it (SPEC §2: high for every role).
+orchestrator_reasoning_effort = "high"
+worker_reasoning_effort = "high"
+validator_reasoning_effort = "high"
+# Autonomy of a hosted mission. Droid's mission mode needs `high` (D-033).
+autonomy = "high"
 # Branch the mission integrates into (PRD §2). "<name>" is the mission name.
 branch_pattern = "mission/<name>"
+# Directory under which the app keeps the spool of a hosted mission (`hosted/<launch-id>.jsonl`):
+# the child's stdout exists nowhere else, and events point into it (architecture §4.5).
+spool_base = "~/.droid-observatory"
+# How long a hosted `droid exec` gets to exit after SIGTERM when the window closes before its
+# process group is killed. Droid flushes its session file on SIGTERM; 2 s is ample and bounds the close.
+reap_grace_ms = 2000
+# The Droid executable a hosted mission starts. A bare name is looked up on PATH, which a
+# Finder-launched app does not inherit from the shell: give the absolute path there.
+droid_bin = "droid"
+# Tags the hosted session carries (`droid.initialize_session` `tags`), so a run can be told
+# apart in the session store. A self-check mission sets ["scratch"]; empty adds none.
+session_tags = []
+# Mission settings a hosted mission may skip. Off: a real mission validates every milestone.
+# A self-check mission turns both on so it never runs the validation path (it costs a model run).
+skip_scrutiny = false
+skip_user_testing = false
+# Answer the orchestrator's mission proposal with "proceed" when the mission starts: the launch
+# screen is the human's consent to run it (D-034). Off, the proposal waits in the panel for
+# Approve or Deny like any other permission request.
+auto_approve_proposal = true
 
 [ingest]
 # Where Droid stores session transcripts. Read-only. Raw lines are never copied (PRD §11.2).
 factory_sessions_dir = "~/.factory/sessions"
+# Where Droid writes its CLI log, droid-log-single.log and its dated rotations. The session files
+# do not carry per-turn token counts; the log does (F-034, D-029). Read-only; no log line is
+# copied, only the parsed counts and a pointer to the line.
+factory_logs_dir = "~/.factory/logs"
 # Attach is the primary live mode (PRD §11.1, D-008): watch the sessions directory with a
 # filesystem notifier and attach to every new session JSONL automatically. Off means attach
 # only to files picked by hand.
@@ -25,6 +56,38 @@ watch_sessions_dir = true
 # the notifier when it coalesces or misses an event. 500 ms keeps "live within 1 s"
 # (PRD FR-B6, M1 acceptance) with headroom and negligible IO.
 jsonl_poll_ms = 500
+# Upper bound on session files tailed at once, newest first. Bounds file handles and tail work;
+# the UI reports how many sessions are not watched.
+max_watched_sessions = 64
+# Session files above this size are indexed but not tailed, with a warning, to protect memory.
+max_session_file_mb = 512
+# Size of one read per file per poll step. One bounded chunk per step keeps each step short
+# enough for "live within 1 s" (PRD FR-B6) while a burst still drains over a few polls.
+tail_chunk_kb = 1024
+# Startup scan attaches only files modified within this window; older sessions stay in the
+# library and open on demand, so a directory of hundreds of old sessions does not open at once.
+startup_scan_hours = 24
+# Sidecar tags the Droid runner writes itself (0.247 puts `exec` before the user's `--tag`; 0.249
+# writes `mission-orchestrator` first on an orchestrator session). A session is named by its first
+# tag that is not in this list and carries no `role`, `missionId` or `callingSessionId` metadata;
+# with none left, by its session id (FR-L1).
+runner_tags = ["mission-orchestrator", "exec", "mission-worker", "mission-session", "subagent", "read-only"]
+
+[ui]
+# Shell-to-UI flush interval. 100 ms is well under the 1 s latency target and avoids one
+# render per line during a burst.
+event_batch_ms = 100
+# Port of `trunk serve` for the browser host and `devUrl` of the Tauri shell. 3141 was free at
+# planning; services.yaml and Trunk.toml carry the same number.
+dev_port = 3141
+# Lines of a hosted agent's output the window keeps (FR-A3). The spool holds every line; this only
+# bounds the DOM. 500 lines is a few screens of the latest activity.
+live_output_lines = 500
+
+[store]
+# SQLite index of events by pointer (path, byte offset, length). One index per user; raw lines
+# stay where Droid wrote them and are never copied here (architecture I3).
+path = "~/.droid-observatory/observatory.sqlite"
 
 [github]
 # Poll interval for PR, checks and rulesets on the gate. 30 s stays well under GitHub's
@@ -33,11 +96,25 @@ poll_interval_s = 30
 # App-level override of the merge policy read from branch protection/rulesets (PRD FR-G4).
 # "auto" = read from GitHub; "human" = always require the Merge button; "policy" = never show it.
 merge_policy = "auto"
+# Branch a mission pull request targets. Parameterised so the demo pair (demo/base) and the
+# real gate (main) use the same code path.
+target_branch = "main"
+# owner/repo the forge client reads. The default is this repository.
+repo = "dctellya/droid-observatory"
+# One GitHub request gives up after this long. Half the poll interval: a stuck request ends before the next poll is due,
+# so polls never queue behind it.
+request_timeout_s = 15
+# Where the API lives. GitHub's host; the window suite points it at a loopback server that answers the
+# Merge request with the 403 a read-only token gets, because a real 403 needs the owner's read-only token.
+api_base = "https://api.github.com"
 
 [intervention]
 # A feature with no active time for this long raises the stall flag (PRD FR-H5).
 # 20 minutes matches the troubleshooting examples in Factory's mission docs.
 stall_threshold_min = 20
+# How often the app looks for stalled features. Short against the threshold, so a flag
+# appears within one poll of crossing it; long enough that reading the events stays cheap.
+stall_poll_s = 15
 
 [metrics]
 # Price table used for cost when the stream does not expose credits (PRD §10.5).
@@ -49,18 +126,21 @@ overhead_apportionment = "separate"
 budget = 0.0
 
 [telemetry]
-# OTLP export of the app's own traces/metrics and of lane-9 mission metrics to Grafana Cloud
-# (docs/decisions/D-004, contract in D-010). Off by default: the observatory must work fully
-# offline. Also stays off, with a visible UI state, when the keychain item below is missing.
+# OTLP export of the lane-9 mission metrics to a local OpenTelemetry Collector (D-046, which
+# supersedes the Grafana Cloud default of D-004/D-010; the series contract of D-010 stays). The
+# collector holds the sink (a local stack, Grafana Cloud or any provider); the app never names a
+# provider and holds no provider credential. Off by default: the observatory must work fully offline.
 enabled = false
-# Protocol Grafana Cloud's OTLP gateway accepts.
+# Protocol the collector's OTLP receiver accepts.
 protocol = "http/protobuf"
-# The owner's stack gateway (D-010). Not a secret. Signals go to /v1/metrics, /v1/traces, /v1/logs.
-endpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
-# The Authorization header value ("Authorization=Basic ...") is read at runtime from the macOS
-# keychain item with this service name and the current user as account. It is never written
-# to config, the store or logs. No environment fallback in the app (CI uses B-002's secret).
-keychain_service = "droid-observatory/otlp-headers"
+# The local collector's OTLP/HTTP receiver (D-046). Not a secret. Metrics go to <endpoint>/v1/metrics.
+endpoint = "http://localhost:4318"
+# Optional. The keychain service of an item holding one header as "name=value" (split on the first
+# "="), for a collector that wants one. Empty (the default) means no header and no keychain access.
+# A configured item that is absent keeps export off with a visible state. The value is never written
+# to config, the store or logs, and OTEL_EXPORTER_OTLP_HEADERS is never read.
+headers_keychain_item = ""
+# Value of the service.name resource attribute (D-010).
 service_name = "droid-observatory"
 # Resource attributes are fixed by D-010: service.name (above) and service.version (crate
 # version, added by the app). No other resource attribute is sent.
@@ -88,3 +168,53 @@ mission_metrics = [
   "observatory.cost_usd",
   "observatory.unknown_events",
 ]
+# Milestone label values allowed per metric: 7 milestones plus an "overflow" bucket, so the
+# series count stays bounded when a mission defines more (D-010).
+max_milestone_labels = 8
+# Minimum gap before the exporter switches to another mission, so two missions are never
+# active at once on the stack (D-010).
+mission_switch_min_interval_min = 30
+
+[telemetry.buckets]
+# Histogram bucket bounds in seconds for the mission cycle: hours to days.
+mission_cycle_seconds = [3600, 7200, 14400, 28800, 86400, 172800]
+# Histogram bucket bounds in seconds for a feature cycle: minutes to hours.
+feature_cycle_seconds = [600, 1800, 3600, 7200, 14400]
+
+[e2e]
+# Limits `make e2e` asserts on latencies the app records itself (User Timing measures in the window,
+# JSON lines of the host in OBSERVATORY_TIMING_LOG); a figure above its limit fails the suite.
+# p95 of the `panel:render` measure: replay opened to the Panel holding its numbers, S fixture
+# (661 events over several files). The limit is a ceiling for a debug build, not a target.
+panel_render_p95_ms = 3000
+# p95 of the `event:first_on_board` measure: `events_appended` received by the window to the
+# board having drawn the batch. One reactive pass over the held events; well under the 1 s target.
+event_first_on_board_p95_ms = 500
+# p95 of the host interval from a spool line's arrival to its `events_appended` emit. It contains
+# the `[ui].event_batch_ms` wait (100 ms), so the limit is that wait plus slack for the store write.
+host_append_p95_ms = 300
+# No event of a hosted run may take longer than this from arrival to drawn (FR-L2 and the
+# "each event shows within 1 s" target of the interactive QA path).
+event_visible_max_ms = 1000
+# Fewest samples a latency scenario must have recorded before its percentiles mean anything.
+min_samples = 3
+
+[cycle]
+# The cycle template the board, the digests and the post-mortem input iterate (F-041, D-035):
+# the lanes, their order, the role that owns each, the final event and the clocks are data, so
+# a team whose cycle is not the engineering one writes a file instead of changing code.
+# "engineering" is the compiled-in seven-lane cycle of D-024 (config/cycles/engineering.toml);
+# any other value is the path of a template file (a leading ~/ is your home). A file that is
+# missing or invalid falls back to "engineering" and the app shows why.
+template = "engineering"
+
+# Gate cache key (scripts/gate.sh, rule 27; read by the script, not by the app, so there is no table). The key is the hash of
+# the CODE paths: the tracked tree minus the excluded set below, so a commit that only adds a report, a log line or a doc
+# keeps the proof of the code (a hit) instead of rebuilding it. Edit GATE_EXCLUDE_DIRS and GATE_CODE_ROOTS in scripts/gate.sh
+# and the paths-ignore list of .github/workflows/mission-branch.yml together with this block.
+#   Excluded directories: build-log/ (the tool-call log: written by every hook call, proves nothing about the code),
+#     reports/ (usage, readiness, gate records and CI numbers, pasted from tools after the code is proven), docs/ (decision
+#     files, runbooks and the generated index: prose).
+#   Excluded Markdown: every *.md outside crates/, apps/, scripts/, config/ and .github/ (SPEC.md, BACKLOG.md, README.md,
+#     AGENTS.md, ai/, .factory/). Markdown inside the code roots stays in the key: crates, apps and scripts carry
+#     include_str! and test fixtures that read it.

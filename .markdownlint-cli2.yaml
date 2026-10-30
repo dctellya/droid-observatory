@@ -12,7 +12,9 @@ globs:
   - "**/*.md"
 ignores:
   - "ai/session/**"     # verbatim records of human and agent text, not edited for lint
-  - "node_modules/**"
+  - ".factory/droids/**" # verbatim copies of ~/.factory/droids (D-039), kept identical to the home files
+  - "**/node_modules/**"
   - "target/**"
   - "build-log/**"
   - "LICENSE"
+  - "docs/owner-feedback/inbox/**" # owner and delegate files, verbatim (delegation 2026-10-29)
