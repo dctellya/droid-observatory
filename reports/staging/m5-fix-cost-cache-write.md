@@ -19,7 +19,7 @@ None.
 
 - VAL-METRIC-024 wording (pass-37: "the classes the source carries", four token classes): kept true. `cost_by_role` and the lane figures equal the sum over the four classes x rates x multiplier; the role and lane token columns stay the three turn classes plus the sidecar's `cache_write` attributed as the CSV column attributes it. Nothing deferred to a later feature.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

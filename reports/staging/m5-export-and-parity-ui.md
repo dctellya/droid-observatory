@@ -37,7 +37,7 @@ Claims on `final-integrate-m5` (owner item 18):
 - New browser self-check labels: `export-csv`, `export-json` (buttons), `export-status`, `export-path` (window only), `cost-cycle` (Cost tab), `library-overhead`. A trunk rebuild returns the page to the library; re-upload the capture with its `.usage-log.jsonl`.
 - The library line still keeps the event count (1279 non-usage events on M0 in the Timeline sense, 2394 held incl. `turn.usage`).
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|
@@ -51,7 +51,7 @@ Claims on `final-integrate-m5` (owner item 18):
 | Window reads configured `[metrics].price_table` (`m5-details-tabs-ui` B-row 4) | `metrics` and `price_table` commands (`9ab08f1`) with `load_prices` (configured file, bundled fallback); `PriceTableText` in `ctx.rs` feeds Board and Details in the window. Under `cargo tauri dev` the default path is cwd-relative and falls back (BACKLOG). Shell tests in `commands.rs` (19 passed, 2 ignored in `cargo test -p observatory-app --lib`). |
 | VAL-METRIC-025 `throttled` equality | Covered in core/CLI JSON by the earlier slices; the Panel's `panel-throttled` block and the Panel milestone table's `throttled_minutes` come from the same report rows as the CSV (`view_parity`). |
 
-## Commands (rule 23, wall times)
+### Commands (rule 23, wall times)
 
 - Red runs: core `metrics_export` (does not compile, exit 101), app `export` tests (does not compile, exit 101, 3m59.6s), `view_parity` (does not compile).
 - Inner loop on the final tree before the gate: `cargo fmt --all -- --check` exit 0; `cargo clippy -p observatory-core -p observatory-cli -p observatory-app --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity` exit 0 (2m31.8s); `cargo clippy -p observatory-ui --target wasm32-unknown-unknown -- -D warnings -W clippy::cognitive_complexity` exit 0 (8.6s); wasm check 4.4s; app lib tests 17.1s; `cargo test -p observatory-cli` ok (23+1+9+3 passed). The trunk UI was served with `trunk serve` and ran the self-checks above; no separate `trunk build` was timed.

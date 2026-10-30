@@ -19,7 +19,7 @@ None.
 
 None. VAL-CROSS-005 live half (a hosted run with `milestone_id` on its events) is not reproduced here: the hosted scratch mission has no plan table (fix plan section 1, F5 is the board-level fix and is not in this round).
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

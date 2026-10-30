@@ -22,7 +22,7 @@ None.
 
 - None. All four items of the feature description are done; `m5.md` is `final-integrate-m5`'s.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 None: `fulfills` is empty (infra fix, no contract assertion). Evidence for each `expectedBehavior` line:
 

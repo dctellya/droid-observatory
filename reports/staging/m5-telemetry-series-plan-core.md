@@ -21,7 +21,7 @@ Claims on later features (owner item 18), each named:
 - `m5-telemetry-exporter-and-status`: VAL-TELEM-005 to -008 (config keys `endpoint` default `http://localhost:4318` and `headers_keychain_item`, `telemetry_status` command, the exporter in `src-tauri/telemetry.rs`, the status bar and the `telemetry{state, endpoint}` line, the header parse `parse_header` with its two unit tests and the redaction test, the `secrets` stub tests `telemetry_stays_off_without_keychain_item_and_ui_says_so` and `header_is_split_on_first_equals_and_never_logged`, the live Mimir receipt and the rule 26 stack readiness row for SPEC `## Tooling`). It can call `telemetry::start_check` for the refusal and `BoundedLabel`, `role_label` for the label values; `TelemetryStatus` (`enabled`, `reason`) exists with `TelemetryStatus::off`, the other states are the slice's.
 - The runtime side of VAL-TELEM-004 (the exporter applying `BoundedLabel` to the mission's milestone and model ids) and of VAL-TELEM-009 (the startup line listing the eleven names, the Mimir reads) belongs to the exporter slice; the core half is claimed below.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

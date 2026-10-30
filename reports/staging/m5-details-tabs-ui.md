@@ -32,7 +32,7 @@ Lead worker with three `mechanical-sonnet` seats (owner inbox 2320). The lead wr
 
 - Browser host self-check: after `snapshot -i`, `upload @<open-files ref>` with the root `.jsonl`, the `.capture.json`, the `.settings.json`, the `usage-log.jsonl` and `children/*.jsonl` (the capture header names the usage log; without it the turns, and so every token cell, read 0). Details buttons are `details-<milestone>` (`s` and `m0` sit in lane 3). A tab body is rendered one tick after the click: sleep before reading it. Each `agent-browser eval` after a page `open` needs a fresh `snapshot` before refs resolve.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

@@ -17,7 +17,7 @@ None.
 
 None. The Panel half of VAL-METRIC-011 (the three rows in the Panel) is not changed by this feature; the validator's re-run of `mech-metrics` decides VAL-METRIC-011 as amended.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

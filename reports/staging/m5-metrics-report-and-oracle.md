@@ -38,7 +38,7 @@ Lead worker, no seats (`model = claude-sonnet-5-5`; no subagent was started, so 
 - The oracle diff on a CSV the CLI produced itself reads `deviations: 0` (`metrics <m0> --diff <own csv>`); a changed cell is named by scope, id and column. The reference's header must be the contract's 22 names or `compare_csv` refuses it (`OracleError::Header`).
 - Build and test times: `cargo test -p observatory-core -p observatory-cli` 226.9 s (cold link), `cargo clippy -p observatory-core -p observatory-cli --all-targets --all-features -- -D warnings -W clippy::cognitive_complexity` 58.7 s, wasm check 3.9 s, the CLI over the M0 capture 0.18 s warm.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

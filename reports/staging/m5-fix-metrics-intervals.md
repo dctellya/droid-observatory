@@ -18,7 +18,7 @@ None.
 
 - VAL-CROSS-004 attribution half ("the affected feature" against the mission-level card): not changed here; owner decision pending in row 73. Nothing is deferred to a later feature by this file; if the owner picks the feature card, the change is in `events_of_feature` and `mission_level` (`metrics/cards.rs`, `metrics/notes.rs`), and the interval list follows with no further code.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

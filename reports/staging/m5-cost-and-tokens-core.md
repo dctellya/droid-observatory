@@ -29,7 +29,7 @@ Claims on later features (owner item 18), each named:
 - `m5-metrics-report-and-oracle`: `MetricsReport` assembly (merge `cost_report` with time states, rework, throttled), `--csv` with the 22-name header and the `tokens_*`/`cost_usd`/`price_table` columns, `--json` merge of the time half, the oracle test, `Notes::from_store`, the mission-level partition of human waits as a CSV row, and the Panel/Details rendering of cost and the table date (the UI part of VAL-METRIC-007, -010, -011 and the Panel block of VAL-METRIC-024/025 are host work, not done here).
 - Not done here and not claimed: `turn_usage_events_do_not_appear_in_lane_rows_or_cards` (the view already excludes `turn.usage`; the full core run is green with the turns loaded by `replay_file`).
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|

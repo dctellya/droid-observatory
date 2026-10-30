@@ -25,7 +25,7 @@ None.
 
 - None. Every item of the feature description is done; the batch's last feature (`m5-telemetry-exporter-and-status`) has no claim from this one.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 `fulfills` is empty (infra, owner items 10 and 27). Evidence for each `expectedBehavior` line:
 

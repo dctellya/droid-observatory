@@ -24,7 +24,7 @@
 - The status bar snapshot in the Tauri window (VAL-TELEM-005/-006/-008 "snapshot(status bar text)") is not taken by this feature: the window has no CDP endpoint and the dev build loads `devUrl` 3141. The text is `Telemetry::report().bar_text()` (asserted in `live_export_reaches_the_local_stack` output and `telemetry_status_is_off_in_config_...`); the UI component is `ui/src/statusbar.rs` (aria-labels `status-bar`, `telemetry-status`, `telemetry-state`, `telemetry-endpoint`). QA at the boundary reads it in the browser host (off (config) default) and the window.
 - No full `make check` and no gate record: this feature is not declared the last code change of M5.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|
@@ -35,7 +35,7 @@
 
 Not claimed here (already claimed by `m5-telemetry-series-plan-core`): VAL-TELEM-001 to -004, -009 (core halves). The wire half of VAL-TELEM-009 is `exactly_the_eleven_instruments_reach_the_wire_without_units`: decoded `ExportMetricsServiceRequest` holds exactly the eleven names of `[telemetry].mission_metrics`, unit `""` on each, the two histograms with explicit bounds `[3600,...,172800]` and `[600,...,14400]`, counters as sums, resource attributes exactly `service.name` and `service.version`; Mimir names read back are all suffixed (`_total`, `_bucket`, `_sum`, `_count`) and `observatory_cost_usd`, `observatory_active_agents`, `observatory_waste_seconds` return an empty `result`.
 
-## First real Mimir read-back (rule 26 follow-up, contract pass 34)
+### First real Mimir read-back (rule 26 follow-up, contract pass 34)
 
 Run of 2026-10-30 00:39 to 00:41 UTC, M0 capture through `open_replay`'s store path, `T0` recorded before. `GET /prometheus/api/v1/series?match[]={job="droid-observatory"}&start=$T0&end=now`:
 

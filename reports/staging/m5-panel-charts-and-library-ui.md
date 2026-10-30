@@ -32,7 +32,7 @@ Lead worker with three `mechanical-sonnet` seats (owner inbox 2320). The lead wr
 
 - Browser self-check: the new labels are `panel-chart-waste`, `panel-chart-timeline`, `panel-chart-sparkline`, `waste-legend-item`, `waste-groups`, `panel-timeline-row` (the SVG row; `timeline-row` stays the Details table row), `sparkline-path`, `panel-usage`, `usage-roles`, `usage-lanes`, `usage-milestones`, `usage-waste-tokens`, `usage-throttled-tokens`, `panel-throttled`, `throttled-run`, `throttled-intervals`, `usage-budget`, `usage-model-comparison`, `library-cycle`, `library-waste`, `library-tokens`, `library-cost`. A trunk rebuild returns the page to the library; re-upload.
 
-## Claims (rule 30)
+### Claims (rule 30)
 
 | Assertion | Evidence |
 |---|---|
