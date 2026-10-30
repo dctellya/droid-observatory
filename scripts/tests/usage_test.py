@@ -59,6 +59,7 @@ def run(extra=(), out=None, check=True, now=NOW):
         "--gate-dir", os.path.join(FIX, "gate"),
         "--from", FROM,
         "--now", now,
+        "--boottime", BOOTTIME,
         "--out", out,
     ]
     args += list(extra)
@@ -132,7 +133,7 @@ class UsageReport(unittest.TestCase):
             [sys.executable, SCRIPT, "--milestone", "m9", "--mission-dir", os.path.join(FIX, "mission"),
              "--mission-id", MISSION, "--logs-dir", os.path.join(FIX, "logs"),
              "--sessions-dir", os.path.join(FIX, "sessions"), "--prices", os.path.join(FIX, "prices.toml"),
-             "--gate-dir", os.path.join(FIX, "gate"), "--now", NOW, "--out", out],
+             "--gate-dir", os.path.join(FIX, "gate"), "--now", NOW, "--boottime", BOOTTIME, "--out", out],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         text = read(out)
@@ -1004,7 +1005,7 @@ class UsageReportPriceFiles(unittest.TestCase):
         proc = subprocess.run([
             sys.executable, SCRIPT, "--milestone", "m9", "--mission-dir", os.path.join(FIX, "mission"), "--mission-id", MISSION,
             "--logs-dir", os.path.join(FIX, "logs"), "--sessions-dir", os.path.join(FIX, "sessions"),
-            "--gate-dir", os.path.join(FIX, "gate"), "--from", FROM, "--now", NOW, "--out", out] + list(extra),
+            "--gate-dir", os.path.join(FIX, "gate"), "--from", FROM, "--now", NOW, "--boottime", BOOTTIME, "--out", out] + list(extra),
             capture_output=True, text=True)
         if proc.returncode != 0:
             raise AssertionError("usage-report.py exit %d\nstderr: %s" % (proc.returncode, proc.stderr))
