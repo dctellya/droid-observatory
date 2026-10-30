@@ -8,6 +8,7 @@ use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::store::Store;
+use observatory_core::telemetry::TelemetryReport;
 use observatory_core::view::{
     ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
     LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
@@ -18,6 +19,7 @@ use crate::Shell;
 use crate::actions;
 use crate::host::{self, Hosts};
 use crate::logging;
+use crate::telemetry::Telemetry;
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -57,7 +59,11 @@ fn branch_in(store: &Store, shell: &Shell, opened: &OpenedMission) -> String {
 /// Replays the capture at `path` (the root `.jsonl` or its `.capture.json`) through the store
 /// and answers with the mission as the store now holds it.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<OpenedMission, String> {
+pub async fn open_replay(
+    shell: State<'_, Shell>,
+    telemetry: State<'_, std::sync::Arc<Telemetry>>,
+    path: String,
+) -> Result<OpenedMission, String> {
     let mut opened = {
         let mut store = lock(&shell.store);
         let mut opened = store
@@ -71,6 +77,7 @@ pub async fn open_replay(shell: State<'_, Shell>, path: String) -> Result<Opened
         opened
     };
     opened.live = is_live(&shell, &opened.summary.mission_id);
+    telemetry.observe(&opened);
     Ok(opened)
 }
 
@@ -82,6 +89,7 @@ pub async fn list_missions(shell: State<'_, Shell>) -> Result<Vec<MissionRow>, S
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_mission(
     shell: State<'_, Shell>,
+    telemetry: State<'_, std::sync::Arc<Telemetry>>,
     mission_id: MissionId,
 ) -> Result<OpenedMission, String> {
     let mut opened = {
@@ -91,6 +99,7 @@ pub async fn open_mission(
         opened
     };
     opened.live = is_live(&shell, &mission_id);
+    telemetry.observe(&opened);
     Ok(opened)
 }
 
@@ -113,6 +122,7 @@ pub async fn list_sessions(shell: State<'_, Shell>) -> Result<AttachStatus, Stri
 #[tauri::command(rename_all = "snake_case")]
 pub async fn attach(
     shell: State<'_, Shell>,
+    telemetry: State<'_, std::sync::Arc<Telemetry>>,
     session_id: SessionId,
 ) -> Result<OpenedMission, String> {
     let store = lock(&shell.store);
@@ -124,6 +134,7 @@ pub async fn attach(
     opened.branch = Some(branch_in(&store, &shell, &opened));
     drop(store);
     opened.live = is_live(&shell, &mission);
+    telemetry.observe(&opened);
     Ok(opened)
 }
 
@@ -282,6 +293,15 @@ fn is_live(shell: &Shell, mission: &MissionId) -> bool {
     })
 }
 
+/// What the status bar says about export: `{enabled, reason}` plus the `state` and `endpoint` of
+/// the `telemetry{state, endpoint}` line (architecture §10).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn telemetry_status(
+    telemetry: State<'_, std::sync::Arc<Telemetry>>,
+) -> Result<TelemetryReport, String> {
+    Ok(telemetry.report())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -298,8 +318,10 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("observatory-cmd-{}.sqlite", std::process::id()));
         let app = tauri::test::mock_app();
+        let template = Arc::new(cfg.cycle.load_template().template);
+        app.manage(Arc::new(Telemetry::start(&cfg, template.clone())));
         app.manage(Shell {
-            template: Arc::new(cfg.cycle.load_template().template),
+            template,
             store: Mutex::new(Store::open(&path).expect("the store opens")),
             status: Arc::new(Mutex::new(AttachStatus::default())),
             cfg,
@@ -328,8 +350,10 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let app = tauri::test::mock_app();
+        let template = Arc::new(cfg.cycle.load_template().template);
+        app.manage(Arc::new(Telemetry::start(&cfg, template.clone())));
         app.manage(Shell {
-            template: Arc::new(cfg.cycle.load_template().template),
+            template,
             store: Mutex::new(Store::open(&path).expect("the store opens")),
             status: Arc::new(Mutex::new(AttachStatus::default())),
             cfg,
@@ -348,12 +372,17 @@ mod tests {
     #[test]
     fn an_opened_mission_names_the_branch_of_the_configured_pattern() {
         let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "pattern");
-        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
-            .expect("the capture replays");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            s_fixture(),
+        ))
+        .expect("the capture replays");
         println!("opened branch: {:?}", opened.branch);
         assert_eq!(opened.branch.as_deref(), Some(LITERAL_BRANCH));
         let again = tauri::async_runtime::block_on(open_mission(
             app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
             opened.summary.mission_id.clone(),
         ))
         .expect("the mission opens from the store");
@@ -364,17 +393,42 @@ mod tests {
     #[test]
     fn an_opened_mission_prefers_the_branch_the_store_recorded() {
         let (app, path) = app_with_branch_pattern("mission/<name>", "recorded");
-        let opened = tauri::async_runtime::block_on(open_replay(app.state::<Shell>(), s_fixture()))
-            .expect("the capture replays");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            s_fixture(),
+        ))
+        .expect("the capture replays");
         let mission = opened.summary.mission_id.clone();
         assert!(
             lock(&app.state::<Shell>().store)
                 .set_mission_branch(&mission, "mission/recorded")
                 .expect("the branch is recorded")
         );
-        let again = tauri::async_runtime::block_on(open_mission(app.state::<Shell>(), mission))
-            .expect("the mission opens from the store");
+        let again = tauri::async_runtime::block_on(open_mission(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            mission,
+        ))
+        .expect("the mission opens from the store");
         assert_eq!(again.branch.as_deref(), Some("mission/recorded"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn telemetry_status_is_off_in_config_with_the_collector_endpoint_by_default() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "telemetry");
+        let report =
+            tauri::async_runtime::block_on(telemetry_status(app.state::<Arc<Telemetry>>()))
+                .expect("the status answers");
+        assert!(!report.status.enabled);
+        assert_eq!(report.status.reason, "off in config");
+        assert_eq!(report.state, "off (config)");
+        assert_eq!(report.endpoint, "http://localhost:4318");
+        assert_eq!(report.bar_text(), "telemetry: off (config)");
+        let json = serde_json::to_value(&report).expect("serialises");
+        assert_eq!(json["enabled"], false);
+        assert_eq!(json["reason"], "off in config");
         let _ = std::fs::remove_file(path);
     }
 }

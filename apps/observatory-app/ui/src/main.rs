@@ -16,6 +16,7 @@ mod panel;
 mod perf;
 mod raw;
 mod shell;
+mod statusbar;
 mod tray;
 
 use leptos::prelude::*;

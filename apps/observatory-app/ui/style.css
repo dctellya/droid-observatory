@@ -1,6 +1,7 @@
 /* The app's layout on the kit's tokens (ai/design/ui-kit-v2/theme.css, loaded first). Colours and
    faces come from the tokens only: no literal colour and no face declaration appears here; mono text takes the kit's .mono class. */
 .observatory { padding: 18px 28px; box-sizing: border-box; max-width: 1480px; margin: 0 auto; }
+.observatory .statusbar { display: flex; gap: 16px; justify-content: space-between; margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 .observatory h1 { font-size: 22px; }
 .observatory h2 { font-size: 15px; }
 .observatory h3 { font-size: 14px; }

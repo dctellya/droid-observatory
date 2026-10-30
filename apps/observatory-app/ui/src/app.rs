@@ -18,6 +18,7 @@ use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
 use crate::perf;
 use crate::shell;
+use crate::statusbar::StatusBar;
 
 /// Refresh state of the library rows: nothing running, a read running, a read running that a
 /// later batch has made stale.
@@ -307,6 +308,7 @@ pub fn App() -> impl IntoView {
                         .into_any()
                 }
             }}
+            <StatusBar />
         </main>
     }
 }

@@ -12,6 +12,8 @@ use observatory_core::ingest::watch::{LiveIngest, LiveStep};
 use observatory_core::ingest::{AttachStatus, EventBatch, IngestError};
 use observatory_core::model::SessionId;
 use observatory_core::store::Store;
+
+use crate::telemetry::Telemetry;
 use tauri::{AppHandle, Emitter};
 
 /// The running ingest thread. Stopping it ends every watched session (their final usage and end
@@ -41,12 +43,23 @@ pub fn spawn(
     store_path: PathBuf,
     status: Arc<Mutex<AttachStatus>>,
     excluded: Receiver<SessionId>,
+    telemetry: Arc<Telemetry>,
 ) -> Ingest {
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     let started = std::thread::Builder::new()
         .name("ingest".to_owned())
-        .spawn(move || run(&app, &cfg, &store_path, &status, &flag, &excluded));
+        .spawn(move || {
+            run(
+                &app,
+                &cfg,
+                &store_path,
+                &status,
+                &flag,
+                &excluded,
+                &telemetry,
+            )
+        });
     if let Err(err) = &started {
         tracing::error!(%err, "ingest thread");
     }
@@ -63,6 +76,7 @@ fn run(
     status: &Mutex<AttachStatus>,
     stop: &AtomicBool,
     excluded: &Receiver<SessionId>,
+    telemetry: &Telemetry,
 ) {
     let started = Store::open(store_path)
         .map_err(|err| err.to_string())
@@ -87,7 +101,12 @@ fn run(
         while let Ok(id) = excluded.try_recv() {
             live.exclude_session(&id);
         }
-        report(app, status, live.step());
+        let step = live.step();
+        let missions: Vec<_> = step.batches.iter().map(|b| b.mission_id.clone()).collect();
+        report(app, status, step);
+        if !missions.is_empty() && telemetry.due_for_live_sample() {
+            sample_missions(&live_store(store_path), telemetry, &missions);
+        }
     }
     for batch in live.finish() {
         log_batch(&batch);
@@ -170,4 +189,22 @@ fn publish(app: &AppHandle, shared: &Mutex<AttachStatus>, next: AttachStatus) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = next.clone();
     let _ = app.emit("attach_status", next);
+}
+
+fn live_store(path: &Path) -> Option<Store> {
+    Store::open(path).ok()
+}
+
+/// Folds the missions a step touched into the exporter, from the store as it now holds them.
+fn sample_missions(
+    store: &Option<Store>,
+    telemetry: &Telemetry,
+    missions: &[observatory_core::model::MissionId],
+) {
+    let Some(store) = store else { return };
+    for mission in missions {
+        if let Ok(opened) = store.open_mission(mission) {
+            telemetry.observe(&opened);
+        }
+    }
 }
