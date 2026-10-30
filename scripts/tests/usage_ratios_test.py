@@ -2,6 +2,9 @@
 """Tests for the Ratios section of scripts/usage-report.py (owner item 10 and 27 of the M4 boundary) and for the
 `single-call share` line (B-176), on a scratch copy of the usage fixture (usage_scratch.py) on 2026-10-26.
 
+The cost buckets follow the delegate's pinned definition (inbox 0145): the contract worker is the worker cost on features that claim
+at least one assertion in `fulfills`, tooling the worker cost on features that claim none, integration its own term.
+
 Prices: fable 10 / 50 / 0.25 / 12.5, sonnet 2 / 10 / 0.1 / 2.5, opus 4 / 20 / 0.2 / 5 per million for input / output / cache
 read / cache write, so 20 000 fable output tokens, 100 000 sonnet output tokens and 50 000 opus output tokens each cost 1.00 USD-eq.
 """
@@ -80,9 +83,10 @@ class RatiosSection(unittest.TestCase):
     def test_the_cost_per_assertion_is_the_worker_cost_per_assertion_times_one_plus_the_three_ratios(self):
         header, rows = table(self.text, "Ratios")
         self.assertEqual(header, ["Milestone", "Assertions fulfilled", "Worker cost per assertion", "Coordination ratio",
-                                  "Validation ratio", "Tooling ratio", "Cost per assertion", "All-in cost per assertion", "Source"])
+                                  "Validation ratio", "Tooling ratio", "Integration ratio", "Cost per assertion",
+                                  "All-in cost per assertion", "Source"])
         mine = next(r for r in rows if r["Milestone"] == "m9 (this run)")
-        self.assertEqual([mine[k] for k in header[1:8]], ["3", "1.67", "1.20", "0.20", "0.20", "4.33", "4.33"])
+        self.assertEqual([mine[k] for k in header[1:9]], ["3", "1.67", "1.20", "0.20", "0.20", "0.00", "4.33", "4.33"])
 
     def test_the_summary_line_shows_the_product(self):
         self.assertIn("ratios: worker 1.67 USD-eq per assertion x (1 + 1.20 + 0.20 + 0.20) = 4.33 USD-eq per assertion (all-in 4.33)",
@@ -118,6 +122,29 @@ class RatiosSection(unittest.TestCase):
         self.assertEqual(got["plan-weighted standard assertion"], ("4.00", "1.25", "3.25"))
         self.assertIn("a standard assertion is 23.3 planned turns", self.text)
 
+    def test_the_kind_weighted_figure_sits_next_to_the_raw_and_the_plan_weighted_ones(self):
+        header, rows = table(self.text, "Weighted cost per assertion")
+        self.assertEqual([r["Basis"] for r in rows], ["raw assertion", "plan-weighted standard assertion",
+                                                      "kind-weighted mechanical assertion"])
+        got = {r["Basis"]: (r["Units"], r["Worker cost per unit"], r["Cost per unit"]) for r in rows}
+        self.assertEqual(got["kind-weighted mechanical assertion"], ("3.50", "1.43", "3.71"))
+        self.assertIn("kinds landed: 1 mechanical, 2 behavioural, 0 mixed, 0 unclassified; weights 1.00 / 1.25 / 1.50 "
+                      "(unclassified 1.00) from `config/usage-ratios.toml`", self.text)
+
+    def test_the_four_bases_are_printed_under_the_ratios_table(self):
+        section = self.text.split("### Ratios")[1].split("\n### ")[0]
+        line = next(x for x in section.splitlines() if x.startswith("bases: "))
+        self.assertIn("window 2026-10-26T00:00:00Z to 2026-10-26T06:00:00Z", line)
+        self.assertIn("w = worker cost on features that claim at least one contract assertion 5.00 USD-eq / 3 assertions landed", line)
+        self.assertIn("coordination = orchestrator with its subagents 6.00 / w", line)
+        self.assertIn("validation = validators with their seats 1.00 / w", line)
+        self.assertIn("tooling = worker cost on features that claim none 1.00 / w", line)
+        self.assertIn("integration = 0.00 / w", line)
+        self.assertLess(section.index("| m9 (this run)"), section.index("bases: "))
+
+    def test_the_recorded_m4_kinds_are_the_products_count_blocked_is_not_landed(self):
+        self.assertIn("m4 kinds (recorded): 12 mechanical, 14 behavioural, 6 mixed", self.text)
+
     def test_per_kind_figures_split_a_feature_over_the_assertions_it_claims(self):
         header, rows = table(self.text, "Turns per assertion by assertion kind")
         self.assertEqual(header, ["Kind", "Assertions", "Attributed worker turns", "Turns per assertion", "Attributed worker USD-eq",
@@ -152,7 +179,8 @@ class RatiosSection(unittest.TestCase):
         self.assertEqual(got["total"], ["13", "3", "4.33"])
 
     def test_the_caption_states_the_buckets_and_that_the_recorded_rows_are_the_owners_hand_derivation(self):
-        self.assertIn("contract worker is the cost of the features whose skill is core-worker or ui-worker", self.text)
+        self.assertIn("contract worker is the worker cost on the features that claim at least one contract assertion", self.text)
+        self.assertIn("inbox 0145", self.text)
         self.assertIn("recorded rows are the owner's own derivation", self.text)
 
 
@@ -191,6 +219,107 @@ class RatiosWithoutData(unittest.TestCase):
             s.close()
         mine = next(r for r in table(text, "Ratios")[1] if r["Milestone"] == "m9 (this run)")
         self.assertEqual((mine["Worker cost per assertion"], mine["Coordination ratio"], mine["Cost per assertion"]), ("0.00", "-", "-"))
+
+
+class PinnedDefinition(unittest.TestCase):
+    """Delegate's definition (inbox 0145): the buckets follow `fulfills`, not the skill; integration is its own term."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.s = Scratch()
+        s = cls.s
+        for hhmm in ("00:10:00", "00:20:00", "00:30:00", "00:40:00", "00:50:00", "01:00:00"):
+            s.turn(at(hhmm), MISSION, FABLE, o=20_000)
+        s.features([
+            {"id": "m9-core", "milestone": "m9", "skillName": "core-worker", "status": "completed", "fulfills": ["VAL-A-001", "VAL-A-002"]},
+            {"id": "m9-fix", "milestone": "m9", "skillName": "core-worker", "status": "completed", "fulfills": []},
+            {"id": "m9-infra", "milestone": "m9", "skillName": "infra-worker", "status": "completed", "fulfills": ["VAL-A-003"]},
+            {"id": "m9-integ", "milestone": "m9", "skillName": "integration-worker", "status": "completed", "fulfills": []},
+        ])
+        sessions = {"m9-core": ("bbbbbbbb-1111-4111-8111-111111111111", 3), "m9-fix": ("bbbbbbbb-2222-4222-8222-222222222222", 1),
+                    "m9-infra": ("bbbbbbbb-3333-4333-8333-333333333333", 2), "m9-integ": ("bbbbbbbb-4444-4444-8444-444444444444", 1)}
+        for i, (feature, (sid, turns)) in enumerate(sessions.items()):
+            start(s, sid, feature, "2026-10-26T00:0%d:00.000Z" % (i + 1))
+            for n in range(turns):
+                s.turn(at("00:%d%d:00" % (i + 1, n + 1)), sid, SONNET, o=100_000)
+        start(s, CHECKER, "scrutiny-validator-m9", "2026-10-26T00:05:00.000Z", OPUS)
+        s.turn(at("00:41:00"), CHECKER, OPUS, o=50_000)
+        s.subagent_sidecar("cccccccc-1111-4111-8111-111111111111", CHECKER, "toolu_seat", OPUS)
+        s.turn(at("00:42:00"), "cccccccc-1111-4111-8111-111111111111", OPUS, o=50_000)
+        with open(os.path.join(s.mission, "validation-contract.md"), "w") as f:
+            f.write(CONTRACT)
+        cls.text = s.run().text
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.s.close()
+
+    def bucket(self, name):
+        return {r["Bucket"]: r for r in table(self.text, "Cost by bucket")[1]}[name]
+
+    def test_the_contract_worker_is_the_worker_cost_on_features_that_claim_an_assertion_whatever_their_skill(self):
+        self.assertEqual(self.bucket("contract worker")["USD-eq"], "5.00")
+
+    def test_a_core_worker_feature_that_claims_none_is_tooling(self):
+        self.assertEqual(self.bucket("tooling")["USD-eq"], "1.00")
+        self.assertEqual(self.bucket("tooling")["Ratio to contract worker cost"], "0.20")
+
+    def test_integration_is_its_own_term_over_the_contract_worker_cost(self):
+        self.assertEqual(self.bucket("integration")["USD-eq"], "1.00")
+        mine = next(r for r in table(self.text, "Ratios")[1] if r["Milestone"] == "m9 (this run)")
+        self.assertEqual((mine["Integration ratio"], mine["Cost per assertion"]), ("0.20", "4.33"))
+
+    def test_the_validators_seats_are_in_the_validation_ratio(self):
+        self.assertEqual(self.bucket("validation")["USD-eq"], "2.00")
+        self.assertIn("validation = validators with their seats 2.00 / w", self.text)
+
+
+class KindWeights(unittest.TestCase):
+    """Kind weights of config/usage-ratios.toml (mechanical 1.0, behavioural 1.25, mixed 1.5)."""
+
+    CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "usage-ratios.toml")
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        import usage_ratios
+        self.ratios = usage_ratios
+
+    def test_the_config_carries_the_three_weights(self):
+        weights = self.ratios.load_config(self.CONFIG)["kind_weights"]
+        self.assertEqual((weights["mechanical"], weights["behavioural"], weights["mixed"]), (1.0, 1.25, 1.5))
+
+    def test_every_weight_has_a_one_line_reason_above_it(self):
+        lines = open(self.CONFIG).read().splitlines()
+        start = lines.index("[kind_weights]")
+        for i, line in enumerate(lines[start + 1:], start + 1):
+            if line.startswith("["):
+                break
+            if "=" in line and not line.startswith("#"):
+                self.assertTrue(lines[i - 1].startswith("# "), "no reason above: " + line)
+
+    def test_the_m4_kinds_twelve_fourteen_six_weigh_thirty_eight_and_a_half_units(self):
+        weights = self.ratios.load_config(self.CONFIG)["kind_weights"]
+        counts = {"mechanical": 12, "behavioural": 14, "mixed": 6, "unclassified": 0}
+        self.assertEqual(self.ratios.kind_units(counts, weights), 38.5)
+
+    def test_an_unclassified_assertion_weighs_the_unclassified_weight(self):
+        self.assertEqual(self.ratios.kind_units({"unclassified": 2}, {"unclassified": 1.0}), 2.0)
+
+    def test_the_m4_recorded_row_counts_fourteen_behavioural(self):
+        recorded = {r["milestone"]: r for r in self.ratios.load_config(self.CONFIG)["recorded"]}
+        self.assertEqual(recorded["m4"]["kinds"], {"mechanical": 12, "behavioural": 14, "mixed": 6})
+
+
+class SelfTest(unittest.TestCase):
+    @unittest.skipIf(os.environ.get("USAGE_RATIOS_SELF_TEST_DEPTH"), "this run is the script's own self-test")
+    def test_the_script_runs_its_own_self_test(self):
+        import subprocess
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "usage_ratios.py")
+        proc = subprocess.run([sys.executable, script, "self-test"], capture_output=True, text=True,
+                              env=dict(os.environ, USAGE_RATIOS_SELF_TEST_DEPTH="1"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Ran ", proc.stderr)
+        self.assertIn("OK", proc.stderr)
 
 
 class RatioFormula(unittest.TestCase):
