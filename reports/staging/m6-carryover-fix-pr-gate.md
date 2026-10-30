@@ -8,6 +8,9 @@
   `bash.lang.security.ifs-tampering` findings are gone because `named-tests.sh` splits the body patterns with `tr` and
   reads them with `IFS= read`; the two Trivy `github-pat` criticals on the logged placeholder are suppressed by a
   path-scoped `.trivyignore.yaml` loaded through `trivy.yaml` (the build-log is append-only, history is not rewritten).
+  The first push of the fix (run 41063340658) showed a third finding the secrets had hidden: the glib advisory (id in `.trivyignore.yaml`)
+  (glib 0.18.5, MEDIUM, `Cargo.lock:1545`, through tauri's Linux GTK3 stack); it was already in the old run's SARIF as a
+  warning. It is ignored for `Cargo.lock` with an expiry of 2027-01-28 (90 days, the cargo-deny re-check habit).
   Alternatives: a plain `.trivyignore` (rule id for the whole repository, rejected: it would silence the rule everywhere);
   a redaction commit (rejected: it leaves lines 218 and 219 in history and the scan reads the tree, not history).
   No dependency added: `tempfile` 3.27.0 was already a dev-dependency of the three crates, so `make deny` did not run.
@@ -18,6 +21,12 @@
 
 ## BACKLOG
 
+- New: fs-scan fails on any severity, not on HIGH and CRITICAL as gate.yml declares, because trivy-action builds the SARIF
+  with all severities and `exit-code` follows it unless `limit-severities-for-sarif: true` is set; reason: the log says
+  `Building SARIF report with all severities` and run 41063340658 failed on a MEDIUM advisory. Proposed fix: set
+  `limit-severities-for-sarif: true` in gate.yml (a gate-key change, the owner's call, it also trims the Security tab).
+- New: re-check the glib advisory in `.trivyignore.yaml` by 2027-01-28; reason: the ignore expires and fs-scan goes
+  red again on that date unless tauri has moved off gtk-rs 0.18.
 - New: the Trivy ignore is a file-and-rule pair for one build-log file; a build-log that logs another placeholder
   needs its own entry or a redaction in the hook; reason: `log-tool-call.sh` writes tool input verbatim and the
   placeholder reached the log before the shape was masked. Proposed fix: mask `ghp_`/`github_pat_` shapes in the hook.
@@ -50,6 +59,9 @@ checkout on the mission branch; outputs are the recorded lines.
 - fs-scan: `trivy fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
   --skip-dirs target -q .`: exit 0, `build-log/2026-10-30/50c8af83-...jsonl` Secrets 0, Cargo.lock vulnerabilities 0.
   Without `trivy.yaml` the same scan exits 1 with 2 CRITICAL (github-pat).
+- fs-scan with the action's all-severity behaviour: `trivy fs --scanners vuln,misconfig,secret --ignore-unfixed
+  --exit-code 1 --skip-dirs target --skip-version-check -q .`: before the glib entry exit 1 (`Total: 1 (MEDIUM: 1)`,
+  the glib advisory); after it exit 0, Cargo.lock 0 vulnerabilities, the build-log file 0 secrets.
 - `make check-scripts`: exit 0 (1 min 40 s wall), last line `OK` of the 31 python tests.
 - `make check-contract`: exit 0, `contract checks: 19 ok, 12 skipped, 0 FAIL in 15.7s`.
 - Rewritten body loop still fails a bad pattern: `CONTRACT_TESTS_FILE=/tmp/g2neg.tsv CONTRACT_TESTLOG=none sh
