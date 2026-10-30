@@ -5,7 +5,9 @@
 
 ## Context
 
-D-048 set the mission notify-and-ask line at 1500 USD-eq and the M5 cap at 190 (the cap in force at the boundary is 200). M5 closed at 186.13 USD-eq in the window
+D-048 set the mission notify-and-ask line at 1500 USD-eq and the M5 cap at 190 (the cap in force at the boundary is 200).
+The M5 cap moved 190 → 200 by the owner's chat at about 12:15Z on 2026-10-30 (mission record row 88), before this decision; D-048
+stays at 190 as written. M5 closed at 186.13 USD-eq in the window
 (measured 2026-10-30 12:15:25Z, `--from 2026-10-29T22:30:00Z`: orchestrator 81.83, orchestrator subagents 26.33, workers 36.88,
 validators 39.52, self-check 1.43, other 0.14), under the cap of 200. Mission-to-date is 1446.87 USD-eq, 253.13 under 1700 and
 53.13 under the old line. The final pull request, PR #40, opened on 2026-10-30 with head `72d0412`, is red (run 41052611163: `sast`
