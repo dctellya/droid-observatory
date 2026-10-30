@@ -45,5 +45,9 @@ Numbers pasted from the tools that produced them (ai/RULES.md rule 7).
   the questions Roci raises and the answers, waste causes including validation overhead). `post-mortem/observatory-v1-m2.md`: M2.
 - `staging/<feature-id>.md`: what a feature in a worktree wants written in the shared files (SPEC §9 rows, D-row
   amendments, BACKLOG rows, deferred clauses); committed with the feature and merged by the integrator (F-066; the gate cache is rule 27).
+- `process/<date>-process-record.md`: the process audit of the contract's VAL-PROC-001 to 037 on the mission branch, each with the command and the pasted
+  output, the verdict and the BACKLOG row of every gap. `process/2026-10-30-process-record.md`: written at the M5 boundary by `final-process-record`.
+- `usage/m4.md`, `usage/m5.md`, `ci/2026-10-29-m4.md`, `ci/2026-10-30-m5.md`, `readiness/2026-10-29-m4.md`, `readiness/2026-10-30-m5.json` and `.md`: the M4 and M5
+  boundary reports (M5: window 163.57 USD-eq against the cap 190, orchestrator 71.27 against 30, one cold CI run of 228 s).
 - `screenshots/<date>-<milestone>.png`: the owner's unlocked-display screenshot per integration.
   Expected at S: `screenshots/2026-10-23-s.png`; at M0: `screenshots/2026-10-23-m0.png`; at M1: `screenshots/2026-10-24-m1.png`; at M2: `screenshots/2026-10-24-m2.png`; at M3: `screenshots/2026-10-25-m3.png` (neither the M2 nor the M3 file exists yet, SPEC §9 F-136 Q2).
