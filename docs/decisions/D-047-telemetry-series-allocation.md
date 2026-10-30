@@ -48,3 +48,15 @@ computed in code, from the configuration, not read from prose. D-046 changes the
   value. Counting it, the worst case is 197 (tokens 4 × 3 × 5 = 60, cost 15), still under 200 but with little room. The test pins
   the contract's 182; a change of `max_series` or the buckets must read both figures.
 - A new metric, label or bound is a change to `core::telemetry`, to this table and to SPEC §5.7 together.
+
+## Addendum 2026-10-30 (m5 integration, m5-export-and-parity-ui)
+
+Contract-check upkeep in this slice (commit `264466b`, rule-13 clean, files under `scripts/`): flipped `landed=yes` for the four telemetry tests that exist (`g2-tests.tsv`), the `g3` self-test expects the landed `metrics` command (`contract_checks_test.sh`), and `exceptions.txt` names `4b40a09` for `g6-shared-files` (the D-047 commit, same pattern as `8bd6a7d`). Without them `make check` stopped in `check-contract-checks` at the wt/m5 tip (first run of this slice: exit 2, 95 s, record deleted).
+
+## Addendum 2026-10-30 (m5 integration, m5-telemetry-exporter-and-status)
+
+None new. `docs/decisions/D-047-telemetry-series-allocation.md` (from `m5-telemetry-series-plan-core`) already fixes the allocation; D-046 is applied, not amended.
+
+## Addendum 2026-10-30 (m5 integration, m5-telemetry-series-plan-core)
+
+`docs/decisions/D-047-telemetry-series-allocation.md` (new): the as-built allocation, the 182 table, the role mapping, the bounds; D-010 is not amended. `docs/decisions/README.md` regenerated with `make decisions-index` (one row added).
