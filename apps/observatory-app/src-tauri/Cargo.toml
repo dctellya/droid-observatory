@@ -40,6 +40,7 @@ ureq.workspace = true
 tauri = { version = "2.12.5", features = ["test"] }
 serde_json.workspace = true
 toml.workspace = true
+tempfile.workspace = true
 # Decode the exporter's request body in the wire tests.
 opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic-messages", "metrics"] }
 prost = "0.14.4"

@@ -471,4 +471,138 @@ mod tests {
         assert_eq!(json["reason"], "off in config");
         let _ = std::fs::remove_file(path);
     }
+
+    fn m0_fixture() -> String {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../fixtures/streams/2026-10-22-observatory-v1-m0.jsonl"
+        )
+        .to_owned()
+    }
+
+    /// What `observatory-cli metrics <m0> --csv|--json` prints: the capture read from the file,
+    /// the bundled price table, default notes.
+    fn cli_report(path: &str) -> observatory_core::metrics::MetricsReport {
+        let cfg = Config::default();
+        let template = cfg.cycle.load_template().template;
+        let (events, _) = observatory_core::ingest::mission_events(
+            std::path::Path::new(path),
+            &cfg.ingest,
+            template.clone(),
+        )
+        .expect("the capture reads");
+        let prices = load_prices(&cfg.metrics.price_table).expect("the price table loads");
+        observatory_core::metrics::report_at_last_event(
+            &events,
+            &observatory_core::metrics::ReportSetup {
+                template: &template,
+                prices: &prices,
+                notes: &Notes::default(),
+                budget: cfg.metrics.budget,
+                launch_budget_usd: None,
+                apportionment: cfg.metrics.overhead_apportionment,
+            },
+        )
+        .expect("the capture holds events")
+    }
+
+    #[test]
+    fn export_writes_the_csv_the_cli_prints_at_the_chosen_path() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "export-csv");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            m0_fixture(),
+        ))
+        .expect("the capture replays");
+        let dir = tempfile::tempdir().expect("a temp directory");
+        let target = dir.path().join("m0.csv");
+        let done = tauri::async_runtime::block_on(export(
+            app.state::<Shell>(),
+            opened.summary.mission_id.clone(),
+            ExportFormat::Csv,
+            target.display().to_string(),
+        ))
+        .expect("the export is written");
+        let written = std::fs::read_to_string(&target).expect("the file exists at the path");
+        let cli = cli_report(&m0_fixture());
+        println!("export csv: {} rows at {}", done.rows, target.display());
+        assert_eq!(written, cli.to_csv());
+        assert_eq!(done.rows, cli.rows.len());
+        assert_eq!(written.lines().count(), done.rows + 1);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn export_writes_the_json_the_cli_prints_at_the_chosen_path() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "export-json");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            m0_fixture(),
+        ))
+        .expect("the capture replays");
+        let dir = tempfile::tempdir().expect("a temp directory");
+        let target = dir.path().join("nested").join("m0.json");
+        let done = tauri::async_runtime::block_on(export(
+            app.state::<Shell>(),
+            opened.summary.mission_id.clone(),
+            ExportFormat::Json,
+            target.display().to_string(),
+        ))
+        .expect("the export is written, the folder made");
+        let written = std::fs::read_to_string(&target).expect("the file exists at the path");
+        assert_eq!(written, cli_report(&m0_fixture()).to_json());
+        assert_eq!(done.rows, 14);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_metrics_command_reports_the_price_table_it_read_and_export_refuses_an_unknown_mission() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "metrics-cmd");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            m0_fixture(),
+        ))
+        .expect("the capture replays");
+        let report = tauri::async_runtime::block_on(metrics(
+            app.state::<Shell>(),
+            opened.summary.mission_id.clone(),
+        ))
+        .expect("the report is made");
+        assert_eq!(report.price_table, "2026-10-22");
+        assert_eq!(report.to_csv(), cli_report(&m0_fixture()).to_csv());
+        let dir = tempfile::tempdir().expect("a temp directory");
+        let refused = tauri::async_runtime::block_on(export(
+            app.state::<Shell>(),
+            MissionId("no-such-mission".to_owned()),
+            ExportFormat::Csv,
+            dir.path().join("x.csv").display().to_string(),
+        ));
+        assert!(refused.is_err());
+        assert!(!dir.path().join("x.csv").exists());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_default_export_path_is_the_downloads_folder_with_the_file_name() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "default-path");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            m0_fixture(),
+        ))
+        .expect("the capture replays");
+        let offered = tauri::async_runtime::block_on(export_default_path(
+            app.state::<Shell>(),
+            opened.summary.mission_id,
+            ExportFormat::Csv,
+        ))
+        .expect("a path is offered");
+        println!("offered: {offered}");
+        assert!(offered.ends_with("-metrics.csv"), "{offered}");
+        assert!(offered.contains("Downloads"), "{offered}");
+        let _ = std::fs::remove_file(path);
+    }
 }
