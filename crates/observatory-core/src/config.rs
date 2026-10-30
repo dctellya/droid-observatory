@@ -669,15 +669,15 @@ mod tests {
 
     #[test]
     fn load_reports_the_file_the_settings_came_from() {
-        let dir = scratch_dir("origin");
-        let file = dir.join("config.toml");
+        let dir = scratch_dir();
+        let file = dir.path().join("config.toml");
         std::fs::write(&file, "[store]\npath = \"/tmp/x.sqlite\"\n").unwrap();
 
         let (config, origin) = Config::locate(Some(&file), None, None).unwrap();
         assert_eq!(config.store.path, "/tmp/x.sqlite");
         assert_eq!(origin.as_deref(), Some(file.as_path()));
 
-        let empty_home = Some(dir.join("nobody").into_os_string());
+        let empty_home = Some(dir.path().join("nobody").into_os_string());
         let (config, origin) = Config::locate(None, None, empty_home).unwrap();
         assert_eq!(config, Config::default());
         assert_eq!(origin, None);
@@ -702,34 +702,34 @@ mod tests {
 
     #[test]
     fn load_reads_explicit_path_and_errors_when_it_is_missing() {
-        let dir = scratch_dir("explicit");
-        let file = dir.join("config.toml");
+        let dir = scratch_dir();
+        let file = dir.path().join("config.toml");
         std::fs::write(&file, "[github]\nmerge_policy = \"human\"\n").unwrap();
 
         let config = Config::load(Some(&file)).expect("explicit file loads");
         assert_eq!(config.github.merge_policy, MergePolicy::Human);
 
-        let missing = Config::load(Some(&dir.join("absent.toml")));
+        let missing = Config::load(Some(&dir.path().join("absent.toml")));
         assert!(matches!(missing, Err(ConfigError::Io { .. })));
     }
 
     #[test]
     fn load_uses_env_override_then_home_then_defaults() {
-        let dir = scratch_dir("resolve");
-        let override_file = dir.join("override.toml");
+        let dir = scratch_dir();
+        let override_file = dir.path().join("override.toml");
         std::fs::write(&override_file, "[ui]\ndev_port = 3142\n").unwrap();
         let from_env =
             Config::load_with(None, Some(override_file.into_os_string()), None).expect("env file");
         assert_eq!(from_env.ui.dev_port, 3142);
 
-        let home = dir.join("home");
+        let home = dir.path().join("home");
         std::fs::create_dir_all(home.join(".droid-observatory")).unwrap();
         std::fs::write(home.join(DEFAULT_RELATIVE_PATH), "[ui]\ndev_port = 3143\n").unwrap();
         let from_home =
             Config::load_with(None, None, Some(home.clone().into_os_string())).expect("home file");
         assert_eq!(from_home.ui.dev_port, 3143);
 
-        let empty_home = Some(dir.join("nobody").into_os_string());
+        let empty_home = Some(dir.path().join("nobody").into_os_string());
         assert_eq!(
             Config::load_with(None, None, empty_home).unwrap(),
             Config::default()
@@ -742,20 +742,14 @@ mod tests {
 
     #[test]
     fn invalid_file_error_names_the_path() {
-        let dir = scratch_dir("invalid");
-        let file = dir.join("config.toml");
+        let dir = scratch_dir();
+        let file = dir.path().join("config.toml");
         std::fs::write(&file, "[ui\n").unwrap();
         let err = Config::load(Some(&file)).unwrap_err();
         assert!(err.to_string().contains("config.toml"), "{err}");
     }
 
-    fn scratch_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "observatory-config-test-{}-{label}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("a scratch directory")
     }
 }

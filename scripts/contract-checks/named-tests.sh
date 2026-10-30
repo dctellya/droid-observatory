@@ -61,12 +61,13 @@ run_group() { # run_group <group>
     fi
     if [ "$body" != - ]; then
       text=$(test_body "$name" "$src")
-      OLDIFS=$IFS
-      IFS='~'
-      for p in $(printf '%s' "$body" | sed 's/~~/~/g'); do
+      pats=$(printf '%s' "$body" | sed 's/~~/~/g' | tr '~' '\n')
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
         printf '%s\n' "$text" | grep -Eq -- "$p" || fail "$name body lacks /$p/ ($ids)"
-      done
-      IFS=$OLDIFS
+      done << EOF
+$pats
+EOF
     fi
     [ -n "$log" ] || continue
     grep -Eq "^ok (.*::)?$name\$" "$log" || fail "$name is not ok in the test log ($ids)"

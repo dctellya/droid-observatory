@@ -455,8 +455,8 @@ mod tests {
     #[test]
     fn the_cycle_template_command_returns_the_loaded_lanes_in_order() {
         let cfg = Config::default();
-        let path =
-            std::env::temp_dir().join(format!("observatory-cmd-{}.sqlite", std::process::id()));
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let path = dir.path().join("observatory.sqlite");
         let app = tauri::test::mock_app();
         let template = Arc::new(cfg.cycle.load_template().template);
         app.manage(Arc::new(Telemetry::start(&cfg, template.clone())));
@@ -473,7 +473,6 @@ mod tests {
         println!("cycle_template lanes: {names:?}");
         assert_eq!(loaded, CycleTemplate::engineering());
         assert_eq!(names.len(), 7, "the default template has seven lanes");
-        let _ = std::fs::remove_file(path);
     }
 
     const LITERAL_BRANCH: &str = "mission/observatory-v1";
@@ -481,14 +480,11 @@ mod tests {
     fn app_with_branch_pattern(
         pattern: &str,
         tag: &str,
-    ) -> (tauri::App<tauri::test::MockRuntime>, PathBuf) {
+    ) -> (tauri::App<tauri::test::MockRuntime>, tempfile::TempDir) {
         let mut cfg = Config::default();
         cfg.mission.branch_pattern = pattern.to_owned();
-        let path = std::env::temp_dir().join(format!(
-            "observatory-branch-{tag}-{}.sqlite",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let path = dir.path().join(format!("observatory-branch-{tag}.sqlite"));
         let app = tauri::test::mock_app();
         let template = Arc::new(cfg.cycle.load_template().template);
         app.manage(Arc::new(Telemetry::start(&cfg, template.clone())));
@@ -498,7 +494,7 @@ mod tests {
             status: Arc::new(Mutex::new(AttachStatus::default())),
             cfg,
         });
-        (app, path)
+        (app, dir)
     }
 
     fn s_fixture() -> String {
@@ -511,7 +507,7 @@ mod tests {
 
     #[test]
     fn an_opened_mission_names_the_branch_of_the_configured_pattern() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "pattern");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "pattern");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -527,12 +523,11 @@ mod tests {
         ))
         .expect("the mission opens from the store");
         assert_eq!(again.branch.as_deref(), Some(LITERAL_BRANCH));
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn an_opened_mission_prefers_the_branch_the_store_recorded() {
-        let (app, path) = app_with_branch_pattern("mission/<name>", "recorded");
+        let (app, _dir) = app_with_branch_pattern("mission/<name>", "recorded");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -552,12 +547,11 @@ mod tests {
         ))
         .expect("the mission opens from the store");
         assert_eq!(again.branch.as_deref(), Some("mission/recorded"));
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn telemetry_status_is_off_in_config_with_the_collector_endpoint_by_default() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "telemetry");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "telemetry");
         let report =
             tauri::async_runtime::block_on(telemetry_status(app.state::<Arc<Telemetry>>()))
                 .expect("the status answers");
@@ -569,7 +563,6 @@ mod tests {
         let json = serde_json::to_value(&report).expect("serialises");
         assert_eq!(json["enabled"], false);
         assert_eq!(json["reason"], "off in config");
-        let _ = std::fs::remove_file(path);
     }
 
     fn m0_fixture() -> String {
@@ -620,7 +613,7 @@ mod tests {
 
     #[test]
     fn export_writes_the_csv_the_cli_prints_at_the_chosen_path() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "export-csv");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "export-csv");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -642,12 +635,11 @@ mod tests {
         assert_eq!(written, cli.to_csv());
         assert_eq!(done.rows, cli.rows.len());
         assert_eq!(written.lines().count(), done.rows + 1);
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn export_writes_the_json_the_cli_prints_at_the_chosen_path() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "export-json");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "export-json");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -666,12 +658,11 @@ mod tests {
         let written = std::fs::read_to_string(&target).expect("the file exists at the path");
         assert_eq!(written, cli_report(&m0_fixture()).to_json());
         assert_eq!(done.rows, 14);
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn the_metrics_command_reports_the_price_table_it_read_and_export_refuses_an_unknown_mission() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "metrics-cmd");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "metrics-cmd");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -694,12 +685,11 @@ mod tests {
         ));
         assert!(refused.is_err());
         assert!(!dir.path().join("x.csv").exists());
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn the_default_export_path_is_the_downloads_folder_with_the_file_name() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "default-path");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "default-path");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -715,12 +705,11 @@ mod tests {
         println!("offered: {offered}");
         assert!(offered.ends_with("-metrics.csv"), "{offered}");
         assert!(offered.contains("Downloads"), "{offered}");
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn the_window_board_of_the_m0_capture_has_the_cards_lanes_and_tray_of_the_browser() {
-        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "board-parity");
+        let (app, _dir) = app_with_branch_pattern(LITERAL_BRANCH, "board-parity");
         let opened = tauri::async_runtime::block_on(open_replay(
             app.state::<Shell>(),
             app.state::<Arc<Telemetry>>(),
@@ -764,6 +753,5 @@ mod tests {
         expected.sort_unstable();
         assert_eq!(window, expected);
         assert_eq!(digest.tray_unknown, 0);
-        let _ = std::fs::remove_file(path);
     }
 }

@@ -236,13 +236,10 @@ mod tests {
         }
     }
 
-    fn app(name: &str) -> (tauri::App<tauri::test::MockRuntime>, std::path::PathBuf) {
+    fn app(name: &str) -> (tauri::App<tauri::test::MockRuntime>, tempfile::TempDir) {
         let cfg = Config::default();
-        let path = std::env::temp_dir().join(format!(
-            "observatory-merge-{name}-{}.sqlite",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let path = dir.path().join(format!("observatory-merge-{name}.sqlite"));
         let mut store = Store::open(&path).expect("the store opens");
         store
             .record_hosted(&HostedRun {
@@ -260,7 +257,7 @@ mod tests {
             status: Arc::new(Mutex::new(AttachStatus::default())),
             cfg,
         });
-        (app, path)
+        (app, dir)
     }
 
     fn mission() -> MissionId {
@@ -279,7 +276,7 @@ mod tests {
 
     #[test]
     fn a_confirmed_press_sends_one_put_and_records_one_refused_overlay_row() {
-        let (app, path) = app("one");
+        let (app, _dir) = app("one");
         let desk = desk_with_open_pr();
         let transport = ReadOnly::default();
         let outcome = press_merge(
@@ -314,12 +311,11 @@ mod tests {
             .collect();
         assert_eq!(approvals.len(), 1);
         assert_eq!(&approvals[0].lane, shell.template.final_lane());
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn two_presses_send_two_requests_and_leave_two_refused_rows() {
-        let (app, path) = app("two");
+        let (app, _dir) = app("two");
         let desk = desk_with_open_pr();
         let transport = ReadOnly::default();
         for _ in 0..2 {
@@ -346,12 +342,11 @@ mod tests {
             .filter(|row| row.kind == "merge" && row.state == "refused")
             .count();
         assert_eq!(refused, 2, "{rows:?}");
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn a_press_the_poll_does_not_back_sends_nothing_and_records_nothing() {
-        let (app, path) = app("unbacked");
+        let (app, _dir) = app("unbacked");
         let transport = ReadOnly::default();
         let unseen = press_merge(
             app.handle(),
@@ -395,12 +390,11 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn the_log_names_the_request_the_forbidden_answer_and_the_refusal() {
-        let (app, path) = app("log");
+        let (app, _dir) = app("log");
         let desk = desk_with_open_pr();
         let transport = ReadOnly::default();
         let log = logged(|| {
@@ -422,6 +416,5 @@ mod tests {
         assert_eq!(line("merge_result"), 1, "{log}");
         assert!(log.contains("refused"), "{log}");
         assert!(!log.contains("github_pat"), "{log}");
-        let _ = std::fs::remove_file(path);
     }
 }

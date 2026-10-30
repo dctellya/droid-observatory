@@ -429,8 +429,8 @@ mod live {
         println!("status bar: {}", report.bar_text());
         assert!(report.status.enabled, "{report:?}");
 
-        let path =
-            std::env::temp_dir().join(format!("observatory-live-{}.sqlite", std::process::id()));
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let path = dir.path().join("observatory-live.sqlite");
         let mut store = Store::open(&path).expect("store");
         let capture = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -444,6 +444,5 @@ mod live {
             2 * cfg.telemetry.metric_export_interval_s + 2,
         ));
         telemetry.stop();
-        let _ = std::fs::remove_file(path);
     }
 }

@@ -248,12 +248,12 @@ mod tests {
         String::from_utf8(lock(&capture.0).clone()).expect("the log is text")
     }
 
-    fn shell(name: &str) -> (Shell, std::path::PathBuf) {
+    fn shell(name: &str) -> (Shell, tempfile::TempDir) {
         let cfg = Config::default();
-        let path = std::env::temp_dir().join(format!(
-            "observatory-actions-{name}-{}.sqlite",
-            std::process::id()
-        ));
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let path = dir
+            .path()
+            .join(format!("observatory-actions-{name}.sqlite"));
         let mut store = Store::open(&path).expect("the store opens");
         store
             .record_hosted(&HostedRun {
@@ -270,7 +270,7 @@ mod tests {
             status: Arc::new(Mutex::new(AttachStatus::default())),
             cfg,
         };
-        (shell, path)
+        (shell, dir)
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn recorded_action_log_carries_text_len() {
-        let (shell, path) = shell("recorded");
+        let (shell, _dir) = shell("recorded");
         let app = tauri::test::mock_app();
         let action = HumanAction::message(MESSAGE);
         let log = logged(|| {
@@ -316,7 +316,6 @@ mod tests {
         assert!(log.contains("human_action"), "no human_action line: {log}");
         assert!(log.contains("text_len"), "the line has no text_len: {log}");
         assert!(!log.contains(MESSAGE), "the line carries the text: {log}");
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
