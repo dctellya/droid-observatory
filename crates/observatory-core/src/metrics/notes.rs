@@ -38,7 +38,8 @@ impl Notes {
         self
     }
 
-    pub(super) fn key(&self, event: &Event) -> Option<&str> {
+    /// The scenario or check an event is about, when the notes name it.
+    pub fn key(&self, event: &Event) -> Option<&str> {
         self.keys.get(&event.id.0).map(String::as_str)
     }
 

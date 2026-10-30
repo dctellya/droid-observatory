@@ -35,6 +35,20 @@ impl WasteCause {
         Self::IdleUnscheduled,
     ];
 
+    /// The name of the cause in the CSV and the JSON (`waiting_human_question`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::WaitingHumanQuestion => "waiting_human_question",
+            Self::WaitingHumanPermission => "waiting_human_permission",
+            Self::WaitingMerge => "waiting_merge",
+            Self::WaitingValidation => "waiting_validation",
+            Self::Rework => "rework",
+            Self::RetryFailure => "retry_failure",
+            Self::IdleQueued => "idle_queued",
+            Self::IdleUnscheduled => "idle_unscheduled",
+        }
+    }
+
     pub fn group(self) -> WasteGroup {
         match self {
             Self::WaitingHumanQuestion | Self::WaitingHumanPermission | Self::WaitingMerge => {

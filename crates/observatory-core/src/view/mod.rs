@@ -17,6 +17,7 @@ mod scrub;
 mod scrubber;
 mod state;
 mod summary;
+mod tabs;
 mod worktree;
 
 pub use agent_panel::{AgentEntry, AgentStream, agent_entries, agent_stream, session_name};
@@ -53,4 +54,9 @@ pub use scrubber::{
 };
 pub use state::{BoardState, RoleTurns, SubLane, TrayEntry};
 pub use summary::MissionSummary;
+pub use tabs::{
+    CommitRow, CommitsTab, CostTab, CriteriaTab, CriterionRow, EventRow, FeatureCriteria,
+    FindingRow, GateClock, GateTab, HistoryRow, PrLink, ReviewTab, ReworkRow, ScenarioRow,
+    UsageRow, WasteRow, commits_tab, cost_tab, criteria_tab, gate_tab, review_tab,
+};
 pub use worktree::{MilestoneWorktree, milestone_worktrees};
