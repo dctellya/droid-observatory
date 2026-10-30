@@ -29,7 +29,9 @@ mod waste;
 pub use bottleneck::Bottleneck;
 pub use budget::{BudgetMeter, budget_meter};
 pub use cards::{CardTime, card_times};
-pub use compare::{ModelComparisonRow, completed_features, model_comparison};
+pub use compare::{
+    ModelComparisonRow, completed_features, integration_observable, model_comparison,
+};
 pub use csv::CSV_HEADER;
 pub use cycle::{ClockKinds, Cycle, CycleEnd, Cycles, StageTime, cycles, stage_times};
 pub use export::{ExportFile, ExportFormat, ReportSetup, report_at_last_event};

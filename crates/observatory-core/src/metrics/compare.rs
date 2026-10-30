@@ -15,9 +15,12 @@ use crate::model::{Event, EventKind, FeatureId, ModelId, Role};
 pub struct ModelComparisonRow {
     pub role: Role,
     pub model: Option<ModelId>,
-    /// Features with `task.done` and `scrutiny.passed` and no unresolved rework window: the
-    /// divisor of both figures, the same on every row.
+    /// Features with `task.done` and `scrutiny.passed` and no unresolved rework window, and
+    /// integrated where `integrated_observable`: the divisor of both figures, the same on every row.
     pub completed_features: u64,
+    /// The capture holds an `integration.merged` event, so the count applies the `integrated`
+    /// condition; `false` means the condition was waived (a session capture records no merge).
+    pub integrated_observable: bool,
     /// The role-model's whole cost of the run, from its turns.
     pub cost: Cost,
     pub tokens: TokenCounts,
@@ -27,8 +30,18 @@ pub struct ModelComparisonRow {
     pub first_pass_active_s_per_completed_feature: Option<f64>,
 }
 
-/// The features whose work is done and validated. PRD §10.4 also asks for the integration; the
-/// mapping emits no `integration.merged` for a feature, so it is not required here.
+/// Whether the capture records any integration: only then can the `integrated` condition of the
+/// completed-feature count be applied. The M0 session capture holds no `integration.merged`.
+pub fn integration_observable(events: &[Event]) -> bool {
+    events
+        .iter()
+        .any(|event| event.kind == EventKind::IntegrationMerged)
+}
+
+/// The features whose work is done and validated (`task.done`, `scrutiny.passed`, no unresolved
+/// rework window) and, where the capture records integrations, integrated (PRD §10.4): an
+/// `integration.merged` at or after the feature's last `task.done` that names the feature or, when
+/// it names no feature, the feature's milestone. Without any such event the condition is waived.
 pub fn completed_features(
     events: &[Event],
     cards: &BTreeMap<Option<FeatureId>, CardTime>,
@@ -38,6 +51,7 @@ pub fn completed_features(
             .iter()
             .any(|e| e.feature_id.as_ref() == Some(feature) && e.kind == kind)
     };
+    let integrated_observable = integration_observable(events);
     cards
         .iter()
         .filter_map(|(key, card)| key.as_ref().map(|feature| (feature, card)))
@@ -45,9 +59,33 @@ pub fn completed_features(
             has(feature, EventKind::TaskDone)
                 && has(feature, EventKind::ScrutinyPassed)
                 && !card.rework.iter().any(|span| span.unresolved)
+                && (!integrated_observable || integrated_after_done(events, feature))
         })
         .map(|(feature, _)| feature.clone())
         .collect()
+}
+
+fn integrated_after_done(events: &[Event], feature: &FeatureId) -> bool {
+    let own = || {
+        events
+            .iter()
+            .filter(|e| e.feature_id.as_ref() == Some(feature))
+    };
+    let Some(done) = own()
+        .filter(|e| e.kind == EventKind::TaskDone)
+        .map(|e| e.at)
+        .max()
+    else {
+        return false;
+    };
+    let milestone = own().find_map(|e| e.milestone_id.as_ref());
+    events
+        .iter()
+        .filter(|e| e.kind == EventKind::IntegrationMerged && e.at >= done)
+        .any(|merge| match &merge.feature_id {
+            Some(named) => named == feature,
+            None => milestone.is_some() && merge.milestone_id.as_ref() == milestone,
+        })
 }
 
 #[derive(Default)]
@@ -136,6 +174,7 @@ pub fn model_comparison(
     }
 
     let completed = completed_features(events, cards).len() as u64;
+    let integrated_observable = integration_observable(events);
     let per = |total: f64| (completed > 0).then(|| total / completed as f64);
     groups
         .into_iter()
@@ -143,6 +182,7 @@ pub fn model_comparison(
             role: Role::ALL.get(role).copied().unwrap_or(Role::Unresolved),
             model: model.map(ModelId),
             completed_features: completed,
+            integrated_observable,
             cost: prices.cost(group.usd, CostUnit::Usd),
             tokens: group.tokens,
             cost_per_completed_feature: per(group.usd),
