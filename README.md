@@ -217,7 +217,7 @@ ai/            PRD, rules, spec template, session logs (the human-agent record)
 config/        example config and dated price tables
 docs/decisions/ one file per decision; README.md is generated
 docs/runbooks/  red gate, fix cycle, stalled mission, hooks disabled, release
-docs/spec/     SPEC §9 rows F-001 to F-160 (S to M3), archived verbatim
+docs/spec/     SPEC §9 rows F-001 to F-266 (S to M4), archived verbatim
 build-log/     one JSON line per agent tool call, by day and session
 reports/       readiness reports, usage and waste per milestone (pasted from the tool)
 scripts/       the checks the Makefile calls
