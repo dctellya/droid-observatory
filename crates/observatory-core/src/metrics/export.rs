@@ -74,6 +74,18 @@ impl ExportFormat {
         }
     }
 
+    /// `path` with a trailing export extension (`.csv`, `.json`) swapped for this format's; any
+    /// other path is returned as it is.
+    pub fn with_extension(self, path: &str) -> String {
+        Self::ALL
+            .into_iter()
+            .find_map(|other| path.strip_suffix(&format!(".{}", other.extension())))
+            .map_or_else(
+                || path.to_owned(),
+                |stem| format!("{stem}.{}", self.extension()),
+            )
+    }
+
     pub fn mime(self) -> &'static str {
         match self {
             ExportFormat::Csv => "text/csv",
