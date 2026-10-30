@@ -5,10 +5,10 @@ mod metrics_support;
 
 use std::collections::BTreeSet;
 
-use metrics_support::{m0_events, prices};
+use metrics_support::{EventExt, cache_write, ev, m0_events, prices, t, turn, usage_report};
 use observatory_core::config::{Config, OverheadApportionment};
 use observatory_core::metrics::{CostInput, Notes, cost_report};
-use observatory_core::model::{CycleTemplate, Timestamp};
+use observatory_core::model::{CycleTemplate, Event, EventKind, Role, Timestamp};
 use observatory_core::telemetry::{Label, SampleInput, SeriesPlan, mission_sample};
 
 fn end_of(events: &[observatory_core::model::Event]) -> Timestamp {
@@ -135,4 +135,140 @@ fn milestone_and_model_values_of_a_sample_stay_inside_their_bounds() {
             "{role}"
         );
     }
+}
+
+fn cache_write_events() -> Vec<Event> {
+    vec![
+        ev("fd", EventKind::FeatureDefined, 0)
+            .feature("f1")
+            .milestone("m1")
+            .by(Role::Orchestrator),
+        turn(
+            "t1",
+            10,
+            Role::Worker,
+            "claude-sonnet-5-5",
+            "build",
+            [1_000_000, 0, 0],
+        )
+        .feature("f1")
+        .milestone("m1"),
+        usage_report(
+            "u1",
+            20,
+            Role::Worker,
+            "claude-sonnet-5-5",
+            "build",
+            cache_write(400_000),
+        )
+        .feature("f1")
+        .milestone("m1"),
+        usage_report(
+            "u2",
+            30,
+            Role::ScrutinyValidator,
+            "claude-opus-5-5",
+            "scrutiny",
+            cache_write(100_000),
+        )
+        .feature("f1")
+        .milestone("m1"),
+    ]
+}
+
+fn sample_of(events: &[Event]) -> observatory_core::telemetry::MissionSample {
+    let cfg = Config::default().telemetry;
+    mission_sample(&SampleInput {
+        mission: "m0",
+        events,
+        template: &CycleTemplate::engineering(),
+        notes: &Notes::default(),
+        prices: &prices(),
+        end: t(40),
+        cfg: &cfg,
+    })
+}
+
+fn value_of(
+    sample: &observatory_core::telemetry::MissionSample,
+    name: &str,
+    role: &str,
+    model: &str,
+) -> Option<f64> {
+    sample
+        .counters
+        .iter()
+        .find(|point| {
+            point.name == name
+                && point.labels.contains(&(Label::Role, role.to_owned()))
+                && point.labels.contains(&(Label::Model, model.to_owned()))
+        })
+        .map(|point| point.value)
+}
+
+#[test]
+fn the_telemetry_sample_carries_cache_write_tokens_per_role_and_model() {
+    let sample = sample_of(&cache_write_events());
+
+    let name = "observatory.tokens.cache_write";
+    assert_eq!(
+        value_of(&sample, name, "worker", "claude-sonnet-5-5"),
+        Some(400_000.0)
+    );
+    assert_eq!(
+        value_of(&sample, name, "validator", "claude-opus-5-5"),
+        Some(100_000.0)
+    );
+    let plan = SeriesPlan::from(&Config::default().telemetry);
+    let planned = plan
+        .instruments
+        .iter()
+        .find(|instrument| instrument.name == name)
+        .expect("planned");
+    for point in sample.counters.iter().filter(|point| point.name == name) {
+        let keys: Vec<Label> = point.labels.iter().map(|(label, _)| *label).collect();
+        assert_eq!(keys, planned.labels, "the planned labels");
+    }
+}
+
+#[test]
+fn cost_usd_in_the_telemetry_sample_includes_the_cache_write_term() {
+    let sample = sample_of(&cache_write_events());
+
+    // Worker: 1 M input at 2.0 and 0.4 M cache write at 2.5; validator: 0.1 M cache write at 5.0.
+    let name = "observatory.cost_usd";
+    let worker = value_of(&sample, name, "worker", "claude-sonnet-5-5").expect("worker point");
+    assert!((worker - 3.0).abs() < 1e-9, "{worker}");
+    let validator =
+        value_of(&sample, name, "validator", "claude-opus-5-5").expect("validator point");
+    assert!((validator - 0.5).abs() < 1e-9, "{validator}");
+}
+
+#[test]
+fn the_m0_sample_cache_write_total_is_the_sum_of_the_session_reports() {
+    let events = m0_events();
+    let cfg = Config::default().telemetry;
+    let sample = mission_sample(&SampleInput {
+        mission: "m0",
+        events: &events,
+        template: &CycleTemplate::engineering(),
+        notes: &Notes::default(),
+        prices: &prices(),
+        end: end_of(&events),
+        cfg: &cfg,
+    });
+    let reported: u64 = events
+        .iter()
+        .filter(|event| event.kind == EventKind::UsageReported)
+        .filter_map(|event| event.usage)
+        .map(|usage| usage.cache_write)
+        .sum();
+    let exported: f64 = sample
+        .counters
+        .iter()
+        .filter(|point| point.name == "observatory.tokens.cache_write")
+        .map(|point| point.value)
+        .sum();
+    assert!(reported > 0);
+    assert_eq!(exported, reported as f64);
 }

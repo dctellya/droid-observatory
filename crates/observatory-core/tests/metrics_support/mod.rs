@@ -127,6 +127,33 @@ pub fn turn(
     ev(id, kind, seconds).by(role).model(model).in_lane(lane)
 }
 
+/// One `usage.reported` event of `role` at `seconds`, in lane `lane`: the sidecar's session total.
+pub fn usage_report(
+    id: &str,
+    seconds: i64,
+    role: Role,
+    model: &str,
+    lane: &str,
+    usage: TokenUsage,
+) -> Event {
+    ev(id, EventKind::UsageReported, seconds)
+        .by(role)
+        .model(model)
+        .in_lane(lane)
+        .reporting(usage)
+}
+
+/// A usage report that carries only a cache-write count.
+pub fn cache_write(tokens: u64) -> TokenUsage {
+    TokenUsage {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: tokens,
+        credits: None,
+    }
+}
+
 pub fn prices() -> PriceTable {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/prices/2026-10-22.toml");
     let text = std::fs::read_to_string(path).expect("the price table exists");

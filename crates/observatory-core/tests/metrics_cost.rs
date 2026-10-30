@@ -2,10 +2,13 @@
 
 mod metrics_support;
 
-use metrics_support::{EventExt, UsageExt, ev, m0_events, prices, t, turn};
+use metrics_support::{
+    EventExt, UsageExt, cache_write, ev, m0_events, prices, t, turn, usage_report,
+};
 use observatory_core::config::OverheadApportionment;
 use observatory_core::metrics::{
-    CostInput, CostReport, CostUnit, Notes, PriceTable, WasteCause, budget_meter, cost_report,
+    CostInput, CostReport, CostUnit, Notes, PriceTable, RowScope, WasteCause, budget_meter,
+    cost_report, metrics_report,
 };
 use observatory_core::model::{
     CycleTemplate, Event, EventKind, FeatureId, ModelId, Role, SessionId, Timestamp, TokenUsage,
@@ -657,4 +660,249 @@ fn a_price_table_names_its_error() {
             )
             .is_none()
     );
+}
+
+fn metrics_of(
+    events: &[Event],
+    prices: &PriceTable,
+    end: Timestamp,
+) -> observatory_core::metrics::MetricsReport {
+    metrics_report(&CostInput {
+        events,
+        template: &CycleTemplate::engineering(),
+        notes: &Notes::default(),
+        prices,
+        end,
+        budget: 0.0,
+        launch_budget_usd: None,
+        apportionment: OverheadApportionment::Separate,
+    })
+}
+
+fn session_total() -> TokenUsage {
+    TokenUsage {
+        input: 1_000_000,
+        output: 100_000,
+        cache_read: 2_000_000,
+        cache_write: 400_000,
+        credits: None,
+    }
+}
+
+#[test]
+fn a_row_cost_prices_the_cache_write_tokens_of_its_session_report() {
+    let events = vec![
+        ev("fd", EventKind::FeatureDefined, 0)
+            .feature("f1")
+            .milestone("m1")
+            .by(Role::Orchestrator),
+        turn(
+            "t1",
+            10,
+            Role::Worker,
+            SONNET,
+            "build",
+            [1_000_000, 100_000, 2_000_000],
+        )
+        .feature("f1")
+        .milestone("m1"),
+        usage_report("u1", 20, Role::Worker, SONNET, "build", session_total())
+            .feature("f1")
+            .milestone("m1"),
+    ];
+
+    let found = metrics_of(&events, &prices(), t(30));
+
+    // Turns: 1 M input at 2.0, 0.1 M output at 10.0, 2 M cache read at 0.10; the sidecar's
+    // 0.4 M cache write at 2.5.
+    let by_hand = 2.0 + 1.0 + 0.2 + 1.0;
+    for (scope, id) in [(RowScope::Feature, "f1"), (RowScope::Milestone, "m1")] {
+        let row = found
+            .rows
+            .iter()
+            .find(|row| row.scope == scope && row.id == id)
+            .expect("a row");
+        assert!(
+            (row.cost_usd - by_hand).abs() < 0.01,
+            "{id}: {} against {by_hand}",
+            row.cost_usd
+        );
+        assert_eq!(row.tokens_cache_write, 400_000, "{id}");
+        assert_eq!(
+            row.tokens_input, 1_000_000,
+            "{id}: the turns' tokens stay the turns' tokens, no double count"
+        );
+    }
+}
+
+#[test]
+fn the_row_cost_of_m0_ci_rust_job_linux_equals_the_four_class_recompute() {
+    let events = m0_events();
+    let table = prices();
+    let found = metrics_of(&events, &table, m0_end(&events));
+    let row = found
+        .rows
+        .iter()
+        .find(|row| row.scope == RowScope::Feature && row.id == "m0-ci-rust-job-linux")
+        .expect("the M0 capture holds the feature");
+
+    let mut recompute = 0.0;
+    for event in events
+        .iter()
+        .filter(|e| e.feature_id.as_ref().map(|f| f.0.as_str()) == Some(row.id.as_str()))
+    {
+        let multiplier = table.multiplier(event.role);
+        match &event.kind {
+            EventKind::TurnUsage {
+                input,
+                output,
+                cache_read,
+                model,
+                ..
+            } => {
+                let model = model.as_ref().or(event.model.as_ref());
+                if let Some(rates) = model.and_then(|m| table.rates(&m.0)) {
+                    recompute += (*input as f64 * rates.input_per_m
+                        + *output as f64 * rates.output_per_m
+                        + *cache_read as f64 * rates.cache_read_per_m)
+                        / 1e6
+                        * multiplier;
+                }
+            }
+            EventKind::UsageReported => {
+                let rates = event.model.as_ref().and_then(|m| table.rates(&m.0));
+                if let (Some(usage), Some(rates)) = (event.usage, rates) {
+                    recompute +=
+                        usage.cache_write as f64 * rates.cache_write_per_m / 1e6 * multiplier;
+                }
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "m0-ci-rust-job-linux: csv cost {} four-class recompute {recompute}, cache write {}",
+        row.cost_usd, row.tokens_cache_write
+    );
+    assert!(row.tokens_cache_write > 0);
+    assert!(
+        (row.cost_usd - recompute).abs() < 0.0001 + 1e-9,
+        "{} against {recompute}",
+        row.cost_usd
+    );
+}
+
+#[test]
+fn an_unpriced_model_keeps_its_cache_write_tokens_in_the_unpriced_list() {
+    let events = vec![
+        turn("a", 10, Role::Worker, "kimi-k3", "build", [1000, 0, 0]),
+        usage_report(
+            "u",
+            20,
+            Role::Worker,
+            "kimi-k3",
+            "build",
+            cache_write(400_000),
+        ),
+        usage_report("v", 25, Role::Worker, SONNET, "build", cache_write(0)),
+    ];
+
+    let report = report(&events, t(30));
+
+    let json = serde_json::to_value(&report).expect("serializes");
+    let unpriced = json["unpriced"].as_array().expect("a list");
+    assert_eq!(unpriced.len(), 1, "{unpriced:?}");
+    assert_eq!(unpriced[0]["model"], "kimi-k3");
+    assert_eq!(unpriced[0]["tokens"]["input"], 1000);
+    assert_eq!(
+        unpriced[0]["cache_write"], 400_000,
+        "counted with the model's other tokens, not priced"
+    );
+    assert!(close(report.cost_so_far.amount, 0.0), "nothing is priced");
+}
+
+#[test]
+fn role_lane_milestone_mission_and_comparison_costs_include_the_cache_write_term() {
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/prices/2026-10-22.toml"),
+    )
+    .expect("the price table exists");
+    let table = PriceTable::parse(&text.replace("worker = 1.0", "worker = 2.0")).expect("parses");
+    let events = vec![
+        turn("t1", 10, Role::Worker, SONNET, "build", [1_000_000, 0, 0])
+            .feature("f1")
+            .milestone("m1"),
+        usage_report(
+            "u1",
+            20,
+            Role::Worker,
+            SONNET,
+            "build",
+            cache_write(400_000),
+        )
+        .feature("f1")
+        .milestone("m1"),
+        usage_report(
+            "u2",
+            30,
+            Role::Orchestrator,
+            FABLE,
+            "plan",
+            cache_write(100_000),
+        ),
+    ];
+
+    let report = report_with(&events, &table, t(40));
+
+    // Worker: (2.0 + 1.0) x 2.0; orchestrator: 0.1 M cache write at 12.5.
+    let worker = 6.0;
+    let orchestrator = 1.25;
+    let role = |role: Role| {
+        report
+            .cost_by_role
+            .iter()
+            .find(|row| row.role == role)
+            .map(|row| row.cost.amount)
+    };
+    assert!(close(role(Role::Worker).expect("worker"), worker));
+    assert!(close(
+        role(Role::Orchestrator).expect("orchestrator"),
+        orchestrator
+    ));
+    let lane = |id: &str| {
+        report
+            .tokens_by_lane
+            .iter()
+            .find(|row| row.lane.as_str() == id)
+            .map(|row| row.cost.amount)
+    };
+    assert!(close(lane("build").expect("build"), worker));
+    assert!(close(lane("plan").expect("plan"), orchestrator));
+    let milestone = |id: Option<&str>| {
+        report
+            .tokens_by_milestone
+            .iter()
+            .find(|row| row.milestone.as_ref().map(|m| m.0.as_str()) == id)
+            .map(|row| row.cost.amount)
+    };
+    assert!(close(milestone(Some("m1")).expect("m1"), worker));
+    assert!(close(milestone(None).expect("no milestone"), orchestrator));
+    assert!(close(report.cost_so_far.amount, worker + orchestrator));
+    assert!(
+        close(report.overhead.cost.amount, orchestrator),
+        "the report with no feature is mission level"
+    );
+    let group = |role: Role| {
+        report
+            .model_comparison
+            .iter()
+            .find(|row| row.role == role)
+            .map(|row| row.cost.amount)
+    };
+    assert!(close(group(Role::Worker).expect("worker group"), worker));
+    assert!(close(
+        group(Role::Orchestrator).expect("orchestrator group"),
+        orchestrator
+    ));
+    assert_eq!(report.total_tokens.input, 1_000_000, "no cache write here");
 }
