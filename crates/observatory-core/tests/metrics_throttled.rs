@@ -129,10 +129,10 @@ fn a_pause_that_never_resumes_stays_open_to_the_end() {
 
 #[test]
 fn an_active_span_across_the_stop_does_not_count_the_stop_as_active() {
-    // A subagent's whole run is one span; the platform stopped it for 400 s inside the run.
+    // A turn is one span; the platform stopped it for 400 s inside the run.
     let events = [
         ev("e0", EventKind::TaskStarted, 0).feature("f"),
-        ev("done", EventKind::SubagentFinished, 1000)
+        ev("done", EventKind::TaskSkipped, 1000)
             .feature("f")
             .lasting(1000),
     ];

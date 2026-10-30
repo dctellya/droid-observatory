@@ -169,8 +169,8 @@ fn the_oracle_reads_quoted_cells_and_crlf_line_ends() {
     assert!(diff.deviations.is_empty(), "{:?}", diff.deviations);
 }
 
-/// The owner's spreadsheet is the hard gate of VAL-METRIC-003. While it is absent from the tree
-/// (B-008) the test names the reason and returns; it never creates or copies the reference.
+/// The owner's spreadsheet is the hard gate of VAL-METRIC-003: a missing file fails the test, it
+/// never skips it. The test never creates or copies the reference.
 #[test]
 fn metrics_match_reference_spreadsheet_within_tolerance() {
     use observatory_core::config::IngestConfig;
@@ -179,13 +179,12 @@ fn metrics_match_reference_spreadsheet_within_tolerance() {
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let reference = root.join("reports/reference/2026-10-22-observatory-v1-m0.csv");
-    let Ok(expected) = std::fs::read_to_string(&reference) else {
-        eprintln!(
-            "SKIPPED: {} is absent (B-008, owner supplies it); the tolerance is 1 s, 1 token, 0.01 USD",
+    let expected = std::fs::read_to_string(&reference).unwrap_or_else(|error| {
+        panic!(
+            "the owner's reference {} is unreadable: {error}; the tolerance is 1 s, 1 token, 0.01 USD",
             reference.display()
-        );
-        return;
-    };
+        )
+    });
     let template = CycleTemplate::engineering();
     let (events, _) = mission_events(
         &root.join("fixtures/streams/2026-10-22-observatory-v1-m0.jsonl"),
