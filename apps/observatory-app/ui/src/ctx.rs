@@ -3,6 +3,11 @@ use observatory_core::ingest::SessionInfo;
 use observatory_core::model::MilestoneId;
 use observatory_core::view::{GateGroupView, MilestoneWorktree};
 
+/// `[metrics].budget` as the window read it; zero (the default, and always in the browser host)
+/// leaves the Panel's budget meter off.
+#[derive(Clone, Copy)]
+pub struct MetricsBudget(pub RwSignal<f64>);
+
 /// What the board hands down to its cards and rows: how to open a milestone's Details and the
 /// sessions of the opened tree, which name an agent.
 #[derive(Clone)]

@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use js_sys::Uint8Array;
 use observatory_core::ingest::{MemoryReplay, replay_files};
-use observatory_core::view::MissionRow;
+use observatory_core::metrics::{Notes, PriceTable};
+use observatory_core::model::{CycleTemplate, Event};
+use observatory_core::view::{Headline, MissionRow, panel_metrics};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{File, FileList};
 
@@ -50,6 +52,13 @@ pub async fn open_selection(picked: Vec<File>) -> Result<MemoryReplay, String> {
 
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
+}
+
+/// The headline of a capture over the bundled price table; none when the table does not load or
+/// the capture holds no event.
+pub fn headline_of(events: &[Event], template: &CycleTemplate) -> Option<Headline> {
+    let prices = PriceTable::parse(crate::details::PRICES).ok()?;
+    panel_metrics(events, template, &prices, &Notes::default(), 0.0).map(|panel| panel.headline())
 }
 
 /// The captures opened in this browser before; the store-backed library is the shell's.

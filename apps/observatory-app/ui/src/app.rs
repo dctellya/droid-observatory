@@ -14,6 +14,7 @@ use crate::backend;
 use crate::board::Board;
 use crate::capture::Capture;
 use crate::controls::StallCtx;
+use crate::ctx::MetricsBudget;
 use crate::launch::{HostedCtx, LaunchScreen};
 use crate::library::Library;
 use crate::perf;
@@ -134,6 +135,8 @@ pub fn App() -> impl IntoView {
     // the compiled-in engineering cycle.
     let template = RwSignal::new(CycleTemplate::engineering());
     provide_context(template);
+    let budget = MetricsBudget(RwSignal::new(0.0));
+    provide_context(budget);
     provide_context(AttachCtx {
         status: attach_status,
         open: Callback::new(move |session_id: SessionId| {
@@ -157,6 +160,7 @@ pub fn App() -> impl IntoView {
             if let Ok(config) =
                 shell::invoke::<_, observatory_core::config::Config>("app_config", &json!({})).await
             {
+                budget.0.set(config.metrics.budget);
                 hosted
                     .output
                     .set(LiveOutput::new(config.ui.live_output_lines));
@@ -231,8 +235,11 @@ pub fn App() -> impl IntoView {
             match backend::open_selection(files).await {
                 Ok(replay) => {
                     let replay = Arc::new(replay);
+                    let mut row = replay.summary.library_row();
+                    row.headline = template
+                        .with_untracked(|template| backend::headline_of(&replay.events, template));
                     rows.update(|rows| {
-                        backend::upsert(rows, replay.summary.library_row());
+                        backend::upsert(rows, row);
                         backend::save_library(rows);
                     });
                     opened_here.update(|all| {

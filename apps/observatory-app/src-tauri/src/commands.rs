@@ -1,17 +1,20 @@
 //! The Tauri commands of architecture §7. Each answers with a core value; the UI renders it.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use observatory_core::config::{Config, MissionConfig};
 use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
+use observatory_core::metrics::Notes;
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::store::Store;
 use observatory_core::telemetry::TelemetryReport;
 use observatory_core::view::{
-    ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, HostedStatus,
-    LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping, branch_of,
+    ActionRecorded, BoardDigest, BoardView, ControlSent, DeclaredModels, Filter, Headline,
+    HostedStatus, LaunchConfig, Launched, MissionRow, RawLineView, ViewConfig, WorkerGrouping,
+    branch_of, panel_metrics,
 };
 use tauri::{AppHandle, State};
 
@@ -20,6 +23,7 @@ use crate::actions;
 use crate::host::{self, Hosts};
 use crate::logging;
 use crate::telemetry::Telemetry;
+use crate::telemetry::load_prices;
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -81,9 +85,45 @@ pub async fn open_replay(
     Ok(opened)
 }
 
+/// The headline of each mission by the event count it was measured at: measuring reads every event
+/// of the mission, so a library refresh measures again only the missions that grew.
+static HEADLINES: std::sync::Mutex<BTreeMap<String, (u64, Option<Headline>)>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+fn with_headlines(store: &Store, shell: &Shell, mut rows: Vec<MissionRow>) -> Vec<MissionRow> {
+    let prices = load_prices(&shell.cfg.metrics.price_table);
+    let mut held = lock(&HEADLINES);
+    for row in &mut rows {
+        let cached = held
+            .get(&row.id.0)
+            .filter(|(count, _)| *count == row.event_count);
+        row.headline = match cached {
+            Some((_, headline)) => headline.clone(),
+            None => {
+                let headline = prices.as_ref().and_then(|prices| {
+                    let opened = store.open_mission(&row.id).ok()?;
+                    panel_metrics(
+                        &opened.events,
+                        &shell.template,
+                        prices,
+                        &Notes::default(),
+                        shell.cfg.metrics.budget,
+                    )
+                    .map(|panel| panel.headline())
+                });
+                held.insert(row.id.0.clone(), (row.event_count, headline.clone()));
+                headline
+            }
+        };
+    }
+    rows
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn list_missions(shell: State<'_, Shell>) -> Result<Vec<MissionRow>, String> {
-    lock(&shell.store).missions().map_err(text)
+    let store = lock(&shell.store);
+    let rows = store.missions().map_err(text)?;
+    Ok(with_headlines(&store, &shell, rows))
 }
 
 #[tauri::command(rename_all = "snake_case")]

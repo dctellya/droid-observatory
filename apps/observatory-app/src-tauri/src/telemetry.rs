@@ -271,7 +271,7 @@ pub struct Telemetry {
     last_live: Mutex<Option<Instant>>,
 }
 
-fn load_prices(path: &str) -> Option<PriceTable> {
+pub(crate) fn load_prices(path: &str) -> Option<PriceTable> {
     match PriceTable::load(Path::new(path)) {
         Ok(table) => Some(table),
         Err(error) => {

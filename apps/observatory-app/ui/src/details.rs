@@ -16,7 +16,7 @@ use crate::tabs::gate::GateTabView;
 use crate::tabs::review::ReviewTabView;
 
 /// The price table the Details name on every cost; the browser host has no config to name another.
-const PRICES: &str = include_str!("../../../../config/prices/2026-10-22.toml");
+pub const PRICES: &str = include_str!("../../../../config/prices/2026-10-22.toml");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {

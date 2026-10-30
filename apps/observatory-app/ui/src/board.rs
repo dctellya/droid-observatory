@@ -2,17 +2,18 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 use observatory_core::config::MissionConfig;
+use observatory_core::metrics::{Notes, PriceTable};
 use observatory_core::model::{CycleTemplate, EventId, MilestoneId, Timestamp};
 use observatory_core::view::{
     BoardView, ControlBar, DeclaredModels, Filter, FilterField, FilterOptions, Scrubber,
-    ViewConfig, WorkerGrouping, tray_count,
+    ViewConfig, WorkerGrouping, panel_metrics, tray_count,
 };
 
 use crate::agents::AgentPanel;
 use crate::attach::AttachPanel;
 use crate::capture::Capture;
 use crate::controls::{ControlCtx, Controls, StallBannerView, StallCtx, ThemeSwitch};
-use crate::ctx::BoardCtx;
+use crate::ctx::{BoardCtx, MetricsBudget};
 use crate::details::DetailsView;
 use crate::lanes::Lanes;
 use crate::launch::HostedCtx;
@@ -48,6 +49,20 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
     let at = RwSignal::new(None::<Timestamp>);
     let selected = RwSignal::new(None::<EventId>);
     let details = RwSignal::new(None::<MilestoneId>);
+    let budget = expect_context::<MetricsBudget>();
+    let prices = PriceTable::parse(crate::details::PRICES).ok();
+    let metrics = Memo::new({
+        let events = events.clone();
+        move |_| {
+            let prices = prices.as_ref()?;
+            let budget = budget.0.get();
+            template.with(|template| {
+                events.with(|events| {
+                    panel_metrics(events, template, prices, &Notes::default(), budget)
+                })
+            })
+        }
+    });
     let board = Memo::new({
         let events = events.clone();
         move |_| {
@@ -178,7 +193,7 @@ pub fn Board(capture: Capture, on_close: Callback<()>) -> impl IntoView {
             {move || enabled.get().then(|| view! { <Controls ctx=control.clone() bar=bar /> })}
             <FilterBar filter=filter options=options />
             <ScrubberBar scrubber=scrubber at=at live=state_live />
-            <Panel board=board />
+            <Panel board=board metrics=metrics />
             <AgentPanel board=board capture=capture.clone() declared=agent_declared at=at />
             <DetailsView capture=capture.clone() milestone=details />
             <Lanes board=board grouping=grouping gate=gate />

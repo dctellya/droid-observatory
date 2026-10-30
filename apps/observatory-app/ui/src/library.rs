@@ -7,7 +7,7 @@ use crate::backend::files_of;
 use crate::pagehead::PageHead;
 
 /// FR-L4: the captures known to this host (the store's in the Tauri window, those opened in this
-/// browser otherwise) with name, date and event count, and the controls that open a capture. One selection holds the root `.jsonl`, `<slug>.children/*.jsonl`, the
+/// browser otherwise) with name, date, event count and the headline metrics (cycle, waste, tokens, cost; "not measured" when the mission has none), and the controls that open a capture. One selection holds the root `.jsonl`, `<slug>.children/*.jsonl`, the
 /// `.settings.json` sidecars and the `.capture.json`.
 #[component]
 pub fn Library(
@@ -55,23 +55,56 @@ pub fn Library(
                             <th>"Name"</th>
                             <th>"Date"</th>
                             <th>"Events"</th>
+                            <th>"Cycle"</th>
+                            <th>"Waste"</th>
+                            <th>"Tokens"</th>
+                            <th>"Cost"</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         <For
                             each=entries
-                            key=|entry| (entry.mission_id.clone(), entry.event_count)
+                            key=|entry| {
+                                (
+                                    entry.mission_id.clone(),
+                                    entry.event_count,
+                                    entry.headline.as_ref().map(|h| h.cost.to_bits()),
+                                )
+                            }
                             let(entry)
                         >
                             {
                                 let id = entry.mission_id.0.clone();
                                 let open_id = id.clone();
+                                let measured = match entry.headline.as_ref() {
+                                    Some(h) => {
+                                        view! {
+                                            <td class="n" aria-label="library-cycle">{format!("{} s", h.cycle_s)}</td>
+                                            <td class="n" aria-label="library-waste">{format!("{} s", h.waste_s)}</td>
+                                            <td class="n" aria-label="library-tokens">{h.tokens_total}</td>
+                                            <td class="n" aria-label="library-cost">
+                                                {format!("{:.2} {} ({})", h.cost, h.currency, h.price_table)}
+                                            </td>
+                                        }
+                                        .into_any()
+                                    }
+                                    None => {
+                                        view! {
+                                            <td class="n" aria-label="library-cycle">"not measured"</td>
+                                            <td class="n" aria-label="library-waste">"not measured"</td>
+                                            <td class="n" aria-label="library-tokens">"not measured"</td>
+                                            <td class="n" aria-label="library-cost">"not measured"</td>
+                                        }
+                                        .into_any()
+                                    }
+                                };
                                 view! {
                                     <tr aria-label="library-row" data-testid="library-row">
                                         <td aria-label="library-name" data-testid="library-name">{entry.name.clone()}</td>
                                         <td class="mono" aria-label="library-date">{entry.date.clone()}</td>
                                         <td class="n" aria-label="library-events">{entry.event_count}</td>
+                                        {measured}
                                         <td>
                                             <Show
                                                 when=move || reopenable.get().contains(&id)

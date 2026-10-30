@@ -13,6 +13,8 @@ mod launch;
 mod library;
 mod pagehead;
 mod panel;
+mod panel_charts;
+mod panel_usage;
 mod perf;
 mod raw;
 mod shell;
