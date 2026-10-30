@@ -7,7 +7,7 @@ use metrics_support::{EventExt, ev, m0_events, prices, t, turn};
 use observatory_core::config::OverheadApportionment;
 use observatory_core::metrics::{
     CSV_HEADER, CostInput, CycleEnd, MetricsReport, MetricsRow, Notes, RowScope, WasteCause,
-    metrics_report,
+    card_times, completed_features, metrics_report,
 };
 use observatory_core::model::{CycleTemplate, Event, EventKind, Role, Timestamp};
 
@@ -494,4 +494,138 @@ fn the_m0_rows_cover_every_feature_and_milestone_and_tokens_add_up() {
     assert!(found.mission.throttled_minutes > 0, "the overnight stop");
     assert_eq!(found.mission.features, features.len());
     assert!(found.rows.iter().all(|r| r.price_table == "2026-10-22"));
+}
+
+const SONNET: &str = "claude-sonnet-5-5";
+
+/// A feature of `milestone` with `task.done` at `done` and `scrutiny.passed` after it.
+fn finished(feature: &str, milestone: &str, done: i64) -> Vec<Event> {
+    vec![
+        ev(
+            &format!("{feature}-work"),
+            EventKind::FileTouched,
+            done - 50,
+        )
+        .feature(feature)
+        .milestone(milestone)
+        .lasting(40),
+        ev(&format!("{feature}-done"), EventKind::TaskDone, done)
+            .feature(feature)
+            .milestone(milestone),
+        ev(
+            &format!("{feature}-ok"),
+            EventKind::ScrutinyPassed,
+            done + 10,
+        )
+        .feature(feature)
+        .milestone(milestone)
+        .by(Role::ScrutinyValidator),
+    ]
+}
+
+fn worker_turn() -> Event {
+    turn(
+        "tw",
+        20,
+        Role::Worker,
+        SONNET,
+        "build",
+        [1_000_000, 100_000, 0],
+    )
+}
+
+fn worker_row(found: &MetricsReport) -> serde_json::Value {
+    let rows = serde_json::to_value(&found.model_comparison).expect("rows serialise");
+    rows.as_array()
+        .and_then(|rows| rows.iter().find(|row| row["role"] == "worker"))
+        .cloned()
+        .expect("a worker row")
+}
+
+/// f1 (m1, done 100) and f2 (m1, done 900) and f3 (m2, done 200) and f4 (m3, done 300);
+/// m1 merges at 500 naming only the milestone, f4 is named by its own merge at 400.
+fn integrated_stream() -> Vec<Event> {
+    let mut events = vec![worker_turn()];
+    events.extend(finished("f1", "m1", 100));
+    events.extend(finished("f2", "m1", 900));
+    events.extend(finished("f3", "m2", 200));
+    events.extend(finished("f4", "m3", 300));
+    events.push(ev("merge-m1", EventKind::IntegrationMerged, 500).milestone("m1"));
+    events.push(
+        ev("merge-f4", EventKind::IntegrationMerged, 400)
+            .feature("f4")
+            .milestone("m3"),
+    );
+    events
+}
+
+#[test]
+fn a_feature_is_completed_only_when_its_milestone_was_integrated_after_task_done() {
+    let events = integrated_stream();
+
+    let found = report(&events, t(2000));
+
+    let row = worker_row(&found);
+    assert_eq!(
+        row["completed_features"], 2,
+        "f1 (m1 merged at 500 after its task.done at 100) and f4 (named by its merge); not f2 \
+         (done after the m1 merge) and not f3 (m2 never merged)"
+    );
+    assert_eq!(row["integrated_observable"], true);
+}
+
+#[test]
+fn a_session_capture_with_no_integration_event_waives_the_integrated_condition_and_says_so() {
+    let mut events = vec![worker_turn()];
+    events.extend(finished("f1", "m1", 100));
+    events.extend(finished("f2", "m2", 200));
+
+    let found = report(&events, t(2000));
+
+    let row = worker_row(&found);
+    assert_eq!(row["completed_features"], 2, "the condition is waived");
+    assert_eq!(row["integrated_observable"], false);
+
+    let m0 = m0_events();
+    let end = m0.iter().map(|e| e.at).max().expect("events");
+    let found = report(&m0, end);
+    assert!(!found.model_comparison.is_empty());
+    for row in serde_json::to_value(&found.model_comparison)
+        .expect("rows serialise")
+        .as_array()
+        .expect("an array")
+    {
+        assert_eq!(row["completed_features"], 5, "the M0 count is unchanged");
+        assert_eq!(row["integrated_observable"], false, "M0 has no merge event");
+    }
+}
+
+#[test]
+fn the_per_completed_feature_figures_recompute_from_the_listed_features() {
+    let events = integrated_stream();
+    let end = t(2000);
+    let cards = card_times(
+        &events,
+        &CycleTemplate::engineering(),
+        &Notes::default(),
+        end,
+        &[],
+    );
+
+    let listed = completed_features(&events, &cards);
+    let found = report(&events, end);
+
+    let names: Vec<&str> = listed.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, ["f1", "f4"]);
+    let row = worker_row(&found);
+    let cost = row["cost"]["amount"].as_f64().expect("a cost");
+    let per_feature = row["cost_per_completed_feature"]
+        .as_f64()
+        .expect("a figure");
+    assert!((per_feature - cost / listed.len() as f64).abs() < 1e-9);
+    let active = row["first_pass_active_s"].as_f64().expect("a time");
+    let per_feature = row["first_pass_active_s_per_completed_feature"]
+        .as_f64()
+        .expect("a figure");
+    assert!((per_feature - active / listed.len() as f64).abs() < 1e-9);
 }

@@ -130,6 +130,21 @@ fn metrics_json_compares_the_three_role_models_per_completed_feature() {
 }
 
 #[test]
+fn metrics_json_says_the_integrated_condition_is_not_observable_on_the_m0_capture() {
+    let json = report(&[&format!("{M0}.jsonl"), "--json"]);
+
+    let rows = json["model_comparison"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_eq!(row["completed_features"], 5, "the M0 count is unchanged");
+        assert_eq!(
+            row["integrated_observable"], false,
+            "the capture holds no integration.merged event"
+        );
+    }
+}
+
+#[test]
 fn metrics_budget_meter_is_off_by_default_and_a_fraction_with_a_budget() {
     let file = format!("{M0}.jsonl");
     let off = report(&[&file, "--json"]);
