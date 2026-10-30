@@ -1,0 +1,8 @@
+secrets:
+  - id: github-pat
+    paths:
+      - "build-log/2026-10-30/50c8af83-bca8-4346-bcee-5cc5baf73589.jsonl"
+    statement: >-
+      Lines 218 and 219 hold a run-time-built placeholder token (an `ghp_` prefix plus filler) that the hook logged
+      with a Bash command, masked as asterisks in the tool output. build-log/ is the append-only hook log; history
+      is never rewritten (ai/RULES.md rule 12). The value was never a credential.
