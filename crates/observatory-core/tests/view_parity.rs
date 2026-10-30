@@ -3,12 +3,12 @@
 
 mod metrics_support;
 
-use metrics_support::{EventExt, cache_write, ev, m0_events, prices, t, turn, usage_report};
+use metrics_support::{EventExt, cache_write, ev, m0_events, prices, turn, usage_report};
 use observatory_core::config::OverheadApportionment;
 use observatory_core::metrics::{
     MetricsReport, Notes, ReportSetup, RowScope, WasteCause, report_at_last_event,
 };
-use observatory_core::model::{CycleTemplate, EventKind, MilestoneId, Role, TokenUsage};
+use observatory_core::model::{CycleTemplate, EventKind, MilestoneId, Role};
 use observatory_core::view::{cost_tab, panel_metrics};
 
 fn report() -> MetricsReport {
@@ -179,10 +179,7 @@ fn the_cost_tab_the_rows_and_the_panel_headline_name_the_same_cost_with_cache_wr
             Role::Worker,
             "claude-sonnet-5-5",
             "build",
-            TokenUsage {
-                cache_write: 400_000,
-                ..cache_write(0)
-            },
+            cache_write(400_000),
         )
         .feature("f1")
         .milestone("m1"),

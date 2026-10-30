@@ -79,6 +79,8 @@ pub struct SessionCost {
 pub struct UnpricedTokens {
     pub model: Option<ModelId>,
     pub tokens: TokenCounts,
+    /// The cache-write tokens of the model's session reports.
+    pub cache_write: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -148,6 +150,11 @@ impl Tally {
         self.tokens += tokens;
         self.usd += usd.unwrap_or(0.0);
     }
+
+    /// Cache write has no token field here: the turns' sums stay the turns'.
+    fn add_usd(&mut self, usd: f64) {
+        self.usd += usd;
+    }
 }
 
 pub fn cost_report(input: &CostInput<'_>) -> CostReport {
@@ -167,13 +174,13 @@ pub fn cost_report(input: &CostInput<'_>) -> CostReport {
     let mut by_role: BTreeMap<usize, Tally> = BTreeMap::new();
     let mut by_lane: BTreeMap<LaneId, Tally> = BTreeMap::new();
     let mut by_milestone: BTreeMap<Option<MilestoneId>, Tally> = BTreeMap::new();
-    let mut unpriced: BTreeMap<Option<ModelId>, TokenCounts> = BTreeMap::new();
+    let mut unpriced: BTreeMap<Option<ModelId>, (TokenCounts, u64)> = BTreeMap::new();
     let mut mission_level = Tally::default();
     for turn in turns(events) {
         let model = turn.model.map(|m| m.0.as_str());
         let usd = prices.turn_usd(turn.event.role, model, &turn.tokens);
         if usd.is_none() {
-            *unpriced.entry(turn.model.cloned()).or_default() += turn.tokens;
+            unpriced.entry(turn.model.cloned()).or_default().0 += turn.tokens;
         }
         total.add(turn.tokens, usd);
         let role = Role::ALL
@@ -191,6 +198,32 @@ pub fn cost_report(input: &CostInput<'_>) -> CostReport {
             .add(turn.tokens, usd);
         if turn.event.feature_id.is_none() {
             mission_level.add(turn.tokens, usd);
+        }
+    }
+    // The usage log has no cache-write count: that class is priced from each session report.
+    for event in events.iter().filter(|e| e.kind == EventKind::UsageReported) {
+        let Some(usage) = event.usage.filter(|usage| usage.cache_write > 0) else {
+            continue;
+        };
+        let model = event.model.as_ref().map(|m| m.0.as_str());
+        let priced = prices.cache_write_usd(event.role, model, usage.cache_write);
+        if priced.is_none() {
+            unpriced.entry(event.model.clone()).or_default().1 += usage.cache_write;
+        }
+        let usd = priced.unwrap_or(0.0);
+        total.add_usd(usd);
+        let role = Role::ALL
+            .iter()
+            .position(|r| *r == event.role)
+            .unwrap_or(usize::MAX);
+        by_role.entry(role).or_default().add_usd(usd);
+        by_lane.entry(event.lane.clone()).or_default().add_usd(usd);
+        by_milestone
+            .entry(event.milestone_id.clone())
+            .or_default()
+            .add_usd(usd);
+        if event.feature_id.is_none() {
+            mission_level.add_usd(usd);
         }
     }
 
@@ -253,7 +286,11 @@ pub fn cost_report(input: &CostInput<'_>) -> CostReport {
         reconciliation: reconcile(events),
         unpriced: unpriced
             .into_iter()
-            .map(|(model, tokens)| UnpricedTokens { model, tokens })
+            .map(|(model, (tokens, cache_write))| UnpricedTokens {
+                model,
+                tokens,
+                cache_write,
+            })
             .collect(),
         budget: budget_meter(
             input.budget,

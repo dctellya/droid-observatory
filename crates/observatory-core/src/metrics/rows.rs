@@ -96,6 +96,11 @@ impl Usage {
         self.tokens += tokens;
         self.usd += usd.unwrap_or(0.0);
     }
+
+    fn add_cache_write(&mut self, tokens: u64, usd: Option<f64>) {
+        self.cache_write += tokens;
+        self.usd += usd.unwrap_or(0.0);
+    }
 }
 
 struct UsageTables {
@@ -103,8 +108,9 @@ struct UsageTables {
     by_milestone: BTreeMap<MilestoneId, Usage>,
 }
 
-/// Turns give input, output, cache read and cost; the sidecar's usage reports give cache write
-/// (the same sources the Details Cost tab reads, so the two agree).
+/// Turns give input, output, cache read and their cost; the sidecar's usage reports give cache
+/// write and its cost, so a row prices all four classes (the same sources the Details Cost tab
+/// reads, so the two agree).
 fn usage_tables(events: &[Event], prices: &PriceTable) -> UsageTables {
     let mut found = UsageTables {
         by_feature: BTreeMap::new(),
@@ -133,19 +139,24 @@ fn usage_tables(events: &[Event], prices: &PriceTable) -> UsageTables {
     }
     for event in events.iter().filter(|e| e.kind == EventKind::UsageReported) {
         let Some(usage) = event.usage else { continue };
+        let usd = prices.cache_write_usd(
+            event.role,
+            event.model.as_ref().map(|model| model.0.as_str()),
+            usage.cache_write,
+        );
         if let Some(feature) = &event.feature_id {
             found
                 .by_feature
                 .entry(feature.clone())
                 .or_default()
-                .cache_write += usage.cache_write;
+                .add_cache_write(usage.cache_write, usd);
         }
         if let Some(milestone) = &event.milestone_id {
             found
                 .by_milestone
                 .entry(milestone.clone())
                 .or_default()
-                .cache_write += usage.cache_write;
+                .add_cache_write(usage.cache_write, usd);
         }
     }
     found

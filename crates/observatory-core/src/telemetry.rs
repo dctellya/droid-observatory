@@ -639,6 +639,35 @@ pub fn mission_sample(input: &SampleInput<'_>) -> MissionSample {
         add("observatory.cost_usd", labels, usd);
     }
 
+    // The usage log has no cache-write count: that class comes from each session report.
+    for event in events.iter().filter(|e| e.kind == EventKind::UsageReported) {
+        let Some(usage) = event.usage.filter(|usage| usage.cache_write > 0) else {
+            continue;
+        };
+        let Some(role) = role_label(event.role) else {
+            continue;
+        };
+        let model_id = event.model.as_ref().map_or(UNKNOWN_MODEL, |m| m.0.as_str());
+        let labels = vec![
+            mission_label(),
+            (Label::Role, role.to_owned()),
+            (Label::Model, models.value(model_id).to_owned()),
+        ];
+        let usd = prices
+            .cache_write_usd(
+                event.role,
+                event.model.as_ref().map(|m| m.0.as_str()),
+                usage.cache_write,
+            )
+            .unwrap_or(0.0);
+        add(
+            "observatory.tokens.cache_write",
+            labels.clone(),
+            usage.cache_write as f64,
+        );
+        add("observatory.cost_usd", labels, usd);
+    }
+
     let unknown = events
         .iter()
         .filter(|event| matches!(event.kind, EventKind::Unknown { .. }))

@@ -138,12 +138,20 @@ pub fn cost_tab(
         .filter(|e| own(e) && e.kind == EventKind::UsageReported)
     {
         let Some(usage) = event.usage else { continue };
+        let usd = prices
+            .cache_write_usd(
+                event.role,
+                event.model.as_ref().map(|m| m.0.as_str()),
+                usage.cache_write,
+            )
+            .unwrap_or(0.0);
         for tally in [
             &mut total,
             by_feature.entry(event.feature_id.as_ref()).or_default(),
             by_role.entry(rank(event.role)).or_default(),
         ] {
             tally.cache_write += usage.cache_write;
+            tally.usd += usd;
         }
     }
 
@@ -189,7 +197,9 @@ pub fn cost_tab(
         totals: total.row(milestone.0.clone(), prices),
         features: by_feature
             .iter()
-            .filter(|(feature, tally)| feature.is_some() || !tally.tokens.is_zero())
+            .filter(|(feature, tally)| {
+                feature.is_some() || !tally.tokens.is_zero() || tally.cache_write > 0
+            })
             .map(|(feature, tally)| {
                 let label = feature.map_or_else(|| MISSION_LEVEL.to_owned(), |f| f.0.clone());
                 tally.row(label, prices)

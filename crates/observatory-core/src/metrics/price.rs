@@ -28,6 +28,10 @@ impl Rates {
             / PER_MILLION
     }
 
+    fn cache_write_usd(&self, tokens: u64) -> f64 {
+        tokens as f64 * self.cache_write_per_m / PER_MILLION
+    }
+
     /// The four classes of a sidecar report.
     fn usage_usd(&self, usage: &TokenUsage) -> f64 {
         (usage.input as f64 * self.input_per_m
@@ -120,6 +124,14 @@ impl PriceTable {
     pub fn turn_usd(&self, role: Role, model: Option<&str>, tokens: &TokenCounts) -> Option<f64> {
         let rates = self.rates(model?)?;
         Some(rates.turn_usd(tokens) * self.multiplier(role))
+    }
+
+    /// USD of the cache-write tokens a sidecar report carries: tokens x the model's cache-write
+    /// rate x the role's multiplier; `None` when the table has no row for the model. The usage
+    /// log has no cache-write count, so this term comes from `usage.reported` alone.
+    pub fn cache_write_usd(&self, role: Role, model: Option<&str>, tokens: u64) -> Option<f64> {
+        let rates = self.rates(model?)?;
+        Some(rates.cache_write_usd(tokens) * self.multiplier(role))
     }
 
     /// The cost of a sidecar report: its credits when the stream exposes them, else USD from the

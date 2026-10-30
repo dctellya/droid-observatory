@@ -84,6 +84,21 @@ pub fn model_comparison(
             .unwrap_or(0.0);
     }
 
+    // The usage log has no cache-write count: that class is priced from each session report.
+    for event in events.iter().filter(|e| e.kind == EventKind::UsageReported) {
+        let Some(usage) = event.usage.filter(|usage| usage.cache_write > 0) else {
+            continue;
+        };
+        let key = (rank(event.role), event.model.as_ref().map(|m| m.0.clone()));
+        groups.entry(key).or_default().usd += prices
+            .cache_write_usd(
+                event.role,
+                event.model.as_ref().map(|m| m.0.as_str()),
+                usage.cache_write,
+            )
+            .unwrap_or(0.0);
+    }
+
     let stops = union(throttled.to_vec());
     for (feature, card) in cards {
         let rework: Vec<Span> = union(

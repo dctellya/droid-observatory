@@ -12,7 +12,7 @@ use crate::metrics::{
     CardTime, CostInput, CostReport, MetricsReport, Notes, PriceTable, RowScope, Throttled,
     TimeState, TokenCounts, WasteCause, WasteGroup, card_times, metrics_report, throttled, turns,
 };
-use crate::model::{CycleTemplate, Event, FeatureId, MilestoneId, Timestamp};
+use crate::model::{CycleTemplate, Event, EventKind, FeatureId, MilestoneId, Timestamp};
 
 /// The label of the bar that stacks the whole run.
 pub const RUN_LABEL: &str = "run";
@@ -451,6 +451,21 @@ fn sparkline(events: &[Event], prices: &PriceTable, cost: &CostReport) -> Sparkl
             (turn.log_ts, usd)
         })
         .collect();
+    // The usage log has no cache-write count: it enters the line at its session report.
+    priced.extend(
+        events
+            .iter()
+            .filter(|event| event.kind == EventKind::UsageReported)
+            .filter_map(|event| {
+                let usage = event.usage.filter(|usage| usage.cache_write > 0)?;
+                let usd = prices.cache_write_usd(
+                    event.role,
+                    event.model.as_ref().map(|model| model.0.as_str()),
+                    usage.cache_write,
+                )?;
+                Some((event.at, usd))
+            }),
+    );
     priced.sort_by_key(|(at, _)| *at);
     let total: f64 = priced.iter().map(|(_, usd)| usd).sum();
     let mut points = Vec::new();
