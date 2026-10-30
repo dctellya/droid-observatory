@@ -148,3 +148,81 @@ cost_usd 0.0267, cycle_s 144, first_pass_active_s 1113, tokens_input 10038, toke
 1. Engine defects E-1 to E-4 are fixed test first in separate red and green commits; the oracle test is not touched except to make it fail, not skip, when the CSV is absent.
 2. R and Q items cannot be closed by this slice. They go to the owner as one list in the hand-off (`partial`), with the proposed values; the CSV, SPEC and the tolerance are not edited.
 3. VAL-METRIC-001/003/026 are graded after the two files agree (owner rule 5), not before.
+
+## Addendum: after the engine fixes (commits `ee62f7f`, red golden `4599a85`)
+
+Engine defects E-1 to E-4 are fixed (tests `crates/observatory-core/tests/oracle_defects.rs`, golden `metrics_m0.csv`). The oracle test now reports 67 deviations (62 cell deviations + 5 missing rows; before: 102), all of them R, Q or T: Q 36, R 28, T 3. No engine defect is left in the table.
+
+**T-1 (`waste_idle_queued_s`, three `s` feature rows, +2 s).** `s-cli-replay` 6843 vs 6845, `s-core-event-model` 6829 vs 6831, `s-workspace-scaffold` 6803 vs 6805. The 6 other `s` rows agree within 1 s, and the sum of `idle_queued` + `idle_unscheduled` agrees per row; the cause is not isolated (the reference rounds float sums of its segments, METHOD 4; the engine rounds each interval's milliseconds). Proposal to the owner: a 2 s tolerance on duration columns, or the engine's value as the corrected reference value.
+
+**Side effect to note (not a deviation):** the `waiting_human_question_s` of an `m0-*` feature row is now non-zero (203 s, 203 s, 2285 s), as in the reference; milestone rows are sums (R-2), so `s` reads 18280 against the reference 2285.
+
+| row | metric | reference | engine | delta | class | evidence |
+|---|---|---|---|---|---|---|
+| feature m0-ci-rust-job-linux | tokens_input | 1603 | 52 | -1551 | Q | Q-1 |
+| feature m0-ci-rust-job-linux | tokens_output | 17411 | 17399 | -12 | Q | Q-1 |
+| feature m0-fixture-freeze | tokens_input | 1574 | 50 | -1524 | Q | Q-1 |
+| feature m0-fixture-freeze | tokens_output | 22700 | 22691 | -9 | Q | Q-1 |
+| feature m0-fixture-redaction | first_pass_active_s | 415 | 417 | +2 | Q | Q-2 |
+| feature m0-fixture-redaction | waste_retry_failure_s | 2 | 0 | -2 | Q | Q-2 |
+| feature m0-fixture-redaction | tokens_input | 1607 | 46 | -1561 | Q | Q-1 |
+| feature m0-fixture-redaction | tokens_output | 25980 | 25970 | -10 | Q | Q-1 |
+| feature m0-integrate-s | tokens_input | 78838 | 74246 | -4592 | Q | Q-1 |
+| feature m0-integrate-s | tokens_output | 100996 | 100957 | -39 | Q | Q-1 |
+| feature s-app-empty-lanes | first_pass_active_s | 679 | 132 | -547 | R | R-1 |
+| feature s-app-empty-lanes | waste_waiting_validation_s | 420 | 0 | -420 | R | R-1 |
+| feature s-app-empty-lanes | waste_retry_failure_s | 12 | 0 | -12 | Q | Q-2 |
+| feature s-app-empty-lanes | tokens_input | 1296 | 74 | -1222 | Q | Q-1 |
+| feature s-app-empty-lanes | tokens_output | 26928 | 26917 | -11 | Q | Q-1 |
+| feature s-ci-wiring | first_pass_active_s | 320 | 135 | -185 | R | R-1 |
+| feature s-ci-wiring | waste_waiting_validation_s | 178 | 0 | -178 | R | R-1 |
+| feature s-ci-wiring | tokens_input | 1197 | 62 | -1135 | Q | Q-1 |
+| feature s-ci-wiring | tokens_output | 25310 | 25301 | -9 | Q | Q-1 |
+| feature s-cli-replay | first_pass_active_s | 501 | 87 | -414 | R | R-1 |
+| feature s-cli-replay | waste_waiting_validation_s | 1040 | 0 | -1040 | R | R-1 |
+| feature s-cli-replay | waste_idle_queued_s | 6843 | 6845 | +2 | T | T-1 |
+| feature s-cli-replay | tokens_input | 1309 | 74 | -1235 | Q | Q-1 |
+| feature s-cli-replay | tokens_output | 49092 | 49079 | -13 | Q | Q-1 |
+| feature s-core-event-model | first_pass_active_s | 383 | 101 | -282 | R | R-1 |
+| feature s-core-event-model | waste_waiting_validation_s | 1589 | 0 | -1589 | R | R-1 |
+| feature s-core-event-model | waste_idle_queued_s | 6829 | 6831 | +2 | T | T-1 |
+| feature s-core-event-model | tokens_input | 1179 | 84 | -1095 | Q | Q-1 |
+| feature s-core-event-model | tokens_output | 35890 | 35882 | -8 | Q | Q-1 |
+| feature s-fixture-snapshot | first_pass_active_s | 343 | 150 | -193 | R | R-1 |
+| feature s-fixture-snapshot | waste_waiting_validation_s | 1903 | 0 | -1903 | R | R-1 |
+| feature s-fixture-snapshot | tokens_input | 1244 | 74 | -1170 | Q | Q-1 |
+| feature s-fixture-snapshot | tokens_output | 31878 | 31866 | -12 | Q | Q-1 |
+| feature s-workspace-scaffold | first_pass_active_s | 755 | 127 | -628 | R | R-1 |
+| feature s-workspace-scaffold | waste_waiting_validation_s | 2150 | 0 | -2150 | R | R-1 |
+| feature s-workspace-scaffold | waste_idle_queued_s | 6803 | 6805 | +2 | T | T-1 |
+| feature s-workspace-scaffold | tokens_input | 1607 | 108 | -1499 | Q | Q-1 |
+| feature s-workspace-scaffold | tokens_output | 54652 | 54636 | -16 | Q | Q-1 |
+| feature scrutiny-validator-s | first_pass_active_s | 364 | 382 | +18 | Q | Q-2 |
+| feature scrutiny-validator-s | waste_retry_failure_s | 18 | 0 | -18 | Q | Q-2 |
+| feature scrutiny-validator-s | tokens_input | 827 | 28 | -799 | Q | Q-1 |
+| feature scrutiny-validator-s | tokens_output | 19667 | 19657 | -10 | Q | Q-1 |
+| feature user-testing-validator-s | first_pass_active_s | 1317 | 1655 | +338 | Q | Q-2 |
+| feature user-testing-validator-s | waste_retry_failure_s | 338 | 0 | -338 | Q | Q-2 |
+| feature user-testing-validator-s | tokens_input | 1941 | 58 | -1883 | Q | Q-1 |
+| feature user-testing-validator-s | tokens_output | 34288 | 34269 | -19 | Q | Q-1 |
+| milestone s | first_pass_active_s | 3930 | 2769 | -1161 | R | R-2 |
+| milestone s | waste_waiting_human_question_s | 2285 | 18280 | +15995 | R | R-2 |
+| milestone s | waste_waiting_validation_s | 370 | 0 | -370 | R | R-2 |
+| milestone s | waste_retry_failure_s | 371 | 0 | -371 | R | R-2 |
+| milestone s | waste_idle_queued_s | 5039 | 52593 | +47554 | R | R-2 |
+| milestone s | waste_idle_unscheduled_s | 2327 | 18259 | +15932 | R | R-2 |
+| milestone s | tokens_input | 10600 | 562 | -10038 | R | R-2 |
+| milestone s | tokens_output | 277705 | 277607 | -98 | R | R-2 |
+| milestone s | cost_usd | 12.3742 | 12.3475 | -0.0267 | R | R-2 |
+| milestone m0 | first_pass_active_s | 3070 | 3072 | +2 | R | R-2 |
+| milestone m0 | waste_waiting_human_question_s | 2285 | 2691 | +406 | R | R-2 |
+| milestone m0 | waste_waiting_validation_s | 1588 | 6856 | +5268 | R | R-2 |
+| milestone m0 | waste_retry_failure_s | 1970 | 1968 | -2 | R | R-2 |
+| milestone m0 | tokens_input | 83622 | 74394 | -9228 | R | R-2 |
+| milestone m0 | tokens_output | 167087 | 167017 | -70 | R | R-2 |
+| milestone m0 | cost_usd | 4.6854 | 4.6695 | -0.0159 | R | R-2 |
+| milestone m1 | (row) | present | absent | - | Q | Q-3 |
+| milestone m2 | (row) | present | absent | - | Q | Q-3 |
+| milestone m3 | (row) | present | absent | - | Q | Q-3 |
+| milestone m4 | (row) | present | absent | - | Q | Q-3 |
+| milestone m5 | (row) | present | absent | - | Q | Q-3 |
