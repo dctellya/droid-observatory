@@ -7,7 +7,9 @@ use observatory_core::config::{Config, MissionConfig};
 use observatory_core::control::HumanAction;
 use observatory_core::ingest::rpc::HostControl;
 use observatory_core::ingest::{AttachStatus, OpenedMission, SessionInfo};
-use observatory_core::metrics::Notes;
+use observatory_core::metrics::{
+    ExportFormat, MetricsReport, Notes, ReportSetup, report_at_last_event,
+};
 use observatory_core::model::{CycleTemplate, EventId, MissionId, SessionId, Timestamp};
 use observatory_core::store::Store;
 use observatory_core::telemetry::TelemetryReport;
@@ -23,7 +25,7 @@ use crate::actions;
 use crate::host::{self, Hosts};
 use crate::logging;
 use crate::telemetry::Telemetry;
-use crate::telemetry::load_prices;
+use crate::telemetry::{load_prices, price_table_text};
 
 fn text(err: impl std::fmt::Display) -> String {
     err.to_string()
@@ -331,6 +333,104 @@ fn is_live(shell: &Shell, mission: &MissionId) -> bool {
             .flatten()
             .is_some_and(|of| of == *mission)
     })
+}
+
+/// The mission's report as the CLI makes it, over the price table `[metrics].price_table` names
+/// (the bundled one when that file does not load), with the notes the store holds so a gate window
+/// pairs by its check and an app answer closes its question. Also the mission's name.
+fn report_of(shell: &Shell, mission: &MissionId) -> Result<(MetricsReport, String), String> {
+    let prices =
+        load_prices(&shell.cfg.metrics.price_table).ok_or("the price table did not load")?;
+    let store = lock(&shell.store);
+    let opened = store.open_mission(mission).map_err(text)?;
+    let notes = Notes::from_store(&store, mission, &opened.events).unwrap_or_default();
+    let report = report_at_last_event(
+        &opened.events,
+        &ReportSetup {
+            template: &shell.template,
+            prices: &prices,
+            notes: &notes,
+            budget: shell.cfg.metrics.budget,
+            launch_budget_usd: None,
+            apportionment: shell.cfg.metrics.overhead_apportionment,
+        },
+    )
+    .ok_or_else(|| format!("mission {mission} holds no event to measure"))?;
+    Ok((report, opened.summary.name))
+}
+
+/// The metrics report of a mission: what `observatory-cli metrics --json` prints.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn metrics(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+) -> Result<MetricsReport, String> {
+    report_of(&shell, &mission_id).map(|(report, _)| report)
+}
+
+/// The configured price table's text, which the window's Panel and Details parse.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn price_table(shell: State<'_, Shell>) -> Result<String, String> {
+    Ok(price_table_text(&shell.cfg.metrics.price_table))
+}
+
+/// What `export` wrote: the data rows and where.
+#[derive(Debug, serde::Serialize)]
+pub struct Exported {
+    pub rows: usize,
+    pub path: String,
+}
+
+/// `~/` read as the home folder, so the path field of the window can name it.
+fn expand_home(path: &str) -> PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => PathBuf::from(path),
+    }
+}
+
+/// Writes the CSV or the JSON of a mission's rows at `path` (folders made), the same text the CLI
+/// prints and the browser downloads.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn export(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+    format: ExportFormat,
+    path: String,
+) -> Result<Exported, String> {
+    let (report, name) = report_of(&shell, &mission_id)?;
+    let file = report.export(format, &name);
+    let target = expand_home(path.trim());
+    if let Some(folder) = target
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(folder).map_err(|err| format!("{}: {err}", folder.display()))?;
+    }
+    std::fs::write(&target, file.text.as_bytes())
+        .map_err(|err| format!("{}: {err}", target.display()))?;
+    tracing::info!(mission_id = %mission_id, format = ?format, rows = file.rows, path = %target.display(), "export");
+    Ok(Exported {
+        rows: file.rows,
+        path: target.display().to_string(),
+    })
+}
+
+/// Where the window's save field starts: the downloads folder with the export's file name.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn export_default_path(
+    shell: State<'_, Shell>,
+    mission_id: MissionId,
+    format: ExportFormat,
+) -> Result<String, String> {
+    let (report, name) = report_of(&shell, &mission_id)?;
+    let file = report.export(format, &name);
+    let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from);
+    Ok(home
+        .join("Downloads")
+        .join(file.file_name)
+        .display()
+        .to_string())
 }
 
 /// What the status bar says about export: `{enabled, reason}` plus the `state` and `endpoint` of

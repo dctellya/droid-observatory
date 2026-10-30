@@ -281,6 +281,15 @@ pub(crate) fn load_prices(path: &str) -> Option<PriceTable> {
     }
 }
 
+/// The text of the price table at `path` when it parses, else the bundled one: what the window's
+/// views parse so they name the same table the shell's report does.
+pub(crate) fn price_table_text(path: &str) -> String {
+    std::fs::read_to_string(path)
+        .ok()
+        .filter(|text| PriceTable::parse(text).is_ok())
+        .unwrap_or_else(|| BUNDLED_PRICES.to_owned())
+}
+
 impl Telemetry {
     /// Decides, starts and logs the one `telemetry{state, endpoint}` line. The keychain is read
     /// only for a configured `headers_keychain_item`.

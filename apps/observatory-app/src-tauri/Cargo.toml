@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 observatory-core.workspace = true
 tracing.workspace = true
+serde.workspace = true
 tracing-subscriber = { workspace = true, features = ["json"] }
 tauri = { version = "2.12.5", features = [] }
 # Embedded W3C WebDriver server for the end-to-end suite. Its README: never in a production build, so it

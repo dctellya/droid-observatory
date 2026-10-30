@@ -3089,6 +3089,7 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

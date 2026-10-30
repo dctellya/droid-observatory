@@ -143,6 +143,10 @@ pub fn run() {
             e2e_gate::e2e_gate_poll,
             commands::panel_rendered,
             commands::telemetry_status,
+            commands::metrics,
+            commands::price_table,
+            commands::export,
+            commands::export_default_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
