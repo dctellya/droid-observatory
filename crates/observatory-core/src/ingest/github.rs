@@ -775,6 +775,16 @@ fn gate_facts(
     }
 }
 
+/// The role a merge is attributed to: `Human` only when the merger is the token owner, so a merge the
+/// app never requested and the owner did not make (another login, or none the forge can name) reads
+/// `External`.
+fn merger_role(token_owner: Option<&str>, merged_by: Option<&str>) -> Role {
+    match (token_owner, merged_by) {
+        (Some(owner), Some(merger)) if owner.eq_ignore_ascii_case(merger) => Role::Human,
+        _ => Role::External,
+    }
+}
+
 /// Polls a forge for the mission branch's pull request, on the `[github].poll_interval_s`
 /// rhythm. The caller owns the clock: `poll_if_due(now)` says whether the interval has passed.
 pub struct GitHubSource<F> {
@@ -934,12 +944,7 @@ impl<F: Forge> GitHubSource<F> {
             );
             if green && !self.handed.contains(&pr.number) {
                 let owner = self.token_owner()?;
-                let role = match (&owner, merged_by) {
-                    (Some(owner), Some(merger)) if owner.eq_ignore_ascii_case(merger) => {
-                        Role::Human
-                    }
-                    _ => Role::External,
-                };
+                let role = merger_role(owner.as_deref(), merged_by.as_deref());
                 self.handed.insert(pr.number);
                 events.push(self.event(
                     EventId(format!("github:pr:{}:handed_to_cd", pr.number)),
