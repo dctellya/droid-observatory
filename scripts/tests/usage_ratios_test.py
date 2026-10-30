@@ -94,7 +94,7 @@ class RatiosSection(unittest.TestCase):
 
     def test_the_owners_m4_figures_are_the_first_data_row_and_m3_comes_before_them(self):
         _, rows = table(self.text, "Ratios")
-        self.assertEqual([r["Milestone"] for r in rows], ["m3 (recorded)", "m4 (recorded)", "m9 (this run)"])
+        self.assertEqual([r["Milestone"] for r in rows], ["m3 (recorded), not comparable", "m4 (recorded), not comparable", "m9 (this run)"])
         m4 = rows[1]
         self.assertEqual([m4[k] for k in ("Assertions fulfilled", "Worker cost per assertion", "Coordination ratio", "Validation ratio",
                                           "Tooling ratio", "Cost per assertion", "All-in cost per assertion")],
@@ -181,7 +181,7 @@ class RatiosSection(unittest.TestCase):
     def test_the_caption_states_the_buckets_and_that_the_recorded_rows_are_the_owners_hand_derivation(self):
         self.assertIn("contract worker is the worker cost on the features that claim at least one contract assertion", self.text)
         self.assertIn("inbox 0145", self.text)
-        self.assertIn("recorded rows are the owner's own derivation", self.text)
+        self.assertIn("A recorded row is the owner's own derivation", self.text)
 
 
 class RatiosWithoutData(unittest.TestCase):

@@ -73,7 +73,7 @@ class IdleTime(unittest.TestCase):
         header, rows = table(self.text, "Idle time by cause")
         self.assertEqual(header, ["Cause", "Gaps", "Minutes"])
         got = {r["Cause"]: (r["Gaps"], r["Minutes"]) for r in rows}
-        self.assertEqual(got, {"usage limit": ("1", "25.00"), "host": ("1", "20.00"), "owner": ("1", "18.00"),
+        self.assertEqual(got, {"usage limit": ("1", "25.00"), "host": ("1", "20.00"), "owner": ("1", "18.00"), "runner idle": ("0", "0.00"),
                                "unexplained": ("1", "30.00"), "total": ("4", "93.00")})
 
     def test_an_unexplained_gap_is_listed_with_its_bounds(self):

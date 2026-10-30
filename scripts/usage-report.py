@@ -20,6 +20,7 @@ import tomllib
 from datetime import datetime, timedelta, timezone
 
 import usage_classes
+import usage_heartbeat
 import usage_idle
 import usage_ratios
 import usage_rewrites
@@ -60,6 +61,9 @@ DECISION_TOOLS = {"Edit", "Create", "Task", "TaskStop", "StartMissionRun", "Dism
 SHELL_TOOLS = {"Execute", "Script"}
 WRITE_RE = re.compile(r"(?<![<>=-])>{1,2}(?!=)|\btee\b|\bgit\s+(add|commit|merge|push|worktree|checkout|branch)\b|"
                       r"\b(mv|cp|rm|mkdir|touch)\b|sed\s+-i")
+# User records the harness writes into the orchestrator transcript; any other user text is the owner speaking in chat.
+HARNESS_TEXT = ("<system-reminder", "Script ", "[Script", "Background task", "You've reached", "Your standard", "Your credit",
+                "The usage window", "The model repeatedly", "Unable to reach", "Request interrupted", "Error:")
 TS_LINE = re.compile(r"^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\]")
 
 
@@ -405,7 +409,7 @@ def text_of_result(content):
 def load_transcript(path):
     """(assistant records, tool_result times, WaitForScript calls, owner-facing calls: asks, answers, messages)."""
     recs, results, waits = [], {}, []
-    owner = {"asks": {}, "answers": {}, "messages": {}}
+    owner = {"asks": {}, "answers": {}, "messages": {}, "chat": [], "said": []}
     with open(path, errors="replace") as f:
         for line in f:
             if '"message"' not in line:
@@ -426,10 +430,14 @@ def load_transcript(path):
                     if b.get("type") == "tool_result":
                         results[b.get("tool_use_id")] = ts
                         owner["answers"][b.get("tool_use_id")] = (ts, text_of_result(b.get("content")))
+                    elif b.get("type") == "text" and not b.get("text", "").lstrip().startswith(HARNESS_TEXT):
+                        owner["chat"].append((ts, b["text"]))
                 continue
             if m.get("role") == "assistant":
                 for b in content:
                     inp = b.get("input") or {}
+                    if b.get("type") == "text":
+                        owner["said"].append((ts, b.get("text", "")))
                     if b.get("type") == "tool_use" and b.get("name") == "AskUser":
                         owner["asks"][b.get("id")] = (ts, json.dumps(inp))
                     elif b.get("type") == "tool_use" and b.get("name") == "StartMissionRun" and inp.get("messageToWorker"):
@@ -441,7 +449,10 @@ def load_transcript(path):
                 continue
             names, text, bg = tool_names(content)
             calls = sum(1 for b in content if b.get("type") == "tool_use")
-            recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg, "calls": calls})
+            uses = [b for b in content if b.get("type") == "tool_use"]
+            recs.append({"ts": ts, "t": parse_ts(ts).timestamp(), "names": names, "text": text, "bg": bg, "calls": calls,
+                         "top": [b.get("name") for b in uses],
+                         "scripts": [str((b.get("input") or {}).get("script", "")) for b in uses if b.get("name") == "Script"]})
             for b in content:
                 if b.get("type") == "tool_use" and b.get("name") == "WaitForScript":
                     inp = b.get("input") or {}
@@ -463,16 +474,21 @@ def classify_turn(rec, prev):
     return CLASSES[2]
 
 
+def find_rec(times, recs, ts):
+    """The transcript record of a log turn: the nearest within MATCH_TOLERANCE_S, a record with tools before a closing text."""
+    t = parse_ts(ts).timestamp()
+    pos = bisect.bisect_left(times, t)
+    cands = [recs[j] for j in range(max(0, pos - 3), min(len(recs), pos + 3)) if abs(times[j] - t) <= MATCH_TOLERANCE_S]
+    return min(cands, key=lambda r: (abs(r["t"] - t), not r["names"])) if cands else None
+
+
 def orchestrator_split(orch_turns, recs, prices):
     times = [r["t"] for r in recs]
     rows = collections.OrderedDict()
     matched = 0
     prev = None
     for ts, model, d in sorted(orch_turns, key=lambda x: x[0]):
-        t = parse_ts(ts).timestamp()
-        pos = bisect.bisect_left(times, t)
-        cands = [recs[j] for j in range(max(0, pos - 3), min(len(recs), pos + 3)) if abs(times[j] - t) <= MATCH_TOLERANCE_S]
-        rec = min(cands, key=lambda r: (abs(r["t"] - t), not r["names"])) if cands else None
+        rec = find_rec(times, recs, ts)
         if rec is None:
             cls = CLASSES[3]
         else:
@@ -638,6 +654,70 @@ def cross_check(script_dir, files, start, end, per_session, prices_path):
     if proc.returncode == 0 and not diffs:
         return ["cross-check: identical (%d sessions, first/last ts, lines, input, output, cache read, cache write and the price of every model against scripts/usage-from-log.sh --embedded)" % len(ids)]
     return ["cross-check: DIFFERENT (exit %d)" % proc.returncode] + diffs[:50]
+
+
+def recorded_idle(path):
+    """({cause: minutes}, (window start, window end)) read from a committed usage report; empty when the file has none."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return {}, None
+    w = re.search(r"(?m)^window: (\S+) to (\S+) ", text)
+    block = text.split("### Idle time by cause", 1)[1].split("\n### ", 1)[0] if "### Idle time by cause" in text else ""
+    rows = re.findall(r"(?m)^\| ([a-z ]+) \| \d+ \| ([\d.]+) \|$", block)
+    return {c: m for c, m in rows}, (w.group(1), w.group(2)) if w else None
+
+
+def previous_figures(args, repo_root, files, start, aggregate, role_of, clf, skills, features, progress, pl_label, owner_calls, emit, md_table):
+    """Recomputes the previous milestone's window with this run's tools (owner item 12 and 15): the Ratios inputs, the idle time by cause
+    and the clocks, the idle time beside the figures its committed report recorded."""
+    prev = args.previous
+    report = args.previous_report or os.path.join(repo_root, "reports", "usage", prev + ".md")
+    recorded, window = recorded_idle(report)
+    p_start = args.previous_from or (window[0] if window else None)
+    p_end = args.previous_to or (window[1] if window else None)
+    if not (p_start and p_end):
+        fail("no window for %s: pass --previous-from and --previous-to, or a --previous-report with a `window:` line" % prev)
+    win, _, router, _, _, _, _, facts = scan_logs(files, p_start, p_end)
+    prices, _ = load_price_table(args.prices)
+    by_role = aggregate(win, lambda sid, m: role_of(sid))
+    by_sess = aggregate(win, lambda sid, m: sid)
+    rows = collections.OrderedDict()
+    for sid, a in by_sess.items():
+        c = clf.of(sid)
+        if c["role"] in ("worker", "validator") and c["feature"]:
+            r = rows.setdefault(c["feature"], [0, 0.0])
+            r[0] += a.turns if c["kind"] == "root" else 0
+            r[1] += a.usd
+    vs_path = args.validation_state or os.path.join(args.mission_dir, "validation-state.json")
+    state = None
+    if os.path.exists(vs_path):
+        with open(vs_path) as f:
+            state = json.load(f)
+    events = list(facts.turns) + [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(p_start) <= sec(r["timestamp"]) <= sec(p_end)]
+    facts.transitions = [(ts, d) for ts, d, _ in router]
+    facts.chat, facts.said = owner_calls.get("chat", []), owner_calls.get("said", [])
+    feature_of = {sid: f for sid, f in clf.feature.items()}
+    interventions = usage_idle.intervention_rows(progress, pl_label, owner_calls, "transcript", feature_of, p_start, p_end)
+    _, minutes = usage_idle.book_gaps(events, facts, pause_rows(progress, pl_label), interventions)
+    by_cause = {c: m for c, (_, m) in minutes.items()}
+    emit("### Idle time by cause, %s recorded and recomputed" % prev)
+    emit("")
+    cells = [[c, recorded.get(c, "-"), "%.2f" % by_cause[c]] for c in usage_idle.CAUSES]
+    cells.append(["total", recorded.get("total", "-"), "%.2f" % sum(by_cause.values())])
+    for r in md_table(["Cause", "%s (recorded)" % prev, "%s (recomputed)" % prev], cells):
+        emit(r)
+    emit("")
+    emit("%s window %s to %s, recomputed with this run's attribution rule beside the figures `%s` recorded (the committed report is not "
+         "changed); `-` is a cause the recorded report did not have." % (prev, p_start, p_end, os.path.relpath(report, repo_root)
+                                                                           if report.startswith(repo_root) else report))
+    emit("")
+    usage_idle.clock_lines(emit, md_table, p_start, p_end, by_cause, "Clocks, %s recomputed" % prev)
+    return {"milestone": prev, "window": (p_start, p_end), "window_usd": sum(a.usd for a in by_role.values()),
+            "roles": [(role, (by_role.get(role) or Agg()).turns, (by_role.get(role) or Agg()).usd) for role in ROLES],
+            "feature_rows": [(f, skills.get(f, "-"), v[0], v[1]) for f, v in sorted(rows.items()) if v[0]], "features": features,
+            "fulfilled": usage_classes.fulfilled_assertions(state, prev) if state else []}
 
 
 def build(args):
@@ -896,6 +976,16 @@ def build(args):
     emit("- sources: log turns of `%s` in the window; transcript %s" % (mission_id, "`%s`" % os.path.basename(tpath) if tpath else "not found"))
     emit("")
 
+    times = [r["t"] for r in recs or ()]
+    turn_rows = []
+    for ts, model, d in sorted(orch_turns, key=lambda x: x[0]):
+        a = Acc()
+        a.add(ts, d, "")
+        turn_rows.append((ts, a, price(prices, model, a) or 0.0, find_rec(times, recs or [], ts)))
+    usage_heartbeat.heartbeat_lines(emit, md_table, usd, turn_rows,
+                                    sum(1 for _, r in progress if r.get("type") == "worker_completed" and r.get("timestamp")
+                                        and sec(start) <= sec(r["timestamp"]) <= sec(end)))
+
     # Subagents
     emit("### Subagents")
     emit("")
@@ -1017,7 +1107,14 @@ def build(args):
         feature_of, start, end)
     usage_idle.intervention_lines(emit, md_table, interventions)
     events = list(facts.turns) + [r["timestamp"] for _, r in progress if r.get("timestamp") and sec(start) <= sec(r["timestamp"]) <= sec(end)]
+    facts.transitions = [(ts, d) for ts, d, _ in router]
+    facts.chat, facts.said = owner_calls.get("chat", []), owner_calls.get("said", [])
     idle_min = usage_idle.idle_lines(emit, md_table, events, facts, pause_rows(progress, pl_label), interventions)
+    usage_idle.clock_lines(emit, md_table, start, end, idle_min)
+    previous = None
+    if args.previous:
+        previous = previous_figures(args, repo_root, files, start, aggregate, role_of, clf, skills, features, progress, pl_label,
+                                    owner_calls, emit, md_table)
     usage_idle.host_lines(emit, md_table, facts, usage_idle.parse_boottime(args.boottime), now, end if "T" in end else end, idle_min["host"])
 
     lead_turns = []
@@ -1176,7 +1273,7 @@ def build(args):
         emit, md_table, usd, args.milestone, usage_ratios.load_config(ratios_path),
         [(role, (by_role.get(role) or Agg()).turns, (by_role.get(role) or Agg()).usd) for role in ROLES], window_total.usd,
         [(f, skills.get(f, "-"), v[1], feat_usd[f]) for f, v in sorted(feats.items()) if v[1]], features, budgets, fulfilled,
-        usage_ratios.read_kinds(contract_path), window=(start, end))
+        usage_ratios.read_kinds(contract_path), window=(start, end), previous=previous)
 
     # Mission to date
     emit("### Mission to date by role")
@@ -1300,6 +1397,11 @@ def main(argv=None):
     ap.add_argument("--to", help="window end; default the generation time minus 1 s")
     ap.add_argument("--now", help="generation time (tests)")
     ap.add_argument("--boottime", help="the output of `sysctl kern.boottime`, or `unavailable`; default runs the command")
+    ap.add_argument("--previous", metavar="MILESTONE", help="recompute this milestone's window on the same bases (Ratios, Idle time by "
+                    "cause, Clocks) beside its recorded figures")
+    ap.add_argument("--previous-report", help="the committed report of --previous; default reports/usage/<milestone>.md")
+    ap.add_argument("--previous-from", help="the previous window start; default the `window:` line of the previous report")
+    ap.add_argument("--previous-to", help="the previous window end; default the `window:` line of the previous report")
     ap.add_argument("--next-milestone", help="the milestone whose claimed assertions price the weekly allowance share; "
                                              "default the milestone after --milestone in features.json")
     ap.add_argument("--out", help="default reports/usage/<milestone>.md")

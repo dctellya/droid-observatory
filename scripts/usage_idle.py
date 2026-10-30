@@ -18,7 +18,7 @@ IDLE_GAP_S = 900
 EVIDENCE_MARGIN_S = 60
 # Owner item 8: macOS stops opening TCP connections after 2**32 ms of uptime, 49.7 days.
 TCP_CLOCK_LIMIT_DAYS = 49.7
-CAUSES = ("usage limit", "host", "owner", "unexplained")
+CAUSES = ("usage limit", "host", "owner", "runner idle", "unexplained")
 # errno codes that a network or port fault leaves in the Droid log (25-oct 10:12 to 11:18 local: exhausted ports).
 HOST_FAULT_CODES = ("ECONNREFUSED", "EADDRNOTAVAIL", "ENOBUFS", "ENETDOWN", "ENETUNREACH")
 USAGE_REASON = "paymentRequired"
@@ -33,6 +33,9 @@ class LogFacts:
         self.turns = []
         self.calls = []
         self.faults = []
+        self.transitions = []
+        self.chat = []
+        self.said = []
 
     def note(self, ts, line):
         route = "[LLM] Chat route failure" in line
@@ -94,12 +97,25 @@ def overlaps(p0, p1, a, b):
     return p0 <= b and (p1 is None or p1 >= a)
 
 
+def limit_spans(transitions):
+    """[(start, end or None, text)]: from each router fall-back for an overage to the next manual transition (the owner restoring the model)."""
+    falls = [(to_dt(ts), d) for ts, d in transitions if d.get("source") == "detector_recovery" and str(d.get("reason", "")).startswith("overage")]
+    restores = sorted(to_dt(ts) for ts, d in transitions if d.get("source") == "manual")
+    spans = []
+    for t, d in falls:
+        end = next((r for r in restores if r > t), None)
+        spans.append((t, end, "Model-Router %s %s %s to %s at %s" % (d.get("source"), d.get("reason"), d.get("previousModelId", "-"),
+                                                                    d.get("modelId", "-"), fmt_ms(t))))
+    return spans
+
+
 def classify_gap(a, b, facts, pauses, interventions):
-    """(cause, evidence) of one gap: a usage limit, then the host, then the owner; nothing recorded is `unexplained`."""
+    """(cause, evidence) of one gap, booked whole to the first cause with evidence: a usage limit, the host, the owner, the runner."""
     pay = [c for c in facts.calls if c["route"] and c["reason"] == USAGE_REASON and near(c["ts"], a, b)]
     throttled = [p for p in pauses if p["throttled"] and overlaps(to_dt(p["pause"]), p["until"] and to_dt(p["until"]), a, b)]
-    if pay or throttled:
-        bits = ["%s %s %s" % ("mission_paused", p["pause"], p["reason"]) for p in throttled]
+    spans = [x for x in limit_spans(facts.transitions) if overlaps(x[0], x[1], a, b)]
+    if pay or throttled or spans:
+        bits = ["%s %s %s" % ("mission_paused", p["pause"], p["reason"]) for p in throttled] + [x[2] for x in spans]
         if pay:
             resets = RESETS_IN.search(pay[0]["message"])
             bits.append("Chat route failure %s %d%s" % (USAGE_REASON, len(pay), " (resets in %s)" % resets.group(1) if resets else ""))
@@ -110,21 +126,66 @@ def classify_gap(a, b, facts, pauses, interventions):
         bits = ["%s %d" % kv for kv in sorted(codes.items())] + ["Chat route failure %s %d" % kv for kv in sorted(other.items())]
         return "host", ", ".join(bits)
     owner_pauses = [p for p in pauses if not p["throttled"] and overlaps(to_dt(p["pause"]), p["until"] and to_dt(p["until"]), a, b)]
+    pause_bits = ["mission_paused %s to %s" % (p["pause"], p["until"] or "open") for p in owner_pauses]
     ints = [i for i in interventions if near(i["time"], a, b)]
-    if owner_pauses or ints:
-        bits = ["mission_paused %s to %s" % (p["pause"], p["until"] or "open") for p in owner_pauses]
-        bits += ["%s %s" % (i["kind"], i["time"]) for i in ints]
+    chat = [(ts, t) for ts, t in facts.chat if near(ts, a, b)]
+    if ints or chat:
+        bits = pause_bits + ["%s %s" % (i["kind"], i["time"]) for i in ints]
+        if chat:
+            asked = [t for ts, t in facts.said if to_dt(ts).timestamp() <= a.timestamp() + EVIDENCE_MARGIN_S and t.strip()]
+            bits.append('owner message %s "%s"' % (chat[0][0], short(chat[0][1], 80)))
+            if asked:
+                bits.append('question "%s"' % short(asked[-1], 100))
         return "owner", "; ".join(bits)
+    if pause_bits:
+        return "runner idle", "; ".join(pause_bits)
     return "unexplained", "none"
 
 
-def idle_lines(emit, md_table, event_ts, facts, pauses, interventions):
-    """Writes Idle time by cause and Idle gaps; returns the minutes idle by cause."""
+def book_gaps(event_ts, facts, pauses, interventions):
+    """(gaps, {cause: [gaps, minutes]}) of one window."""
     gaps = [(a, b, s) + classify_gap(a, b, facts, pauses, interventions) for a, b, s in idle_gaps(event_ts)]
     minutes = collections.OrderedDict((c, [0, 0.0]) for c in CAUSES)
     for _, _, s, cause, _ in gaps:
         minutes[cause][0] += 1
         minutes[cause][1] += s / 60
+    return gaps, minutes
+
+
+def clock_figures(start, end, by_cause):
+    """{clock: minutes}: wall; the usage-limit stops (held, no owner); cycle = wall less them; owner wait; runner idle; system."""
+    wall = (to_dt(end) - to_dt(start)).total_seconds() / 60
+    held, owner, runner = by_cause["usage limit"], by_cause["owner"], by_cause["runner idle"]
+    return collections.OrderedDict([("wall", wall), ("held, usage-limit stop", held), ("cycle", wall - held), ("owner wait", owner),
+                                    ("runner idle", runner), ("system", wall - held - owner - runner)])
+
+
+def hours(minutes):
+    whole = int(round(minutes))
+    return "%d:%02d" % (whole // 60, whole % 60)
+
+
+def clock_lines(emit, md_table, start, end, by_cause, heading="Clocks"):
+    emit("### " + heading)
+    emit("")
+    figures = clock_figures(start, end, by_cause)
+    defs = {"wall": "calendar time from the window start to its end",
+            "held, usage-limit stop": "idle time booked to a usage-limit stop (the provider's limit, no owner present)",
+            "cycle": "wall less the usage-limit stops", "owner wait": "idle time booked to the owner (an answer, a message, a decision awaited)",
+            "runner idle": "idle time booked to the runner (paused, nothing started)", "system": "cycle less the owner waits and the runner idle"}
+    for r in md_table(["Clock", "Minutes", "Hours", "Definition"], [[k, "%.2f" % v, hours(v), defs[k]] for k, v in figures.items()]):
+        emit(r)
+    emit("")
+    emit("The three clocks (owner item 15 of the M5 boundary): wall is the calendar; cycle = wall less the usage-limit stops, the "
+         "like-for-like clock, dispatch to landing with the stops the system caused listed by cause; system = cycle less the owner waits "
+         "and the runner idle, the seats running and the officer awake, the base for cost per hour. Host and unexplained gaps stay in "
+         "system time and are named in Idle time by cause.")
+    emit("")
+
+
+def idle_lines(emit, md_table, event_ts, facts, pauses, interventions):
+    """Writes Idle time by cause and Idle gaps; returns the minutes idle by cause."""
+    gaps, minutes = book_gaps(event_ts, facts, pauses, interventions)
     emit("### Idle time by cause")
     emit("")
     rows = [[c, n, "%.2f" % m] for c, (n, m) in minutes.items()]
@@ -139,11 +200,14 @@ def idle_lines(emit, md_table, event_ts, facts, pauses, interventions):
         emit("unexplained gap: %s to %s (%.2f min)" % (fmt_ms(a), fmt_ms(b), s / 60))
     emit("")
     emit("A gap is the time between two consecutive events inside the window: a model turn in the Droid log (any session) or a record "
-         "of progress_log.jsonl. It is idle time when it lasts more than %d minutes. Its cause is the first that has evidence within %d s "
-         "of the gap: `usage limit` (a throttled pause in progress_log.jsonl, or a `[LLM] Chat route failure` with reason `%s`), `host` "
-         "(%s, or a route failure with another reason, in the Droid log), `owner` (an owner pause, `mission_paused` without a throttle "
-         "reason, overlapping the gap, or an owner intervention at it); a gap with none of these is `unexplained`."
-         % (IDLE_GAP_S // 60, EVIDENCE_MARGIN_S, USAGE_REASON, ", ".join("`%s`" % c for c in HOST_FAULT_CODES)))
+         "of progress_log.jsonl. It is idle time when it lasts more than %d minutes, and it is booked whole to the first cause that has "
+         "evidence within %d s of the gap: `usage limit` (a throttled pause in progress_log.jsonl, a `[LLM] Chat route failure` with reason "
+         "`%s`, or a `[Model-Router] Model transition` from `detector_recovery` for an `overage` reason with no `manual` transition after "
+         "it yet: the hold lasts until the owner restores the model), `host` (%s, or a route failure with another reason, in the Droid "
+         "log), `owner` (an owner intervention at the gap, or a chat message of the owner in the orchestrator transcript, quoted with the "
+         "orchestrator's last words before the gap as the question), `runner idle` (a `mission_paused` without a throttle reason "
+         "overlapping the gap and no owner evidence: the runner stopped and nothing was started); a gap with none of these is "
+         "`unexplained`." % (IDLE_GAP_S // 60, EVIDENCE_MARGIN_S, USAGE_REASON, ", ".join("`%s`" % c for c in HOST_FAULT_CODES)))
     emit("")
     emit("### Idle gaps")
     emit("")

@@ -571,10 +571,10 @@ class UsageReportFile(unittest.TestCase):
         mods = set()
         for path in (SCRIPT, os.path.join(HERE, "..", "usage_classes.py"), os.path.join(HERE, "..", "usage_idle.py"),
                      os.path.join(HERE, "..", "usage_testing.py"), os.path.join(HERE, "..", "usage_rewrites.py"),
-                     os.path.join(HERE, "..", "usage_ratios.py")):
+                     os.path.join(HERE, "..", "usage_ratios.py"), os.path.join(HERE, "..", "usage_heartbeat.py")):
             mods |= set(re.findall(r"^(?:import|from)\s+([A-Za-z_][\w]*)", read(path), re.M))
         allowed = {"argparse", "glob", "json", "os", "re", "subprocess", "sys", "tomllib", "datetime", "collections", "bisect",
-                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "usage_ratios", "statistics"}
+                   "usage_classes", "usage_idle", "usage_rewrites", "usage_testing", "usage_ratios", "usage_heartbeat", "statistics"}
         self.assertLessEqual(mods, allowed, mods - allowed)
 
 
