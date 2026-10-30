@@ -240,8 +240,9 @@ fn feature_row(
             Some((from, to)) => clip(&card.intervals, from, to),
             None => Vec::new(),
         };
-        let (first_pass, rework) = first_pass_and_rework(&intervals, &card.rework);
-        let waste = waste_by_cause(&intervals, &card.rework);
+        let spans = card.rework_spans();
+        let (first_pass, rework) = first_pass_and_rework(&intervals, &spans);
+        let waste = waste_by_cause(&intervals, &spans);
         row.first_pass_active_s = whole_seconds(first_pass);
         row.rework_s = whole_seconds(rework);
         for cause in WasteCause::ALL {
@@ -271,6 +272,14 @@ pub(super) fn rows(
         }
     }
 
+    let level = context.cards.get(&None);
+    // A gate window names a milestone no feature event may name: the milestone still has a row.
+    for span in level.iter().flat_map(|level| &level.rework) {
+        if let Some(milestone) = &span.milestone {
+            members.entry(milestone.clone()).or_default();
+        }
+    }
+
     let mut out: Vec<MetricsRow> = context
         .cycles
         .features
@@ -280,7 +289,6 @@ pub(super) fn rows(
             feature_row(feature, *cycle, used, context)
         })
         .collect();
-    let level = context.cards.get(&None);
     let mut milestones = Vec::new();
     for (milestone, features) in &members {
         let cycle = context

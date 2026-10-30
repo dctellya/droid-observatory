@@ -102,7 +102,7 @@ pub fn model_comparison(
     let stops = union(throttled.to_vec());
     for (feature, card) in cards {
         let rework: Vec<Span> = union(
-            card.rework
+            card.rework_spans()
                 .iter()
                 .map(|span| Span {
                     from: span.from,
