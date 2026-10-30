@@ -331,3 +331,21 @@ cmp <live> scripts/contract-checks/main-gate.json   exit 0 (1160 bytes each)
 
 The record's `784a23cd` is not reproduced by either; the live and committed copies agree with each other (`7ddea484`), so
 the "identical" claim holds and the quoted prefix is the record's error. How `784a23cd` was computed is not recorded.
+
+## Forward note (2026-10-30): M6 unit 1 close
+
+Non-blocking, no line above changes. Written by the M6 boundary integrator `m6-boundary-integrate-unit1` after unit 1 closed;
+every figure is pasted from `reports/usage/m6-unit1.md` or the SPEC §9 rows named, none is re-derived. The VAL-PROC verdicts above
+are the M5 boundary record; the unit 1 rounds moved some of them (SPEC §9 F-368, F-370).
+
+- Unit 1 ("M5 carry-over: release gate") ran from 2026-10-30T12:15:25Z to 15:33:01Z and closed at **48.34 of 49 USD-eq**: orchestrator
+  24.82 against its slice 9, orchestrator subagents 5.45, workers 3.59, scrutiny 4.77, user testing 9.71 in two rounds (6.15 and 3.56),
+  self-check 0.00. Mission to date 1495.21 of the 1700 line (D-049). Cross-check identical, 31 sessions, 894 turns.
+- Validation 14.48 USD-eq is 30.0 % of the window (14.48 of 48.34) and 4.033 times the workers line (3.59); validator sessions took
+  38.13 of the 197.6 window minutes (19.3 %).
+- Rounds: one scrutiny run (38 claims, no blocking issue); user testing round 1 on 38 assertions (23 passed, 15 failed) and round 2
+  affected-only on 11 (9 passed, 2 failed: VAL-PROC-005 and 028). VAL-PROC-002, 011, 015, 023, 027, 034, 035, 036 and 046 passed in
+  round 2 after the pass 41 amendments and the docs addenda; VAL-PROC-003, 016, 029 and 032 stay failed on the record (F-368).
+- Verdict condition facts (inbox 1319): two as-worded failures after round 2, corrected by wording only in pass 42 (F-370), and one
+  in-unit contract pass (pass 41). One hand-off (the docs worker's) carried no `claims` array and no `model =` line (rule 30).
+- PR #40 head `273eb9e`: `gate` run 41077321670 green, `mergeStateStatus` CLEAN, open, not merged.
