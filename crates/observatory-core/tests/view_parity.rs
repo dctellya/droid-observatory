@@ -234,3 +234,72 @@ fn the_cost_tab_the_rows_and_the_panel_headline_name_the_same_cost_with_cache_wr
     );
     assert!((panel.cost.cost_so_far.amount - row.cost_usd).abs() < 0.005);
 }
+
+#[test]
+fn the_cost_tab_rework_equals_the_milestone_row_with_a_gate_window() {
+    let work = |feature: &str, at: i64, length: u64| {
+        vec![
+            ev(&format!("{feature}:fd"), EventKind::FeatureDefined, 0)
+                .feature(feature)
+                .milestone("m5")
+                .by(Role::Orchestrator),
+            ev(&format!("{feature}:work"), EventKind::FileTouched, at)
+                .feature(feature)
+                .milestone("m5")
+                .lasting(length),
+        ]
+    };
+    let mut events = vec![
+        ev("pr:red", EventKind::CheckFailed, 100)
+            .milestone("m5")
+            .by(Role::External),
+        ev("pr:green", EventKind::CheckPassed, 400)
+            .milestone("m5")
+            .by(Role::External),
+    ];
+    events.extend(work("m5-a", 300, 120));
+    events.extend(work("m5-b", 350, 20));
+    let notes = Notes::default()
+        .with_key("pr:red", "demo-gate")
+        .with_key("pr:green", "demo-gate");
+    let template = CycleTemplate::engineering();
+    let report = report_at_last_event(
+        &events,
+        &ReportSetup {
+            template: &template,
+            prices: &prices(),
+            notes: &notes,
+            budget: 0.0,
+            launch_budget_usd: None,
+            apportionment: OverheadApportionment::Separate,
+        },
+    )
+    .expect("the events hold a last event");
+    let row = report
+        .rows
+        .iter()
+        .find(|row| row.scope == RowScope::Milestone && row.id == "m5")
+        .expect("m5 has a row");
+
+    let tab = cost_tab(
+        &events,
+        &MilestoneId("m5".into()),
+        &template,
+        &prices(),
+        &notes,
+    );
+
+    let rework = tab
+        .waste
+        .iter()
+        .find(|waste| waste.cause == WasteCause::Rework)
+        .expect("the tab lists the rework cause");
+    assert_eq!(
+        rework.seconds, 140,
+        "the Active time of both features in the window"
+    );
+    assert_eq!(Some(&rework.seconds), row.waste_s.get(&WasteCause::Rework));
+    assert_eq!(tab.rework_windows, row.rework_windows);
+    assert_eq!(tab.rework_windows, 1);
+    assert_eq!(tab.rework.len(), 1, "the window is listed once");
+}
