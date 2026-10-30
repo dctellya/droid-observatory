@@ -31,6 +31,7 @@ impl MissionSummary {
             started_at: self.started_at.clone(),
             completed_at: None,
             event_count: self.event_count,
+            headline: None,
         }
     }
 }

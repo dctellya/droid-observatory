@@ -8,9 +8,7 @@ use observatory_core::metrics::{
     CostInput, Notes, PriceTable, WasteCause, WasteGroup, cost_report,
 };
 use observatory_core::model::{CycleTemplate, Event, EventKind, MilestoneId, MissionId};
-use observatory_core::view::{
-    MissionRow, cost_tab, library, panel_metrics, panel_metrics_headline,
-};
+use observatory_core::view::{MissionRow, cost_tab, library, panel_metrics};
 
 const PRICES: &str = include_str!("../../../config/prices/2026-10-22.toml");
 const FIVE_GROUPS: [&str; 5] = [
@@ -102,6 +100,7 @@ fn waste_bars_equal_the_cost_tab_per_milestone_and_the_tokens_in_waste_of_the_re
 
     let milestones: BTreeSet<MilestoneId> = events
         .iter()
+        .filter(|event| event.feature_id.is_some())
         .filter_map(|event| event.milestone_id.clone())
         .collect();
     for milestone in &milestones {
@@ -144,7 +143,7 @@ fn waste_bars_equal_the_cost_tab_per_milestone_and_the_tokens_in_waste_of_the_re
     assert_eq!(panel.cost.tokens_by_role, report.tokens_by_role);
     assert_eq!(panel.cost.tokens_by_lane, report.tokens_by_lane);
     assert_eq!(panel.cost.cost_by_role, report.cost_by_role);
-    assert_eq!(panel.throttled.mission_minutes > 0, true);
+    assert!(panel.throttled.mission_minutes > 0);
 }
 
 #[test]
@@ -181,7 +180,7 @@ fn the_timeline_has_one_row_per_feature_and_the_sparkline_one_path() {
 fn the_headline_cost_equals_the_sum_of_the_milestone_rows_and_the_library_keeps_the_event_count() {
     let events = golden();
     let panel = metrics(&events);
-    let headline = panel_metrics_headline(&panel);
+    let headline = panel.headline();
 
     let by_milestone: f64 = panel
         .cost

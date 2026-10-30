@@ -12,6 +12,7 @@ mod hosted;
 mod launch;
 mod library;
 mod live_output;
+mod panel_metrics;
 mod post_mortem;
 mod scrub;
 mod scrubber;
@@ -44,8 +45,12 @@ pub use hosted::{
 pub use launch::{
     AUTONOMY_LEVELS, LaunchConfig, LaunchError, LaunchField, LaunchForm, PerRole, session_uuid,
 };
-pub use library::{LibraryEntry, MissionRow, library};
+pub use library::{Headline, LibraryEntry, MissionRow, library};
 pub use live_output::{LiveOutput, OutputLines};
+pub use panel_metrics::{
+    FeatureTimeline, GroupTotal, PanelMetrics, RUN_LABEL, ReworkBand, SparkPoint, Sparkline,
+    StateBand, TimelineChart, WasteBar, WasteChart, WasteSegment, panel_metrics,
+};
 pub use post_mortem::{ClockReading, LaneSummary, PostMortemInput, post_mortem_input};
 pub use scrub::{ScrubbedLine, scrub};
 pub use scrubber::{

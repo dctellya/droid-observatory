@@ -2,8 +2,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::MissionId;
 
+/// The mission's headline metrics (FR-L4): the figures the Panel shows, kept on its library line.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Headline {
+    /// First event to last, in whole seconds.
+    pub cycle_s: u64,
+    /// The five groups of waste added up, in seconds.
+    pub waste_s: u64,
+    pub tokens_total: u64,
+    pub cost: f64,
+    pub currency: String,
+    /// The date of the price table the cost was made with.
+    pub price_table: String,
+}
+
 /// One row of the store's `missions` table with the number of events indexed for it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MissionRow {
     pub id: MissionId,
     pub name: String,
@@ -12,16 +26,20 @@ pub struct MissionRow {
     pub started_at: String,
     pub completed_at: Option<String>,
     pub event_count: u64,
+    /// Present once the mission's events have been measured; a row written before M5 has none.
+    #[serde(default)]
+    pub headline: Option<Headline>,
 }
 
-/// One line of the mission library (FR-L4). Headline metrics join it with M5.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One line of the mission library (FR-L4): name, date, event count and the headline metrics.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LibraryEntry {
     pub mission_id: MissionId,
     pub name: String,
     /// `YYYY-MM-DD` of the start.
     pub date: String,
     pub event_count: u64,
+    pub headline: Option<Headline>,
 }
 
 /// The library, newest mission first.
@@ -37,6 +55,7 @@ pub fn library(rows: &[MissionRow]) -> Vec<LibraryEntry> {
                     name: row.name.clone(),
                     date: date.to_owned(),
                     event_count: row.event_count,
+                    headline: row.headline.clone(),
                 },
             )
         })
@@ -60,6 +79,7 @@ mod tests {
             started_at: started_at.to_owned(),
             completed_at: None,
             event_count,
+            headline: None,
         }
     }
 

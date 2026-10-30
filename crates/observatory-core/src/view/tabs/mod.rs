@@ -28,7 +28,7 @@ fn milestone_events<'a>(events: &'a [Event], milestone: &MilestoneId) -> Vec<&'a
 
 /// The instant the tabs are made at: the last event of the capture, so the same capture gives
 /// the same figures on any day.
-fn tabs_end(events: &[Event]) -> Option<Timestamp> {
+pub(super) fn tabs_end(events: &[Event]) -> Option<Timestamp> {
     events
         .iter()
         .filter(|event| !event.kind.is_panel_only())
