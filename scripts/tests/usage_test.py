@@ -35,6 +35,8 @@ GATE_LABEL = "scripts/tests/fixtures/usage/gate"
 FROM = "2026-10-25T10:00:00Z"
 NOW = "2026-10-25T11:00:00Z"
 TO = "2026-10-25T10:59:59Z"
+# 2026-10-20T00:00:00Z, before the fixture window: without it the report reads the host's own `sysctl kern.boottime`.
+BOOTTIME = "kern.boottime: { sec = 1792454400, usec = 0 } Tue Oct 20 00:00:00 2026"
 
 BEGIN = "<!-- usage:begin -->"
 END = "<!-- usage:end -->"
@@ -112,6 +114,11 @@ class UsageReport(unittest.TestCase):
         self.assertLess(self.text.index(BEGIN), self.text.index(END))
         self.assertIn("generated: 2026-10-25T11:00:00Z", self.text)
         self.assertIn("window: 2026-10-25T10:00:00Z to 2026-10-25T10:59:59Z", self.text)
+
+    def test_the_report_runner_pins_the_boot_time_so_the_host_uptime_never_reaches_a_test(self):
+        _, rows = table(self.text, "Host health")
+        self.assertEqual({r["Check"]: r["Value"] for r in rows}["Boot time (UTC)"], "2026-10-20T00:00:00.000Z")
+        self.assertIn("sysctl kern.boottime: %s" % BOOTTIME, self.text)
 
     def test_the_default_end_of_the_window_is_the_generation_time_minus_one_second(self):
         out = os.path.join(self.tmp.name, "default-to.md")
