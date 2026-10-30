@@ -43,7 +43,7 @@ impl Throttled {
     }
 }
 
-fn minutes(length: Duration) -> u64 {
+pub(super) fn minutes(length: Duration) -> u64 {
     u64::try_from((length.as_millis() + 30_000) / 60_000).unwrap_or(u64::MAX)
 }
 

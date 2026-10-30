@@ -10,7 +10,9 @@ use observatory_core::metrics::{
     Notes, ReworkKind, WaitKind, events_of_feature, partition, rework_windows,
 };
 use observatory_core::model::SessionId;
-use observatory_core::model::{CycleTemplate, EventKind, FeatureId, MissionId, Role};
+use observatory_core::model::{
+    CycleTemplate, Event, EventKind, FeatureId, MissionId, Role, SourcePtr,
+};
 use observatory_core::store::{HostedRun, Store};
 use rusqlite::{Connection, params};
 
@@ -37,9 +39,18 @@ fn notes_from_store_pair_gate_checks_by_name_and_close_a_question_with_the_app_a
     let mission = MissionId(MISSION.to_owned());
     let dir = tempfile::tempdir().unwrap();
     let (mut store, db) = scratch_store(&dir);
+    let at_offset = |mut event: Event, offset: u64| {
+        event.source = SourcePtr::Rpc {
+            path: "spool.jsonl".into(),
+            byte_offset: offset,
+            byte_len: 1,
+        };
+        event
+    };
     let ask = ev("ask", EventKind::QuestionAsked, 100)
         .feature("f")
         .by(Role::Orchestrator);
+    let ask = at_offset(ask, 1);
     let lint_red = ev("lint-red", EventKind::CheckFailed, 200)
         .feature("f")
         .by(Role::External);
@@ -52,6 +63,8 @@ fn notes_from_store_pair_gate_checks_by_name_and_close_a_question_with_the_app_a
     let gate_green = ev("gate-green", EventKind::CheckPassed, 400)
         .feature("f")
         .by(Role::External);
+    let (lint_red, gate_red) = (at_offset(lint_red, 2), at_offset(gate_red, 3));
+    let (lint_green, gate_green) = (at_offset(lint_green, 4), at_offset(gate_green, 5));
     store
         .insert_events(&[
             ask.clone(),

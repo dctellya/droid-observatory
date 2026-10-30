@@ -6,6 +6,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::model::{Event, FeatureId};
+#[cfg(feature = "store")]
+use crate::model::{MissionId, SourcePtr};
+#[cfg(feature = "store")]
+use crate::store::{Store, StoreError};
 
 #[derive(Clone, Debug, Default)]
 pub struct Notes {
@@ -36,6 +40,43 @@ impl Notes {
     pub fn with_answer(mut self, answer: &str, question: &str) -> Self {
         self.answers.insert(answer.to_owned(), question.to_owned());
         self
+    }
+
+    /// The notes the store holds for `events` of `mission`: the check each gate window is about
+    /// (`rework_windows.check_name`, on the event that opened it and the one that closed it) and
+    /// the question each app answer closes (`human_actions.payload_ptr`, joined to the answer's
+    /// event by its action id). The runner's `pauseReason` is not in the store; a host that has
+    /// the progress log adds it with `with_pause_reason`.
+    #[cfg(feature = "store")]
+    pub fn from_store(
+        store: &Store,
+        mission: &MissionId,
+        events: &[Event],
+    ) -> Result<Self, StoreError> {
+        let known: HashSet<&str> = events.iter().map(|event| event.id.0.as_str()).collect();
+        let mut notes = Self::default();
+        for window in store.gate_window_checks()? {
+            for event in std::iter::once(&window.opened_by).chain(window.closed_by.as_ref()) {
+                if known.contains(event.as_str()) {
+                    notes = notes.with_key(event, &window.check);
+                }
+            }
+        }
+        for action in store.human_actions(mission)? {
+            let Some(question) = action.payload_ptr.as_deref() else {
+                continue;
+            };
+            if action.kind != "answer" {
+                continue;
+            }
+            let answer = events.iter().find(|event| {
+                matches!(&event.source, SourcePtr::App { action_id } if *action_id == action.id)
+            });
+            if let Some(answer) = answer {
+                notes = notes.with_answer(&answer.id.0, question);
+            }
+        }
+        Ok(notes)
     }
 
     /// The scenario or check an event is about, when the notes name it.

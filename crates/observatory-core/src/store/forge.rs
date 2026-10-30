@@ -6,6 +6,14 @@ use super::{Store, StoreError, insert_events_in};
 use crate::ingest::forge::{Poll, PrState, WindowChange};
 use crate::model::{EventKind, MilestoneId, MissionId};
 
+/// A row of `rework_windows` that names its check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GateWindowCheck {
+    pub opened_by: String,
+    pub closed_by: Option<String>,
+    pub check: String,
+}
+
 /// The cause text of a window the forge opens (`rework_windows.cause`).
 const GATE: &str = "gate";
 
@@ -85,6 +93,25 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// The gate windows with the check each is about: the event that opened it, the one that
+    /// closed it (none while open) and the check's name.
+    pub fn gate_window_checks(&self) -> Result<Vec<GateWindowCheck>, StoreError> {
+        let mut statement = self.conn.prepare(
+            "SELECT opened_by, closed_by, check_name FROM rework_windows \
+             WHERE check_name IS NOT NULL ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(GateWindowCheck {
+                    opened_by: row.get(0)?,
+                    closed_by: row.get(1)?,
+                    check: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     /// The card a fix cycle returns to: the milestone integrated last, else the milestone of the

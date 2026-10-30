@@ -5,23 +5,34 @@
 //! by the cycle template (F-041); a rework window's cause is the lane id of the lane that holds
 //! the event that opened it. Compiled to wasm with the rest of the model (architecture I9).
 
+mod bottleneck;
 mod budget;
 mod cards;
 mod compare;
+mod csv;
+mod cycle;
+mod mission_report;
 mod notes;
+mod oracle;
 mod price;
 mod report;
 mod rework;
+mod rows;
 mod span;
 mod state;
 mod throttled;
 mod tokens;
 mod waste;
 
+pub use bottleneck::Bottleneck;
 pub use budget::{BudgetMeter, budget_meter};
 pub use cards::{CardTime, card_times};
 pub use compare::{ModelComparisonRow, completed_features, model_comparison};
+pub use csv::CSV_HEADER;
+pub use cycle::{ClockKinds, Cycle, CycleEnd, Cycles, StageTime, cycles, stage_times};
+pub use mission_report::{MetricsReport, MissionSummary, metrics_report};
 pub use notes::{Notes, events_of_feature};
+pub use oracle::{Deviation, DeviationKind, OracleDiff, OracleError, Tolerance, compare_csv};
 pub use price::{Cost, CostUnit, PriceError, PriceTable, Rates};
 pub use report::{
     CostInput, CostReport, LaneUsage, MilestoneUsage, Overhead, OverheadShare, RoleCost,
@@ -31,6 +42,7 @@ pub use rework::{
     ReworkKind, ReworkSpan, ReworkWindow, first_pass_and_rework, fix_loops, merge_windows,
     rework_causes, rework_windows,
 };
+pub use rows::{MetricsRow, RowScope};
 pub use span::{Span, event_span};
 pub use state::{
     Interval, PartitionContext, TimeState, WaitKind, active_spans, partition, partition_in,
