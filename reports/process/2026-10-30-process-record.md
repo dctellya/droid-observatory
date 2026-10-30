@@ -316,3 +316,18 @@ gh pr list -R dctellya/droid-observatory --base main --head mission/observatory-
 ```
 
 The pull request does not exist yet; `final-open-pr` opens it and runs these two assertions.
+
+## Forward note (2026-10-30): ruleset hash
+
+Non-blocking, no line above changes. The m4 line of the VAL-PROC-006 section quotes `ruleset 25636994 sha256 784a23cd… before
+the run (scripts/contract-checks/main-gate.json) and now: identical`. The committed copy and the live ruleset both hash to
+a different value:
+
+```text
+shasum -a 256 scripts/contract-checks/main-gate.json   7ddea4844e2d7f2701a3734cc2ab9f053e3bd41492e2b8a48b5d4bbbf0c8a8e7
+gh api repos/dctellya/droid-observatory/rulesets/25636994 | shasum -a 256   7ddea4844e2d7f2701a3734cc2ab9f053e3bd41492e2b8a48b5d4bbbf0c8a8e7
+cmp <live> scripts/contract-checks/main-gate.json   exit 0 (1160 bytes each)
+```
+
+The record's `784a23cd` is not reproduced by either; the live and committed copies agree with each other (`7ddea484`), so
+the "identical" claim holds and the quoted prefix is the record's error. How `784a23cd` was computed is not recorded.
