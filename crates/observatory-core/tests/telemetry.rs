@@ -4,7 +4,8 @@
 use observatory_core::config::Config;
 use observatory_core::model::Role;
 use observatory_core::telemetry::{
-    BoundedLabel, InstrumentKind, Label, LabelError, SeriesPlan, start_check,
+    BoundedLabel, InstrumentKind, Label, LabelError, SeriesPlan, TelemetryReport, TelemetryStatus,
+    parse_header, resolve_start, start_check,
 };
 
 const ELEVEN: [&str; 11] = [
@@ -285,4 +286,121 @@ fn an_instrument_outside_the_contract_stops_the_start() {
         "{}",
         refused.reason
     );
+}
+
+fn enabled() -> observatory_core::config::TelemetryConfig {
+    let mut cfg = Config::default().telemetry;
+    cfg.enabled = true;
+    cfg
+}
+
+#[test]
+fn telemetry_defaults_point_at_the_local_collector() {
+    let cfg = Config::default().telemetry;
+    assert!(!cfg.enabled);
+    assert_eq!(cfg.endpoint, "http://localhost:4318");
+    assert_eq!(cfg.headers_keychain_item, "");
+
+    let off = resolve_start(&cfg, |_| panic!("an off config never reads the keychain"))
+        .expect_err("export is off by default");
+    assert_eq!(
+        off.status,
+        TelemetryStatus {
+            enabled: false,
+            reason: "off in config".into()
+        }
+    );
+    assert_eq!(off.state, "off (config)");
+    assert_eq!(off.endpoint, "http://localhost:4318");
+}
+
+#[test]
+fn header_is_split_on_first_equals_and_never_logged() {
+    assert_eq!(
+        parse_header("Authorization=Basic YWJj="),
+        Some(("Authorization", "Basic YWJj="))
+    );
+    assert_eq!(parse_header("nodelimiter"), None);
+    assert_eq!(parse_header("=value"), None, "a header needs a name");
+    assert_eq!(
+        parse_header("Authorization=Basic YWJj=\n").map(|h| h.1),
+        Some("Basic YWJj=")
+    );
+
+    let mut cfg = enabled();
+    cfg.headers_keychain_item = "droid-observatory/otlp-headers-absent".into();
+    let secret_text = "Authorization=Basic YWJj=";
+    let start = resolve_start(&cfg, |_| Ok(Some(secret_text.to_owned())))
+        .expect("an item with a header starts the exporter");
+    let header = start.header.as_ref().expect("the header was read");
+    assert_eq!(header.name(), "Authorization");
+    assert_eq!(header.expose_value(), "Basic YWJj=");
+
+    // Nothing the app can print about the start carries the value or its first 8 characters.
+    let printed = format!(
+        "{start:?} {header:?} {:?}",
+        start.report("2026-10-30T00:00:00Z")
+    );
+    for leak in ["Basic ", "YWJj", "Authorization="] {
+        assert!(!printed.contains(leak), "{leak:?} leaked into: {printed}");
+    }
+    assert!(printed.contains("<redacted>"), "{printed}");
+}
+
+#[test]
+fn telemetry_stays_off_without_keychain_item_and_ui_says_so() {
+    // (a) the default empty item: the keychain is never read, the exporter starts without a header.
+    let cfg = enabled();
+    assert_eq!(cfg.headers_keychain_item, "");
+    let start = resolve_start(&cfg, |service| {
+        panic!("an empty headers_keychain_item never reads the keychain, asked for {service}")
+    })
+    .expect("enabled with no item starts");
+    assert!(start.header.is_none());
+    assert_eq!(start.endpoint, "http://localhost:4318");
+    let report: TelemetryReport = start.report("2026-10-30T00:00:00Z");
+    assert!(report.status.enabled);
+    assert_eq!(report.state, "exporting since 2026-10-30T00:00:00Z");
+    assert_eq!(report.endpoint, "http://localhost:4318");
+    println!("(a) {} / {}", report.state, report.endpoint);
+
+    // (b) a configured item that is absent keeps export off and says so.
+    let mut cfg = enabled();
+    cfg.headers_keychain_item = "droid-observatory/otlp-headers-absent".into();
+    let mut asked = Vec::new();
+    let off = resolve_start(&cfg, |service| {
+        asked.push(service.to_owned());
+        Ok(None)
+    })
+    .expect_err("an absent item keeps export off");
+    assert_eq!(asked, ["droid-observatory/otlp-headers-absent"]);
+    assert_eq!(
+        off.status,
+        TelemetryStatus {
+            enabled: false,
+            reason: "no keychain item".into()
+        }
+    );
+    assert_eq!(
+        off.state,
+        "off, no keychain item droid-observatory/otlp-headers-absent"
+    );
+    assert_eq!(off.endpoint, "http://localhost:4318");
+    println!("(b) {} / {}", off.state, off.endpoint);
+
+    // A refused lookup and an item without `name=value` are off states too, never a silent start.
+    let refused = resolve_start(&cfg, |_| Err("locked".into())).expect_err("refused lookup");
+    assert!(!refused.status.enabled);
+    assert!(refused.state.starts_with("off, "), "{}", refused.state);
+    let malformed = resolve_start(&cfg, |_| Ok(Some("nodelimiter".into()))).expect_err("malformed");
+    assert!(!malformed.status.enabled);
+    assert!(!malformed.state.contains("nodelimiter"));
+
+    // The series plan is checked before the keychain: a refused plan reads nothing.
+    let mut cfg = enabled();
+    cfg.headers_keychain_item = "droid-observatory/otlp-headers-absent".into();
+    cfg.max_series = 182;
+    let refused = resolve_start(&cfg, |_| panic!("a refused plan never reads the keychain"))
+        .expect_err("182 is not under 182");
+    assert!(refused.status.reason.contains("max_series"));
 }
