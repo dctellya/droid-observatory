@@ -606,6 +606,18 @@ mod tests {
         .expect("the capture holds events")
     }
 
+    /// Where an export test writes: `OBSERVATORY_EXPORT_DIR` when set, so a run can leave its files
+    /// for `ls -l` and `diff`; else a temp directory that goes with the test.
+    fn export_dir() -> (PathBuf, Option<tempfile::TempDir>) {
+        match std::env::var_os("OBSERVATORY_EXPORT_DIR") {
+            Some(dir) => (PathBuf::from(dir), None),
+            None => {
+                let temp = tempfile::tempdir().expect("a temp directory");
+                (temp.path().to_owned(), Some(temp))
+            }
+        }
+    }
+
     #[test]
     fn export_writes_the_csv_the_cli_prints_at_the_chosen_path() {
         let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "export-csv");
@@ -615,8 +627,8 @@ mod tests {
             m0_fixture(),
         ))
         .expect("the capture replays");
-        let dir = tempfile::tempdir().expect("a temp directory");
-        let target = dir.path().join("m0.csv");
+        let (dir, _guard) = export_dir();
+        let target = dir.join("m0.csv");
         let done = tauri::async_runtime::block_on(export(
             app.state::<Shell>(),
             opened.summary.mission_id.clone(),
@@ -642,8 +654,8 @@ mod tests {
             m0_fixture(),
         ))
         .expect("the capture replays");
-        let dir = tempfile::tempdir().expect("a temp directory");
-        let target = dir.path().join("nested").join("m0.json");
+        let (dir, _guard) = export_dir();
+        let target = dir.join("nested").join("m0.json");
         let done = tauri::async_runtime::block_on(export(
             app.state::<Shell>(),
             opened.summary.mission_id.clone(),
@@ -703,6 +715,55 @@ mod tests {
         println!("offered: {offered}");
         assert!(offered.ends_with("-metrics.csv"), "{offered}");
         assert!(offered.contains("Downloads"), "{offered}");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_window_board_of_the_m0_capture_has_the_cards_lanes_and_tray_of_the_browser() {
+        let (app, path) = app_with_branch_pattern(LITERAL_BRANCH, "board-parity");
+        let opened = tauri::async_runtime::block_on(open_replay(
+            app.state::<Shell>(),
+            app.state::<Arc<Telemetry>>(),
+            m0_fixture(),
+        ))
+        .expect("the capture replays");
+        let digest = tauri::async_runtime::block_on(board(
+            app.state::<Shell>(),
+            opened.summary.mission_id,
+            None,
+            None,
+            None,
+        ))
+        .expect("the board counts");
+        let cards: Vec<(String, String)> = digest
+            .cards
+            .iter()
+            .map(|card| (card.milestone.0.clone(), card.lane.0.clone()))
+            .collect();
+        println!(
+            "window board: cards {cards:?}, tray {}",
+            digest.tray_unknown
+        );
+        // The browser host's snapshot of the same capture: one card per milestone in the lane the
+        // board puts it in, and an unmapped tray of 0.
+        let browser: Vec<(&str, &str)> = vec![
+            ("m1", "plan"),
+            ("m2", "plan"),
+            ("m3", "plan"),
+            ("m4", "plan"),
+            ("m5", "plan"),
+            ("m0", "build"),
+            ("s", "user_testing"),
+        ];
+        let mut window: Vec<(&str, &str)> = cards
+            .iter()
+            .map(|(m, l)| (m.as_str(), l.as_str()))
+            .collect();
+        let mut expected = browser;
+        window.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(window, expected);
+        assert_eq!(digest.tray_unknown, 0);
         let _ = std::fs::remove_file(path);
     }
 }
