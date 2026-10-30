@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use observatory_core::config::Config;
 use observatory_core::ingest::mission_events;
 use observatory_core::metrics::{
-    CostInput, Notes, PriceTable, Tolerance, compare_csv, metrics_report,
+    Notes, PriceTable, ReportSetup, Tolerance, compare_csv, report_at_last_event,
 };
 use observatory_core::model::CycleTemplate;
 
@@ -45,27 +45,20 @@ pub fn metrics(
             .price_table
             .unwrap_or_else(|| Path::new(&setup.config.metrics.price_table)),
     )?;
-    let end = events
-        .iter()
-        .filter(|event| !event.kind.is_panel_only())
-        .map(|event| event.at)
-        .max()
-        .ok_or("the capture holds no event")?;
-    let report = metrics_report(&CostInput {
-        events: &events,
-        template: setup.template,
-        notes: &Notes::default(),
-        prices: &prices,
-        end,
-        budget: setup.config.metrics.budget,
-        launch_budget_usd: setup.budget_usd,
-        apportionment: setup.config.metrics.overhead_apportionment,
-    });
+    let report = report_at_last_event(
+        &events,
+        &ReportSetup {
+            template: setup.template,
+            prices: &prices,
+            notes: &Notes::default(),
+            budget: setup.config.metrics.budget,
+            launch_budget_usd: setup.budget_usd,
+            apportionment: setup.config.metrics.overhead_apportionment,
+        },
+    )
+    .ok_or("the capture holds no event")?;
     match format {
-        Format::Json => {
-            serde_json::to_writer_pretty(&mut *out, &report)?;
-            writeln!(out)?;
-        }
+        Format::Json => out.write_all(report.to_json().as_bytes())?,
         Format::Csv => out.write_all(report.to_csv().as_bytes())?,
         Format::Diff(reference) => {
             let text = std::fs::read_to_string(reference)
