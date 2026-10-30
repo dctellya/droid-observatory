@@ -186,6 +186,7 @@ fn the_headline_cost_equals_the_sum_of_the_milestone_rows_and_the_library_keeps_
         .cost
         .tokens_by_milestone
         .iter()
+        .filter(|row| row.milestone.is_some())
         .map(|row| row.cost.amount)
         .sum();
     assert!(
@@ -194,7 +195,11 @@ fn the_headline_cost_equals_the_sum_of_the_milestone_rows_and_the_library_keeps_
         headline.cost
     );
     assert_eq!(headline.price_table, "2026-10-22");
-    assert_eq!(headline.tokens_total, panel.cost.total_tokens.total());
+    assert_eq!(
+        headline.tokens_total + headline.overhead_tokens,
+        panel.cost.total_tokens.total()
+    );
+    assert!((headline.cost + headline.overhead_cost - panel.cost.cost_so_far.amount).abs() < 0.01);
     assert!(headline.cycle_s > 0);
 
     let row = MissionRow {

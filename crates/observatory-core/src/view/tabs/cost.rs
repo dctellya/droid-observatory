@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::tabs_end;
+use crate::config::OverheadApportionment;
 use crate::metrics::{
-    Cost, CostUnit, Notes, PriceTable, ReworkKind, TokenCounts, WasteCause, card_times, throttled,
-    turns,
+    Cost, CostInput, CostUnit, Notes, PriceTable, ReworkKind, RowScope, TokenCounts, WasteCause,
+    card_times, metrics_report, throttled, turns,
 };
 use crate::model::{
     CycleTemplate, Event, EventId, EventKind, FeatureId, MilestoneId, Role, Timestamp,
@@ -49,6 +50,10 @@ pub struct ReworkRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CostTab {
     pub milestone: MilestoneId,
+    /// The engineering cycle time of the milestone (the `cycle_s` of its CSV row).
+    pub cycle_s: u64,
+    /// The rework windows of the milestone (the `rework_windows` of its CSV row).
+    pub rework_windows: usize,
     /// The date every cost on the tab names.
     pub price_table: String,
     pub currency: String,
@@ -57,7 +62,7 @@ pub struct CostTab {
     pub roles: Vec<UsageRow>,
     /// Tokens of models the table has no row for: counted, not priced (rule 18).
     pub unpriced: TokenCounts,
-    /// The eight causes, in the order of the CSV columns.
+    /// The eight causes, in the order of the CSV columns, as the milestone's CSV row holds them.
     pub waste: Vec<WasteRow>,
     pub rework: Vec<ReworkRow>,
 }
@@ -143,19 +148,42 @@ pub fn cost_tab(
     }
 
     let end = tabs_end(events);
-    let (waste, rework) = match end {
-        Some(end) => waste_and_rework(events, milestone, &features, template, notes, end),
-        None => (
-            WasteCause::ALL
-                .into_iter()
-                .map(|c| waste_row(c, 0))
-                .collect(),
-            Vec::new(),
-        ),
-    };
+    let rework = end.map_or_else(Vec::new, |end| {
+        rework_rows(events, milestone, &features, template, notes, end)
+    });
+    // The milestone's CSV row, made as `observatory-cli metrics` makes it, so the tab's cycle,
+    // rework count and waste are the figures of the CSV and not a second reading of the events.
+    let row = end.and_then(|end| {
+        metrics_report(&CostInput {
+            events,
+            template,
+            notes,
+            prices,
+            end,
+            budget: 0.0,
+            launch_budget_usd: None,
+            apportionment: OverheadApportionment::Separate,
+        })
+        .rows
+        .into_iter()
+        .find(|row| row.scope == RowScope::Milestone && row.id == milestone.0)
+    });
+    let waste = WasteCause::ALL
+        .into_iter()
+        .map(|cause| {
+            waste_row(
+                cause,
+                row.as_ref()
+                    .and_then(|row| row.waste_s.get(&cause).copied())
+                    .unwrap_or(0),
+            )
+        })
+        .collect();
 
     CostTab {
         milestone: milestone.clone(),
+        cycle_s: row.as_ref().map_or(0, |row| row.cycle_s),
+        rework_windows: row.as_ref().map_or(0, |row| row.rework_windows),
         price_table: prices.effective().to_owned(),
         currency: prices.currency().to_owned(),
         totals: total.row(milestone.0.clone(), prices),
@@ -187,27 +215,16 @@ fn waste_row(cause: WasteCause, seconds: u64) -> WasteRow {
     }
 }
 
-fn waste_and_rework(
+fn rework_rows(
     events: &[Event],
     milestone: &MilestoneId,
     features: &BTreeSet<&FeatureId>,
     template: &CycleTemplate,
     notes: &Notes,
     end: Timestamp,
-) -> (Vec<WasteRow>, Vec<ReworkRow>) {
+) -> Vec<ReworkRow> {
     let stops = throttled(events, notes, end).spans();
     let cards = card_times(events, template, notes, end, &stops);
-    let waste = WasteCause::ALL
-        .into_iter()
-        .map(|cause| {
-            let seconds = features
-                .iter()
-                .filter_map(|feature| cards.get(&Some((*feature).clone())))
-                .map(|card| card.waste.seconds(cause))
-                .sum();
-            waste_row(cause, seconds)
-        })
-        .collect();
     let mut rework: Vec<ReworkRow> = cards
         .iter()
         .flat_map(|(feature, card)| card.windows.iter().map(move |w| (feature, w)))
@@ -228,5 +245,5 @@ fn waste_and_rework(
         })
         .collect();
     rework.sort_by_key(|row| row.opened);
-    (waste, rework)
+    rework
 }

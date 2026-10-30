@@ -3,14 +3,14 @@
 //! metrics report beside them. Geometry is fractions of the chart (0 to 1); the UI scales it.
 //! `throttled` is none of the five groups: it is its own field of the block.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::library::Headline;
 use super::tabs::tabs_end;
 use crate::config::OverheadApportionment;
 use crate::metrics::{
-    CardTime, CostInput, CostReport, Notes, PriceTable, Throttled, TimeState, TokenCounts,
-    WasteCause, WasteGroup, card_times, cost_report, throttled, turns,
+    CardTime, CostInput, CostReport, MetricsReport, Notes, PriceTable, RowScope, Throttled,
+    TimeState, TokenCounts, WasteCause, WasteGroup, card_times, metrics_report, throttled, turns,
 };
 use crate::model::{CycleTemplate, Event, FeatureId, MilestoneId, Timestamp};
 
@@ -151,6 +151,21 @@ impl Sparkline {
     }
 }
 
+/// One milestone's figures from its CSV row: the clock, the rework windows and the stopped time.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MilestoneFigures {
+    pub milestone: MilestoneId,
+    /// The engineering cycle time (F-028), the `cycle_s` of the CSV row.
+    pub cycle_s: u64,
+    pub first_pass_active_s: u64,
+    pub rework_s: u64,
+    pub rework_windows: usize,
+    pub throttled_minutes: u64,
+    /// Input, output and cache read of the CSV row.
+    pub tokens_total: u64,
+    pub cost_usd: f64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PanelMetrics {
     /// Tokens and cost per role, lane and milestone, tokens in waste, the budget meter and the
@@ -161,7 +176,9 @@ pub struct PanelMetrics {
     pub waste: WasteChart,
     pub timeline: TimelineChart,
     pub sparkline: Sparkline,
-    /// First event to last, in whole seconds.
+    /// One entry per milestone that has a feature, as its CSV row reads.
+    pub milestones: Vec<MilestoneFigures>,
+    /// The run's engineering cycle time (F-028, `--json` `mission.cycle`), in whole seconds.
     pub cycle_s: u64,
 }
 
@@ -172,8 +189,10 @@ impl PanelMetrics {
         Headline {
             cycle_s: self.cycle_s,
             waste_s: run.map_or(0, |bar| bar.total_s),
-            tokens_total: self.cost.total_tokens.total(),
-            cost: self.cost.cost_so_far.amount,
+            tokens_total: self.milestones.iter().map(|m| m.tokens_total).sum(),
+            cost: self.milestones.iter().map(|m| m.cost_usd).sum(),
+            overhead_tokens: self.cost.overhead.tokens.total(),
+            overhead_cost: self.cost.overhead.cost.amount,
             currency: self.cost.currency.clone(),
             price_table: self.cost.price_table.clone(),
         }
@@ -190,12 +209,7 @@ pub fn panel_metrics(
     budget: f64,
 ) -> Option<PanelMetrics> {
     let end = tabs_end(events)?;
-    let start = events
-        .iter()
-        .filter(|event| !event.kind.is_panel_only())
-        .map(|event| event.at)
-        .min()?;
-    let cost = cost_report(&CostInput {
+    let report = metrics_report(&CostInput {
         events,
         template,
         notes,
@@ -207,54 +221,61 @@ pub fn panel_metrics(
     });
     let stops = throttled(events, notes, end);
     let cards = card_times(events, template, notes, end, &stops.spans());
+    let milestones = report
+        .rows
+        .iter()
+        .filter(|row| row.scope == RowScope::Milestone)
+        .map(|row| MilestoneFigures {
+            milestone: MilestoneId(row.id.clone()),
+            cycle_s: row.cycle_s,
+            first_pass_active_s: row.first_pass_active_s,
+            rework_s: row.rework_s,
+            rework_windows: row.rework_windows,
+            throttled_minutes: row.throttled_minutes,
+            tokens_total: row.tokens_input + row.tokens_output + row.tokens_cache_read,
+            cost_usd: row.cost_usd,
+        })
+        .collect();
     Some(PanelMetrics {
-        waste: waste_chart(events, &cards, &cost),
+        waste: waste_chart(&report),
         timeline: timeline_chart(events, &cards, end),
-        sparkline: sparkline(events, prices, &cost),
-        cycle_s: u64::try_from((end.0 - start.0).whole_seconds()).unwrap_or(0),
+        sparkline: sparkline(events, prices, &report.cost),
+        milestones,
+        cycle_s: report.mission.cycle.seconds,
         throttled: stops,
-        cost,
+        cost: report.cost,
     })
 }
 
-fn waste_chart(
-    events: &[Event],
-    cards: &BTreeMap<Option<FeatureId>, CardTime>,
-    cost: &CostReport,
-) -> WasteChart {
-    let mut milestones: BTreeMap<MilestoneId, BTreeSet<FeatureId>> = BTreeMap::new();
-    for event in events {
-        if let (Some(milestone), Some(feature)) = (&event.milestone_id, &event.feature_id) {
-            milestones
-                .entry(milestone.clone())
-                .or_default()
-                .insert(feature.clone());
-        }
-    }
-    let seconds_of = |group: WasteGroup, own: &[&CardTime]| -> u64 {
-        own.iter().map(|card| card.waste.group_seconds(group)).sum()
-    };
-    let all: Vec<&CardTime> = cards.values().collect();
-    let mut stacks: Vec<(String, Vec<(WasteGroup, u64)>)> = vec![(
-        RUN_LABEL.to_owned(),
-        WasteGroup::ALL
-            .into_iter()
-            .map(|group| (group, seconds_of(group, &all)))
-            .collect(),
-    )];
-    for (milestone, features) in &milestones {
-        let own: Vec<&CardTime> = features
-            .iter()
-            .filter_map(|feature| cards.get(&Some(feature.clone())))
-            .collect();
-        stacks.push((
-            milestone.0.clone(),
-            WasteGroup::ALL
+/// The seconds of each group in `waste`, the eight causes of a CSV row.
+fn group_seconds(waste: &BTreeMap<WasteCause, u64>) -> Vec<(WasteGroup, u64)> {
+    WasteGroup::ALL
+        .into_iter()
+        .map(|group| {
+            let seconds = WasteCause::ALL
                 .into_iter()
-                .map(|group| (group, seconds_of(group, &own)))
-                .collect(),
-        ));
-    }
+                .filter(|cause| cause.group() == group)
+                .map(|cause| waste.get(&cause).copied().unwrap_or(0))
+                .sum();
+            (group, seconds)
+        })
+        .collect()
+}
+
+/// The bars stack the report's own figures: the run's eight causes (`--json` `mission.waste_s`),
+/// then each milestone's CSV row, so a bar equals the CSV it is drawn from.
+fn waste_chart(report: &MetricsReport) -> WasteChart {
+    let cost = &report.cost;
+    let run = group_seconds(&report.mission.waste_s);
+    let mut stacks: Vec<(String, Vec<(WasteGroup, u64)>)> =
+        vec![(RUN_LABEL.to_owned(), run.clone())];
+    stacks.extend(
+        report
+            .rows
+            .iter()
+            .filter(|row| row.scope == RowScope::Milestone)
+            .map(|row| (row.id.clone(), group_seconds(&row.waste_s))),
+    );
     let max_s = stacks
         .iter()
         .map(|(_, stack)| stack.iter().map(|(_, seconds)| seconds).sum::<u64>())
@@ -300,7 +321,10 @@ fn waste_chart(
             group,
             label: group_label(group),
             class: group_class(group),
-            seconds: seconds_of(group, &all),
+            seconds: run
+                .iter()
+                .find(|(of, _)| *of == group)
+                .map_or(0, |(_, seconds)| *seconds),
             tokens: WasteCause::ALL
                 .into_iter()
                 .filter(|cause| cause.group() == group)
