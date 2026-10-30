@@ -12,3 +12,4 @@ g6-shared-files 1cd244c docs(ci): warm measurement of the B-056 trim (m4-gate-ke
 g6-shared-files 8bd6a7d docs(usage): m4 usage regenerated with Ratios (m5-usage-ratios)
 g6-shared-files 4b40a09 docs(decisions): D-047 telemetry series allocation, staging file (m5-telemetry-series-plan-core)
 g6-shared-files 4e046cf docs(usage): m4 ratios on the 0145 bases, kind-weighted row
+g6-commit-format f1a2649 docs(owner-feedback): owner-delegate record committed outside a mission session, reviewed by the owner (2026-10-31)
