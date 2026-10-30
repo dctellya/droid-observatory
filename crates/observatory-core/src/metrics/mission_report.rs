@@ -9,6 +9,7 @@ use serde::Serialize;
 use super::bottleneck::{Bottleneck, Waiting};
 use super::cards::card_times;
 use super::cycle::{ClockKinds, Cycle, StageTime, add_stages, cycles};
+use super::intervals::{CardIntervals, card_intervals};
 use super::report::{CostInput, CostReport, Overhead, cost_report};
 use super::rows::{Context, MetricsRow, RowScope, round4, rows, whole_seconds};
 use super::span::union;
@@ -44,6 +45,9 @@ pub struct MetricsReport {
     pub throttled: Throttled,
     /// Events after the last `handed_to_cd`: counted, never read (D-024).
     pub ignored_after_handed_to_cd: usize,
+    /// The partition and rework windows of every card, the mission-level card included. JSON
+    /// only: the CSV keeps its columns.
+    pub intervals: Vec<CardIntervals>,
     #[serde(flatten)]
     pub cost: CostReport,
 }
@@ -123,6 +127,7 @@ pub fn metrics_report(input: &CostInput<'_>) -> MetricsReport {
         mission,
         throttled: stops,
         ignored_after_handed_to_cd: ignored,
+        intervals: card_intervals(&cards, &members),
         cost,
     }
 }
