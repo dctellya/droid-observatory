@@ -385,3 +385,56 @@ impl Telemetry {
         }
     }
 }
+
+#[cfg(test)]
+mod live {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use observatory_core::config::Config;
+    use observatory_core::store::Store;
+
+    use super::Telemetry;
+
+    /// Owner-run receipt against the local stack (VAL-TELEM-006 (a), -008): the default endpoint, no
+    /// header item, the M0 capture replayed through the store as `open_replay` does, two export
+    /// intervals of 15 s. Ignored: it needs the collector on localhost:4318.
+    ///
+    /// ```sh
+    /// OTEL_EXPORTER_OTLP_HEADERS=x=y cargo test -p observatory-app --lib live_export -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "needs the local OTLP stack on localhost:4318"]
+    fn live_export_reaches_the_local_stack() {
+        crate::logging::init();
+        let mut cfg = Config::default();
+        cfg.telemetry.enabled = true;
+        cfg.metrics.price_table = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../config/prices/2026-10-22.toml"
+        )
+        .to_owned();
+        let template = Arc::new(cfg.cycle.load_template().template);
+        let telemetry = Telemetry::start(&cfg, template.clone());
+        let report = telemetry.report();
+        println!("status bar: {}", report.bar_text());
+        assert!(report.status.enabled, "{report:?}");
+
+        let path =
+            std::env::temp_dir().join(format!("observatory-live-{}.sqlite", std::process::id()));
+        let mut store = Store::open(&path).expect("store");
+        let capture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../fixtures/streams/2026-10-22-observatory-v1-m0.jsonl"
+        );
+        let opened = store
+            .replay_file_with(std::path::Path::new(capture), &cfg.ingest, template)
+            .expect("the capture replays");
+        telemetry.observe(&opened);
+        std::thread::sleep(Duration::from_secs(
+            2 * cfg.telemetry.metric_export_interval_s + 2,
+        ));
+        telemetry.stop();
+        let _ = std::fs::remove_file(path);
+    }
+}
