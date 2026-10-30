@@ -349,3 +349,44 @@ are the M5 boundary record; the unit 1 rounds moved some of them (SPEC §9 F-368
 - Verdict condition facts (inbox 1319): two as-worded failures after round 2, corrected by wording only in pass 42 (F-370), and one
   in-unit contract pass (pass 41). One hand-off (the docs worker's) carried no `claims` array and no `model =` line (rule 30).
 - PR #40 head `273eb9e`: `gate` run 41077321670 green, `mergeStateStatus` CLEAN, open, not merged.
+
+## Forward note (2026-10-30): M6 close
+
+Non-blocking, no line above changes. Written by `m6-close-integrate` after the M6 slices landed; every figure is pasted from
+`reports/usage/m6.md`, the SPEC §9 rows named or a command in this feature's hand-off, none is re-derived. The VAL-PROC verdicts
+above are the M5 boundary record; the unit 1 forward note above and this one carry what moved since.
+
+- **Rule-13 deviation (owner ruling D, ~16:20Z: "Stay in the checkout, recorded as a rule-13 deviation").** M6 ran in the main
+  checkout on `mission/observatory-v1`; no worktree was cut and no `--no-ff` merge closes it. Every commit therefore ran the PR
+  gate of PR #40, which stays open and is not merged (the merge is the owner's, inbox 2129 item 8).
+- **Window and money.** 2026-10-30T12:15:25Z to 20:40:00Z, 504.58 minutes: 97.52 USD-eq in the window (unit 1 48.34, then 49.18 more;
+  40.43 since the 16:09Z cut against the cap by role of 94), mission to date 1544.39 of the 1700 line (D-049); validation 14.48 is
+  14.8 % of the window, all of it in unit 1; cross-check identical (57 sessions, 1625 turns). Role caps were opened by the owner's
+  word at 20:59 (inbox 2129 item 7); the 1700 line is the only money stop.
+- **Oracle.** The 102 deviations of the engine against the owner's reference CSV were classified before any engine edit (inbox 1748,
+  `reports/readiness/2026-10-30-oracle-deviations.md`): four engine defects (E-1 to E-4) fixed test first, the rest ruled by the
+  owner at ~17:25Z (R-1, R-2, Q-1, Q-2, T-1: the engine's values are the corrected reference; Q-3: five rows dropped). The corrected
+  CSV was copied from the proposal in one commit (`4b51929`, `cmp` exit 0, 22-name header);
+  `cargo test -p observatory-core --test oracle` reads 6 passed, 9.844 s wall. VAL-METRIC-001, 003 and 026 are graded after that
+  copy, not before.
+- **Handed to QA by the owner's word (ruling B and C).** VAL-PROC-019 (the owner's screenshots will not come) and VAL-E2E-004 (the
+  attended window) are `handed_to_qa`, recorded beside each other, not graded by validators and excluded from the end-of-mission
+  all-passed gate.
+- **Kept failed on the record (rulings of 14:55Z, 16:20Z and inbox 2129 item 2), the fact beside each; no history is rewritten:**
+
+| Assertion | Fact |
+|---|---|
+| VAL-PROC-003 | the M5 merge `44a4b47` (tree `afe89608`) has `reports/gate/afe89608.../check.json` exit code 2 (the usage test read the host boot time); green is `f0f20497`, the boundary commit `2bcca58` |
+| VAL-PROC-016 | B-016 (s) and B-007 (m4) were still open at their integration commits and marked done only at the final record; B-008 open by the owner's deferral to M6, no waiver |
+| VAL-PROC-029 | the re-cap proposal (M1 110, M2 55, M3 40, M4 85, M5 85) exists only in the m0 to m1 hand-off `b57208e3` outside the repository; the owner's answer is paraphrased (entry 33, F-031), not verbatim |
+| VAL-PROC-032 | only the M5 pause has time, point and the verbatim owner answer; session entries 31, 35, 36 and 37 lack a verbatim answer; the 2026-10-29 five-hour stop is absent from the session log (only SPEC F-273) |
+| VAL-PROC-047 | `m3-fix-ut-round3-lanes-and-mono` (`ce0b143`) has 5 rows under "Browser-host evidence" with no destination (merge reported unfiled: 5); `m3-integrate-m2` and `scrutiny-validator-m3` have no staging file at their hand-off commits; `user-testing-validator-m3` has no `commitId` |
+| VAL-PROC-048 | `reports/usage/m3.md` states "re-issued waits: 1" and "WaitForScript calls in the window: 1" (transcript count 1 at 2026-10-25T15:35:59.755Z, action kill); the clause requires 0 |
+| VAL-PROC-049 | `m3-controls-ui-and-stall` ran 136 turns and handed off success without a partial checkpoint; `m3-cycle-template-refactor` ran 146 turns, partial, with no follow-up feature in `features.json` |
+| VAL-PROC-050 | the model check is the first build-log call for 8 of 19 M3 workers (11 call Skill first); orchestrator subagents `8f187d99` (297 calls before), `7340c2eb` (never) and `48fdb184` (1 before); four validator roots and two orchestrator resumes without it |
+
+- **The "1077 turns on non-declared models" figure of M5 (row 95).** It matches the usage report's own table and does not measure the
+  router: 70 turns ran on `kimi-k3` and 1007 were Sonnet seats by Rule D (D-044); the dated addendum under the figure in
+  `reports/usage/m5.md` carries the split, and D-050 (Rule G, the model guard hook) makes the 70 a denial from now on.
+- **PR gate.** `gate.yml` carries `limit-severities-for-sarif: true` on the trivy step (B-272 applied 2026-10-30, owner ruling E,
+  commit `18897d7`); the gate run on the PR head is in the hand-off of `m6-close-integrate`.
