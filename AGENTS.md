@@ -164,9 +164,10 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   worker lists `claims: [{assertion, evidence}]` for every assertion it fulfils in its hand-off (30); a resumed agent reads its
   predecessor's transcript and the recorded proofs after the model check, states in one line what was done and does only the rest,
   and validators write one verdict file per flow group as it finishes (31).
-- Money (D-038): the mission notify-and-ask line is 1350 USD-eq (was 950), milestone caps M4 200 and M5 140, orchestrator 30 per
-  milestone; stop-and-decide lines under R-055, never walls. At 1350 mission-to-date and at a usage-limit stop the orchestrator
-  reports the state and the figures and asks whether to proceed; the weekly allowance is the owner's to manage.
+- Money (D-038, D-048): the mission notify-and-ask line is 1500 USD-eq (950, then 1350), the M5 cap is 190 (M4 was 200, M5 was 140,
+  then 150), orchestrator 30 per milestone; stop-and-decide lines under R-055, never walls. At 1500 mission-to-date and at a
+  usage-limit stop the orchestrator reports the state and the figures and asks whether to proceed; the weekly allowance is the
+  owner's to manage.
 - Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
   BACKLOG rows, deferred clauses, library notes) and commits it with the feature; the integrator merges the files (F-066).
 - Waits (owner item 6, F-056): the orchestrator starts the mission run as a background Script (`startInBackground`) and
