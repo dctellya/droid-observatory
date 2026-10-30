@@ -90,3 +90,11 @@ the script is `scripts/usage-report.py` (already named so in the m3-usage-target
 ## Addendum 2026-10-25 (m3 integration, m3-usage-target)
 
 The per-role tables of a usage report are written by `scripts/usage-report.py` (`make usage M=<m>`) from the log, the sidecars and the progress log; `scripts/usage-from-log.sh` stays as its cross-check.
+
+## Addendum 2026-10-30 (m6 integration, m6-reference-csv-oracle-parity)
+
+PRD 10.5 sidecar-sum wording moves to D-029; the CSV token columns read turn.usage (F-034, METRIC-024). Owner ruling Q-1, 2026-10-30 ~17:25Z; the tokens of a CSV row are the sum of the `turn.usage` of its sessions, `tokens_cache_write` stays the sidecar's, the two agree on `cache_read` and `cache_write` on all 14 rows of the M0 capture.
+
+## Addendum 2026-10-30 (m6 integration, m6-usage-report-slice)
+
+No status change. The usage report's idle attribution is booked by cause with the router transitions and the owner's chat messages as evidence (`scripts/usage_idle.py`); the M5 recomputation is in `reports/usage/m5.md` addendum 2026-10-30.
