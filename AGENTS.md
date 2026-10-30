@@ -134,6 +134,9 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   changes are caught by local `make check` and by the macOS bundle job on the final pull request.
 - Nothing reaches `main` except the mission's single pull request. `main` has a ruleset:
   PR required, `gate` check required, no force push, no bypass.
+- A pull request head never carries `[skip ci]` (B-271): a head commit with `[skip ci]` suppresses the `pull_request` run of
+  `gate.yml`, so the required `gate` check never reports (PR #40, head `72d0412`, run 41052611163 dispatched by hand). The last commit
+  before `gh pr create` and every later commit on the PR head are made without it.
 - Milestones live in worktrees and integrate into `mission/<name>`. Two worktrees never edit
   the same file (rule 13); shared files (`SPEC.md` §9–10, `README.md`, `BACKLOG.md`,
   `docs/decisions/README.md`) are written by the orchestrator at integration time.
@@ -164,8 +167,9 @@ Crate and app paths are the contract the Makefile and CI probe for; keep them.
   worker lists `claims: [{assertion, evidence}]` for every assertion it fulfils in its hand-off (30); a resumed agent reads its
   predecessor's transcript and the recorded proofs after the model check, states in one line what was done and does only the rest,
   and validators write one verdict file per flow group as it finishes (31).
-- Money (D-038, D-048): the mission notify-and-ask line is 1500 USD-eq (950, then 1350), the M5 cap is 190 (M4 was 200, M5 was 140,
-  then 150), orchestrator 30 per milestone; stop-and-decide lines under R-055, never walls. At 1500 mission-to-date and at a
+- Money (D-038, D-048, D-049): the mission notify-and-ask line is 1700 USD-eq (950, 1350, then 1500 before; D-049, owner, 2026-10-30
+  12:52Z), the M5 cap is 200 (140, 150, then 190 before; M5 closed at 186.13; M4 was 200), the M6 cap is set at dispatch, priced by role,
+  orchestrator 30 per milestone; stop-and-decide lines under R-055, never walls. At 1700 mission-to-date and at a
   usage-limit stop the orchestrator reports the state and the figures and asks whether to proceed; the weekly allowance is the
   owner's to manage.
 - Staging file: a worktree feature ends by writing `reports/staging/<feature-id>.md` (SPEC §9 rows, D-row amendments,
