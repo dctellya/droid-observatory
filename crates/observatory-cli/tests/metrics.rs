@@ -151,3 +151,123 @@ fn metrics_of_a_missing_file_exits_nonzero_and_names_it() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("no-such-capture.jsonl"));
 }
+
+const HEADER: &str = "scope,id,name,cycle_s,first_pass_active_s,rework_s,waste_waiting_human_question_s,waste_waiting_human_permission_s,waste_waiting_merge_s,waste_waiting_validation_s,waste_rework_s,waste_retry_failure_s,waste_idle_queued_s,waste_idle_unscheduled_s,rework_windows,throttled_minutes,tokens_input,tokens_output,tokens_cache_read,tokens_cache_write,cost_usd,price_table";
+
+fn csv_text() -> String {
+    let output = metrics(&[&format!("{M0}.jsonl"), "--csv"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn metrics_csv_prints_the_contract_header_and_typed_rows() {
+    let csv = csv_text();
+
+    let mut lines = csv.lines();
+    assert_eq!(lines.next().unwrap(), HEADER);
+    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
+    assert!(rows.iter().any(|r| r[0] == "feature"));
+    assert!(rows.iter().any(|r| r[0] == "milestone"));
+    let column = |name: &str| HEADER.split(',').position(|c| c == name).unwrap();
+    for row in &rows {
+        assert_eq!(row.len(), 22, "{row:?}");
+        assert!(["feature", "milestone"].contains(&row[0]));
+        for (index, name) in HEADER.split(',').enumerate() {
+            if name.ends_with("_s") && name != "name" || name.starts_with("tokens_") {
+                assert!(row[index].parse::<u64>().is_ok(), "{name}: {}", row[index]);
+            }
+        }
+        assert!(row[column("throttled_minutes")].parse::<u64>().is_ok());
+        assert!(row[column("cost_usd")].parse::<f64>().is_ok());
+        assert_eq!(row[column("price_table")], "2026-10-22");
+    }
+    println!("rows: {}", rows.len());
+}
+
+#[test]
+fn metrics_json_rows_equal_the_csv_and_carry_the_throttled_section_and_overhead() {
+    let csv = csv_text();
+    let json = report(&[&format!("{M0}.jsonl"), "--json"]);
+
+    let rows = json["rows"].as_array().unwrap();
+    let data: Vec<&str> = csv.lines().skip(1).collect();
+    assert_eq!(rows.len(), data.len());
+    let header: Vec<&str> = HEADER.split(',').collect();
+    for line in &data {
+        let cells: Vec<&str> = line.split(',').collect();
+        let counterpart = rows
+            .iter()
+            .find(|r| r["scope"] == cells[0] && r["id"] == cells[1])
+            .unwrap_or_else(|| panic!("no JSON row for {line}"));
+        for field in [
+            "cycle_s",
+            "first_pass_active_s",
+            "rework_s",
+            "rework_windows",
+            "throttled_minutes",
+            "tokens_input",
+            "tokens_output",
+            "tokens_cache_read",
+            "tokens_cache_write",
+        ] {
+            let at = header.iter().position(|c| *c == field).unwrap();
+            assert_eq!(
+                counterpart[field].to_string(),
+                cells[at],
+                "{field} of {line}"
+            );
+        }
+        let at = header.iter().position(|c| *c == "cost_usd").unwrap();
+        let cost = counterpart["cost_usd"].as_f64().unwrap();
+        assert!((cost - cells[at].parse::<f64>().unwrap()).abs() < 0.005);
+        assert_eq!(counterpart["price_table"], "2026-10-22");
+    }
+    assert!(json["overhead"].is_object());
+    assert_eq!(json["overhead"]["label"], "separate");
+    let throttled = &json["throttled"];
+    assert!(throttled["mission_minutes"].as_u64().unwrap() > 0);
+    let interval = &throttled["intervals"][0];
+    assert!(interval["reason"].is_string());
+    assert!(interval["minutes"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn metrics_diff_is_clean_against_its_own_csv_and_names_a_changed_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let own = dir.path().join("own.csv");
+    std::fs::write(&own, csv_text()).unwrap();
+    let file = format!("{M0}.jsonl");
+    let diff = |reference: &Path| metrics(&[&file, "--diff", reference.to_str().unwrap()]);
+
+    let clean = diff(&own);
+    assert!(
+        clean.status.success(),
+        "{}",
+        String::from_utf8_lossy(&clean.stdout)
+    );
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("deviations: 0"));
+
+    let mut changed: Vec<String> = csv_text().lines().map(str::to_owned).collect();
+    let mut cells: Vec<String> = changed[1].split(',').map(str::to_owned).collect();
+    cells[20] = format!("{:.4}", cells[20].parse::<f64>().unwrap() + 1.0);
+    changed[1] = cells.join(",");
+    let moved = dir.path().join("moved.csv");
+    std::fs::write(&moved, changed.join("\n") + "\n").unwrap();
+    let broken = diff(&moved);
+    assert_eq!(broken.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&broken.stdout);
+    assert!(text.contains("cost_usd"), "{text}");
+    assert!(text.contains("deviations: 1"), "{text}");
+}
+
+#[test]
+fn metrics_csv_and_json_together_are_refused() {
+    let output = metrics(&[&format!("{M0}.jsonl"), "--csv", "--json"]);
+
+    assert!(!output.status.success());
+}
