@@ -226,3 +226,9 @@ Engine defects E-1 to E-4 are fixed (tests `crates/observatory-core/tests/oracle
 | milestone m3 | (row) | present | absent | - | Q | Q-3 |
 | milestone m4 | (row) | present | absent | - | Q | Q-3 |
 | milestone m5 | (row) | present | absent | - | Q | Q-3 |
+
+## Addendum: owner rulings and the proposal (2026-10-30)
+
+Owner rulings, ~17:25Z: R-1, R-2, Q-1, Q-2 and T-1, the engine's values are the corrected reference, tolerance unchanged; Q-3, drop the five m1 to m5 rows (full text in `reports/staging/m6-reference-csv-oracle-parity.md`). The corrected reference is `reports/readiness/2026-10-30-oracle-reference-proposal.csv`: the reference CSV with the same 22-name header (byte-identical first line) and every byte unchanged except 79 cells set to the engine's values on tree `c21cfcd` (the 62 cells outside the tolerance, plus the `cost_usd` and token cells of every row the Q-1 ruling covers that still differed) and the five m1 to m5 rows dropped. The close integrator copies it to `reports/reference/` in one commit on the owner's word; this slice does not write under `reports/reference/`.
+
+Against the proposal: `rows reference=14 engine=14 cells compared=266 deviations=0`; the largest delta per column is 1 s on `waste_retry_failure_s`, `waste_idle_queued_s` and `waste_idle_unscheduled_s` (reference cells kept as written because they agree within the tolerance) and 0 elsewhere. The committed oracle test stays red against `reports/reference/` until that copy.
