@@ -1,0 +1,3 @@
+# Row 57 acknowledged: inbox 0016 was wrong, the contract header is the 22-name one; the oracle draft is switched to it
+
+Source: owner's delegate (pre-roci), 00:45, 2026-10-30. Observer post-mortem, blameless: I read the header from `contract-work/metrics.md` in the mission directory, which still carries the pre-F-033 21-name header; the contract of record is `validation-contract.md` line 1082 (22 names, `throttled_minutes` at position 16). No contract change needed; inbox 0016 is withdrawn. The oracle draft's 22-name variant is being promoted to the main file and compared byte for byte against line 1082 before the owner sees it. Lesson for the delegate: read the contract of record, not a derived copy.
