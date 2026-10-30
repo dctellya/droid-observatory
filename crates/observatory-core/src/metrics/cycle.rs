@@ -207,17 +207,20 @@ pub fn cycles(events: &[Event], template: &CycleTemplate, now: Timestamp) -> Cyc
         .collect();
     let mut milestones = BTreeMap::new();
     for id in milestone_ids {
+        // A fallback start (a feature the plan never defined) starts the milestone only when
+        // the milestone has no `feature.defined` of its own.
         let own_starts = line
             .iter()
             .filter(|e| clock.starts(e) && e.milestone_id.as_ref() == Some(id))
             .map(|e| e.at)
-            .chain(
+            .min()
+            .or_else(|| {
                 starts
                     .iter()
                     .filter(|(feature, _)| homes.get(*feature).copied() == Some(id))
-                    .map(|(_, start)| start.0),
-            )
-            .min();
+                    .map(|(_, start)| start.0)
+                    .min()
+            });
         let end = ends
             .iter()
             .rev()

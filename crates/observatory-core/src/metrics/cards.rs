@@ -9,7 +9,9 @@ use super::rework::{
     ReworkSpan, ReworkWindow, first_pass_and_rework, merge_windows, rework_windows,
 };
 use super::span::Span;
-use super::state::{Interval, PartitionContext, active_spans, partition_in};
+use super::state::{
+    Interval, PartitionContext, active_spans, mission_question_waits, partition_with_human_waits,
+};
 use super::waste::{WasteTotals, waste_by_cause};
 use crate::model::{CycleTemplate, Event, FeatureId, MilestoneId};
 
@@ -66,6 +68,7 @@ pub fn card_times(
             .filter_map(|event| event.milestone_id.as_ref())
             .collect()
     };
+    let question_waits = mission_question_waits(&level, end);
     cards.push((None, level));
 
     let actives: Vec<Vec<Span>> = cards.iter().map(|(_, own)| active_spans(own)).collect();
@@ -82,7 +85,8 @@ pub fn card_times(
             others_active: &others,
             throttled,
         };
-        let intervals = partition_in(own, end, &context);
+        let waits: &[Span] = if key.is_some() { &question_waits } else { &[] };
+        let intervals = partition_with_human_waits(own, end, &context, waits);
         let windows = rework_windows(own, template, notes, end);
         let rework = merge_windows(&windows);
         let milestone_rework: Vec<ReworkSpan> = match key {
