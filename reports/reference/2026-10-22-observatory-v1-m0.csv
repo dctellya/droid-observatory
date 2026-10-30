@@ -1,20 +1,15 @@
 scope,id,name,cycle_s,first_pass_active_s,rework_s,waste_waiting_human_question_s,waste_waiting_human_permission_s,waste_waiting_merge_s,waste_waiting_validation_s,waste_rework_s,waste_retry_failure_s,waste_idle_queued_s,waste_idle_unscheduled_s,rework_windows,throttled_minutes,tokens_input,tokens_output,tokens_cache_read,tokens_cache_write,cost_usd,price_table
-feature,m0-ci-rust-job-linux,m0-ci-rust-job-linux,3264,1033,0,203,0,0,2028,0,0,0,0,0,0,1603,17411,1168008,99975,0.5441,2026-10-22
-feature,m0-fixture-freeze,m0-fixture-freeze,238,238,0,0,0,0,0,0,0,0,0,0,0,1574,22700,1606154,95845,0.6304,2026-10-22
-feature,m0-fixture-redaction,m0-fixture-redaction,2171,415,0,203,0,0,1552,0,2,0,0,0,0,1607,25980,1438572,92936,0.6392,2026-10-22
-feature,m0-integrate-s,m0-integrate-s,9676,1384,0,2285,0,0,3276,0,1968,0,764,0,0,78838,100996,11210603,330060,2.8718,2026-10-22
-feature,s-app-empty-lanes,s-app-empty-lanes,56775,679,0,2285,0,0,420,0,12,6799,2327,0,754,1296,26928,1831919,191208,1.2540,2026-10-22
-feature,s-ci-wiring,s-ci-wiring,56775,320,0,2285,0,0,178,0,0,6796,2327,0,754,1197,25310,1410372,134306,1.0520,2026-10-22
-feature,s-cli-replay,s-cli-replay,56775,501,0,2285,0,0,1040,0,0,6843,2327,0,754,1309,49092,2920633,187961,1.5091,2026-10-22
-feature,s-core-event-model,s-core-event-model,56775,383,0,2285,0,0,1589,0,0,6829,2327,0,754,1179,35890,2447768,151755,1.2766,2026-10-22
-feature,s-fixture-snapshot,s-fixture-snapshot,56775,343,0,2285,0,0,1903,0,1,6781,2327,0,754,1244,31878,1683454,120088,1.1084,2026-10-22
-feature,s-workspace-scaffold,s-workspace-scaffold,56775,755,0,2285,0,0,2150,0,0,6803,2327,0,754,1607,54652,5354453,237926,2.0610,2026-10-22
-feature,scrutiny-validator-s,scrutiny-validator-s,56919,364,0,2285,0,0,0,0,18,6694,2327,0,754,827,19667,684083,102479,1.0459,2026-10-22
-feature,user-testing-validator-s,user-testing-validator-s,56188,1317,0,2285,0,0,0,0,338,5039,1978,0,754,1941,34288,1580937,411509,3.0673,2026-10-22
-milestone,s,walking skeleton,56775,3930,0,2285,0,0,370,0,371,5039,2327,0,754,10600,277705,17913619,1537232,12.3742,2026-10-22
-milestone,m0,capture and mapping,9676,3070,0,2285,0,0,1588,0,1970,0,764,0,0,83622,167087,15423337,618816,4.6854,2026-10-22
-milestone,m1,"board, replay, attach",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0000,2026-10-22
-milestone,m2,host,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0000,2026-10-22
-milestone,m3,intervention,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0000,2026-10-22
-milestone,m4,"branch, gate, fix loop",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0000,2026-10-22
-milestone,m5,"time, waste, cost",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.0000,2026-10-22
+feature,m0-ci-rust-job-linux,m0-ci-rust-job-linux,3264,1033,0,203,0,0,2028,0,0,0,0,0,0,52,17399,1168008,99975,0.5408,2026-10-22
+feature,m0-fixture-freeze,m0-fixture-freeze,238,238,0,0,0,0,0,0,0,0,0,0,0,50,22691,1606154,95845,0.6272,2026-10-22
+feature,m0-fixture-redaction,m0-fixture-redaction,2171,417,0,203,0,0,1552,0,0,0,0,0,0,46,25970,1438572,92936,0.6360,2026-10-22
+feature,m0-integrate-s,m0-integrate-s,9676,1384,0,2285,0,0,3276,0,1968,0,764,0,0,74246,100957,11210603,330060,2.8654,2026-10-22
+feature,s-app-empty-lanes,s-app-empty-lanes,56775,132,0,2285,0,0,0,0,0,6799,2327,0,754,74,26917,1831919,191208,1.2514,2026-10-22
+feature,s-ci-wiring,s-ci-wiring,56775,135,0,2285,0,0,0,0,0,6796,2327,0,754,62,25301,1410372,134306,1.0496,2026-10-22
+feature,s-cli-replay,s-cli-replay,56775,87,0,2285,0,0,0,0,0,6845,2327,0,754,74,49079,2920633,187961,1.5065,2026-10-22
+feature,s-core-event-model,s-core-event-model,56775,101,0,2285,0,0,0,0,0,6831,2327,0,754,84,35882,2447768,151755,1.2744,2026-10-22
+feature,s-fixture-snapshot,s-fixture-snapshot,56775,150,0,2285,0,0,0,0,1,6781,2327,0,754,74,31866,1683454,120088,1.1059,2026-10-22
+feature,s-workspace-scaffold,s-workspace-scaffold,56775,127,0,2285,0,0,0,0,0,6805,2327,0,754,108,54636,5354453,237926,2.0579,2026-10-22
+feature,scrutiny-validator-s,scrutiny-validator-s,56919,382,0,2285,0,0,0,0,0,6694,2327,0,754,28,19657,684083,102479,1.0425,2026-10-22
+feature,user-testing-validator-s,user-testing-validator-s,56188,1655,0,2285,0,0,0,0,0,5039,1978,0,754,58,34269,1580937,411509,3.0593,2026-10-22
+milestone,s,walking skeleton,56775,2769,0,18280,0,0,0,0,0,52593,18259,0,754,562,277607,17913619,1537232,12.3475,2026-10-22
+milestone,m0,capture and mapping,9676,3072,0,2691,0,0,6856,0,1968,0,764,0,0,74394,167017,15423337,618816,4.6695,2026-10-22
