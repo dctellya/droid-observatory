@@ -48,6 +48,7 @@ check-scripts: check-gate-cache check-integrate check-integrate-long check-contr
 	@sh scripts/tests/compile-share.sh
 	@sh scripts/tests/usage-from-log.sh
 	@sh scripts/tests/log-tool-call-duration.sh
+	@sh scripts/tests/model-guard.sh
 	@sh scripts/tests/agents_md_test.sh
 	@python3 scripts/tests/usage_test.py
 	@python3 scripts/tests/usage_idle_test.py
