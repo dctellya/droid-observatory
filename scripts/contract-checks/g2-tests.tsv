@@ -28,8 +28,8 @@ metric	VAL-METRIC-004	metrics_json_rows_equal_the_csv_and_carry_the_throttled_se
 metric	VAL-METRIC-004	the_json_rows_equal_the_csv_rows_and_carry_overhead_and_throttled	yes	-
 metric	VAL-METRIC-005	cycle_time_ends_at_handed_to_cd_and_ignores_anything_after	yes	-
 metric	VAL-METRIC-005	waste_groups_sum_the_eight_measured_causes	yes	-
-telemetry	VAL-TELEM-001	exported_series_count_is_under_budget_on_worst_case_labels	no	182~~<
-telemetry	VAL-TELEM-002	exporter_refuses_to_start_when_worst_case_reaches_max_series	no	-
-telemetry	VAL-TELEM-003	labels_outside_allowed_set_are_rejected	no	session_id~~price_table~~mission~~cause
+telemetry	VAL-TELEM-001	exported_series_count_is_under_budget_on_worst_case_labels	yes	182~~<
+telemetry	VAL-TELEM-002	exporter_refuses_to_start_when_worst_case_reaches_max_series	yes	-
+telemetry	VAL-TELEM-003	labels_outside_allowed_set_are_rejected	yes	session_id~~price_table~~mission~~cause
 telemetry	VAL-TELEM-005	example_config_equals_defaults	yes	-
-telemetry	VAL-TELEM-006	telemetry_stays_off_without_keychain_item_and_ui_says_so	no	-
+telemetry	VAL-TELEM-006	telemetry_stays_off_without_keychain_item_and_ui_says_so	yes	-

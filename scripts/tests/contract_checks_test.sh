@@ -684,8 +684,8 @@ m3 "$header$nl$good_row1$nl$good_row2" "$(printf '%s' "$good_json" | sed 's/"ove
 m3_expect FAIL "overhead line null under the default config"
 m3 "$header$nl$good_row1$nl$good_row2" 'not json'
 m3_expect FAIL "JSON that does not parse"
-expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command not landed: pending)"
-case "$out" in *pending*) ;; *) fail "g3: the real tree has no metrics command yet, wanted pending: $out" ;; esac
+expect_ok g3-metrics-contract '' "g3-metrics-contract on the real tree (metrics command landed)"
+case "$out" in *pending*) fail "g3: the real tree has the metrics command, wanted no pending: $out" ;; esac
 
 # --- wiring: make check-contract, make check, the mission-branch CI -----------------------------------------------------
 
