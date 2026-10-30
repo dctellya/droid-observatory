@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use super::span::{gap, timeline};
+use super::span::{event_span, gap, timeline};
 use crate::model::{CycleTemplate, Event, EventKind, FeatureId, LaneId, MilestoneId, Timestamp};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -157,8 +157,14 @@ pub fn cycles(events: &[Event], template: &CycleTemplate, now: Timestamp) -> Cyc
             .or_else(|| {
                 own.iter()
                     .find(|e| clock.falls_back(e))
-                    .or_else(|| own.first())
                     .map(|e| (e.at, true))
+                    // No start event at all: the feature's first measured span begins the clock.
+                    .or_else(|| {
+                        own.iter()
+                            .filter_map(|e| event_span(e).map(|span| span.from).or(Some(e.at)))
+                            .min()
+                            .map(|at| (at, true))
+                    })
             });
         if let Some(found) = found {
             starts.insert(id, found);

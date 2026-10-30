@@ -168,3 +168,57 @@ fn the_oracle_reads_quoted_cells_and_crlf_line_ends() {
 
     assert!(diff.deviations.is_empty(), "{:?}", diff.deviations);
 }
+
+/// The owner's spreadsheet is the hard gate of VAL-METRIC-003. While it is absent from the tree
+/// (B-008) the test names the reason and returns; it never creates or copies the reference.
+#[test]
+fn metrics_match_reference_spreadsheet_within_tolerance() {
+    use observatory_core::config::IngestConfig;
+    use observatory_core::ingest::mission_events;
+    use observatory_core::metrics::PriceTable;
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let reference = root.join("reports/reference/2026-10-22-observatory-v1-m0.csv");
+    let Ok(expected) = std::fs::read_to_string(&reference) else {
+        eprintln!(
+            "SKIPPED: {} is absent (B-008, owner supplies it); the tolerance is 1 s, 1 token, 0.01 USD",
+            reference.display()
+        );
+        return;
+    };
+    let template = CycleTemplate::engineering();
+    let (events, _) = mission_events(
+        &root.join("fixtures/streams/2026-10-22-observatory-v1-m0.jsonl"),
+        &IngestConfig::default(),
+        template.clone(),
+    )
+    .unwrap();
+    let end = events
+        .iter()
+        .filter(|e| !e.kind.is_panel_only())
+        .map(|e| e.at)
+        .max()
+        .unwrap();
+    let prices = PriceTable::load(&root.join("config/prices/2026-10-22.toml")).unwrap();
+    let produced = metrics_report(&CostInput {
+        events: &events,
+        template: &template,
+        notes: &Notes::default(),
+        prices: &prices,
+        end,
+        budget: 0.0,
+        launch_budget_usd: None,
+        apportionment: OverheadApportionment::Separate,
+    })
+    .to_csv();
+
+    let diff = compare_csv(&expected, &produced, &Tolerance::default()).unwrap();
+
+    assert!(
+        diff.deviations.is_empty(),
+        "{} deviations from the reference, largest per column {:?}: {:?}",
+        diff.deviations.len(),
+        diff.max_by_column,
+        diff.deviations
+    );
+}

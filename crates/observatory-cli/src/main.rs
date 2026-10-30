@@ -37,14 +37,21 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         store: Option<PathBuf>,
     },
-    /// Print tokens, cost, waste tokens, reconciliation, budget and model comparison of a
-    /// capture as JSON, with the usage log its header names.
+    /// Print the metrics report of a capture (one row per feature and milestone, throttled, overhead,
+    /// tokens, cost, budget and model comparison), with the usage log its header names.
     Metrics {
         /// The orchestrator session `.jsonl` of the capture.
         file: PathBuf,
-        /// Print the report as JSON (the default and only format here).
-        #[arg(long)]
+        /// Print the rows as RFC 4180 CSV with the 22-name column contract.
+        #[arg(long, conflicts_with_all = ["json", "diff"])]
+        csv: bool,
+        /// Print the report as one JSON document (the default).
+        #[arg(long, conflicts_with = "diff")]
         json: bool,
+        /// Compare the CSV with this reference CSV within 1 s, 1 token and 0.01 USD; print the
+        /// deviations and exit 1 when there are any.
+        #[arg(long, value_name = "FILE")]
+        diff: Option<PathBuf>,
         /// The price table; default `[metrics].price_table`.
         #[arg(long, value_name = "FILE")]
         price_table: Option<PathBuf>,
@@ -115,14 +122,22 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Metrics {
             file,
+            csv,
             json: _,
+            diff,
             price_table,
             budget_usd,
         } => {
             let file = std::path::absolute(&file)?;
             let mut out = BufWriter::new(io::stdout().lock());
-            metrics::metrics(
+            let format = match (csv, &diff) {
+                (true, _) => metrics::Format::Csv,
+                (false, Some(reference)) => metrics::Format::Diff(reference.clone()),
+                (false, None) => metrics::Format::Json,
+            };
+            let clean = metrics::metrics(
                 &file,
+                &format,
                 &metrics::Setup {
                     config: &config,
                     template: &template,
@@ -133,7 +148,11 @@ fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 &mut io::stderr().lock(),
             )?;
             out.flush()?;
-            Ok(())
+            if clean {
+                Ok(())
+            } else {
+                Err("the metrics are outside the reference's tolerance".into())
+            }
         }
         Command::Inspect { event_id, store } => {
             let store = store.unwrap_or_else(|| config.store.resolved_path());

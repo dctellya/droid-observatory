@@ -465,6 +465,7 @@ fn the_m0_rows_cover_every_feature_and_milestone_and_tokens_add_up() {
         events.iter().filter_map(|e| e.feature_id.clone()).collect();
     let milestones: std::collections::BTreeSet<_> = events
         .iter()
+        .filter(|e| e.feature_id.is_some())
         .filter_map(|e| e.milestone_id.clone())
         .collect();
     let count = |scope| found.rows.iter().filter(|r| r.scope == scope).count();

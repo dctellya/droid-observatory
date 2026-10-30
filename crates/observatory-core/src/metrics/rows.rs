@@ -11,11 +11,12 @@ use super::cards::CardTime;
 use super::cycle::{Cycle, Cycles, StageTime, add_stages, stage_times};
 use super::notes::{Notes, events_of_feature};
 use super::price::PriceTable;
-use super::rework::{ReworkKind, fix_loops};
+use super::rework::{ReworkKind, first_pass_and_rework, fix_loops};
 use super::span::{Span, overlap};
+use super::state::Interval;
 use super::throttled::minutes;
 use super::tokens::{TokenCounts, turns};
-use super::waste::WasteCause;
+use super::waste::{WasteCause, waste_by_cause};
 use crate::model::{CycleTemplate, Event, EventKind, FeatureId, MilestoneId, Timestamp};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -198,6 +199,20 @@ fn new_row(
     }
 }
 
+fn clip(intervals: &[Interval], from: Timestamp, to: Timestamp) -> Vec<Interval> {
+    intervals
+        .iter()
+        .filter_map(|interval| {
+            let (start, end) = (interval.from.max(from), interval.to.min(to));
+            (start < end).then_some(Interval {
+                from: start,
+                to: end,
+                state: interval.state,
+            })
+        })
+        .collect()
+}
+
 fn feature_row(
     feature: &FeatureId,
     cycle: Cycle,
@@ -208,14 +223,22 @@ fn feature_row(
     let own = events_of_feature(context.events, feature, context.notes);
     row.stage_s = stage_times(&own, context.template);
     if let Some(card) = context.cards.get(&Some(feature.clone())) {
-        row.first_pass_active_s = whole_seconds(card.first_pass);
-        row.rework_s = whole_seconds(card.rework_time);
+        // The columns describe the engineering cycle: time before it starts (a feature whose
+        // first events precede its first `task.started`) and after it ends is not in them.
+        let intervals = match cycle.window(context.end) {
+            Some((from, to)) => clip(&card.intervals, from, to),
+            None => Vec::new(),
+        };
+        let (first_pass, rework) = first_pass_and_rework(&intervals, &card.rework);
+        let waste = waste_by_cause(&intervals, &card.rework);
+        row.first_pass_active_s = whole_seconds(first_pass);
+        row.rework_s = whole_seconds(rework);
         for cause in WasteCause::ALL {
-            row.waste_s.insert(cause, card.waste.seconds(cause));
+            row.waste_s.insert(cause, waste.seconds(cause));
         }
         row.rework_windows = card.rework.len();
         row.fix_loops = fix_loops(&card.windows);
-        row.waiting = Waiting::of_card(context.template, &own, &card.intervals);
+        row.waiting = Waiting::of_card(context.template, &own, &intervals);
     }
     row.bottleneck = row.waiting.bottleneck(context.template);
     row
@@ -235,9 +258,6 @@ pub(super) fn rows(
                 .or_default()
                 .insert(feature.clone());
         }
-    }
-    for milestone in context.cycles.milestones.keys() {
-        members.entry(milestone.clone()).or_default();
     }
 
     let mut out: Vec<MetricsRow> = context
